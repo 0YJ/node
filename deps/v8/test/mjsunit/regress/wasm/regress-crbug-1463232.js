@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-stringref
+// Flags: --wasm-staging
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -48,7 +48,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
       kExprBlock, kWasmVoid,
       kExprLocalGet, 0,
       kGCPrefix, kExprAnyConvertExtern,
-      kGCPrefix, kExprBrOnCastGeneric, 0b11, 0, kAnyRefCode, view,
+      kGCPrefix, kExprBrOnCast, 0b11, 0, kAnyRefCode, view,
       kExprDrop,
       kExprEnd,
     ]).exportFunc();
@@ -68,7 +68,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
       kExprBlock, kWasmVoid,
       kExprLocalGet, 0,
       kGCPrefix, kExprAnyConvertExtern,
-      kGCPrefix, kExprBrOnCastFailGeneric, 0b11, 0, kAnyRefCode, view,
+      kGCPrefix, kExprBrOnCastFail, 0b11, 0, kAnyRefCode, view,
       kExprDrop,
       kExprEnd,
     ]).exportFunc();

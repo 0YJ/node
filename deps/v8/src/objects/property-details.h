@@ -226,6 +226,10 @@ class Representation {
     UNREACHABLE();
   }
 
+  bool operator==(const Representation& other) const {
+    return kind_ == other.kind_;
+  }
+
  private:
   explicit constexpr Representation(Kind k) : kind_(k) {}
 
@@ -328,6 +332,10 @@ class PropertyDetails {
     PropertyDetails details = *this;
     details.value_ = DictionaryStorageField::update(details.value_, index);
     return details;
+  }
+
+  static bool CanSetIndex(int index) {
+    return DictionaryStorageField::is_valid(index);
   }
 
   PropertyDetails CopyWithRepresentation(Representation representation) const {
@@ -446,7 +454,7 @@ class PropertyDetails {
     kPrintRepresentation = 1 << 2,
     kPrintPointer = 1 << 3,
 
-    kForProperties = kPrintFieldIndex,
+    kForProperties = kPrintFieldIndex | kPrintAttributes,
     kForTransitions = kPrintAttributes,
     kPrintFull = -1,
   };

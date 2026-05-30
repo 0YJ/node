@@ -5,14 +5,16 @@ const {
   kClients,
   kNeedDrain,
   kAddClient,
-  kGetDispatcher
+  kGetDispatcher,
+  kHasDispatcher,
+  kRemoveClient
 } = require('./pool-base')
 const Client = require('./client')
 const {
   InvalidArgumentError
 } = require('../core/errors')
 const util = require('../core/util')
-const { kUrl, kInterceptors } = require('../core/symbols')
+const { kUrl } = require('../core/symbols')
 const buildConnector = require('../core/connect')
 
 const kOptions = Symbol('options')
@@ -35,10 +37,10 @@ class Pool extends PoolBase {
     autoSelectFamily,
     autoSelectFamilyAttemptTimeout,
     allowH2,
+    useH2c,
+    clientTtl,
     ...options
   } = {}) {
-    super()
-
     if (connections != null && (!Number.isFinite(connections) || connections < 0)) {
       throw new InvalidArgumentError('invalid connections')
     }
@@ -56,28 +58,54 @@ class Pool extends PoolBase {
         ...tls,
         maxCachedSessions,
         allowH2,
+        useH2c,
         socketPath,
         timeout: connectTimeout,
-        ...(util.nodeHasAutoSelectFamily && autoSelectFamily ? { autoSelectFamily, autoSelectFamilyAttemptTimeout } : undefined),
+        ...(typeof autoSelectFamily === 'boolean' ? { autoSelectFamily, autoSelectFamilyAttemptTimeout } : undefined),
         ...connect
       })
     }
 
-    this[kInterceptors] = options.interceptors?.Pool && Array.isArray(options.interceptors.Pool)
-      ? options.interceptors.Pool
-      : []
+    super(options)
+
     this[kConnections] = connections || null
     this[kUrl] = util.parseOrigin(origin)
-    this[kOptions] = { ...util.deepClone(options), connect, allowH2 }
-    this[kOptions].interceptors = options.interceptors
-      ? { ...options.interceptors }
-      : undefined
+    this[kOptions] = { ...util.deepClone(options), connect, allowH2, useH2c, clientTtl, socketPath }
     this[kFactory] = factory
+
+    this.on('connect', (origin, targets) => {
+      if (clientTtl != null && clientTtl > 0) {
+        for (const target of targets) {
+          Object.assign(target, { ttl: Date.now() })
+        }
+      }
+    })
+
+    this.on('connectionError', (origin, targets, error) => {
+      // If a connection error occurs, we remove the client from the pool,
+      // and emit a connectionError event. They will not be re-used.
+      // Fixes https://github.com/nodejs/undici/issues/3895
+      for (const target of targets) {
+        // Do not use kRemoveClient here, as it will close the client,
+        // but the client cannot be closed in this state.
+        const idx = this[kClients].indexOf(target)
+        if (idx !== -1) {
+          this[kClients].splice(idx, 1)
+        }
+      }
+    })
   }
 
   [kGetDispatcher] () {
-    for (const client of this[kClients]) {
-      if (!client[kNeedDrain]) {
+    const clientTtlOption = this[kOptions].clientTtl
+    for (let i = 0; i < this[kClients].length; i++) {
+      const client = this[kClients][i]
+
+      // check ttl of client and if it's stale, remove it from the pool
+      if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
+        this[kRemoveClient](client)
+        i--
+      } else if (!client[kNeedDrain]) {
         return client
       }
     }
@@ -87,6 +115,28 @@ class Pool extends PoolBase {
       this[kAddClient](dispatcher)
       return dispatcher
     }
+  }
+
+  [kHasDispatcher] () {
+    const clientTtlOption = this[kOptions].clientTtl
+    for (let i = 0; i < this[kClients].length; i++) {
+      const client = this[kClients][i]
+
+      if (clientTtlOption != null && clientTtlOption > 0 && client.ttl && ((Date.now() - client.ttl) > clientTtlOption)) {
+        this[kRemoveClient](client)
+        i--
+      } else if (!client[kNeedDrain]) {
+        return true
+      }
+    }
+
+    if (!this[kConnections] || this[kClients].length < this[kConnections]) {
+      const dispatcher = this[kFactory](this[kUrl], this[kOptions])
+      this[kAddClient](dispatcher)
+      return true
+    }
+
+    return false
   }
 }
 

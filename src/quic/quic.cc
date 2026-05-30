@@ -1,4 +1,6 @@
-#if HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
+#if HAVE_OPENSSL && HAVE_QUIC
+#include "guard.h"
+#ifndef OPENSSL_NO_QUIC
 
 #include <base_object-inl.h>
 #include <env-inl.h>
@@ -10,6 +12,8 @@
 #include "endpoint.h"
 #include "node_external_reference.h"
 
+#include <ngtcp2/ngtcp2_crypto_ossl.h>
+
 namespace node {
 
 using v8::Context;
@@ -20,28 +24,38 @@ using v8::Value;
 
 namespace quic {
 
-int DebugIndentScope::indent_ = 0;
+namespace {
+uv_once_t crypto_init_flag = UV_ONCE_INIT;
+
+void InitNgtcp2CryptoOnce() {
+  ngtcp2_crypto_ossl_init();
+}
+}  // namespace
 
 void CreatePerIsolateProperties(IsolateData* isolate_data,
                                 Local<ObjectTemplate> target) {
   Endpoint::InitPerIsolate(isolate_data, target);
   Session::InitPerIsolate(isolate_data, target);
+  Stream::InitPerIsolate(isolate_data, target);
 }
 
 void CreatePerContextProperties(Local<Object> target,
                                 Local<Value> unused,
                                 Local<Context> context,
                                 void* priv) {
+  uv_once(&crypto_init_flag, InitNgtcp2CryptoOnce);
   Realm* realm = Realm::GetCurrent(context);
   BindingData::InitPerContext(realm, target);
   Endpoint::InitPerContext(realm, target);
   Session::InitPerContext(realm, target);
+  Stream::InitPerContext(realm, target);
 }
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   BindingData::RegisterExternalReferences(registry);
   Endpoint::RegisterExternalReferences(registry);
   Session::RegisterExternalReferences(registry);
+  Stream::RegisterExternalReferences(registry);
 }
 
 }  // namespace quic
@@ -52,4 +66,5 @@ NODE_BINDING_CONTEXT_AWARE_INTERNAL(quic,
 NODE_BINDING_PER_ISOLATE_INIT(quic, node::quic::CreatePerIsolateProperties)
 NODE_BINDING_EXTERNAL_REFERENCE(quic, node::quic::RegisterExternalReferences)
 
-#endif  // HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
+#endif  // OPENSSL_NO_QUIC
+#endif  // HAVE_OPENSSL && HAVE_QUIC

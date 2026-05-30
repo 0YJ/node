@@ -83,9 +83,9 @@ static int closed_connections = 0;
 static int valid_writable_wakeups = 0;
 static int spurious_writable_wakeups = 0;
 
-#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__) && !defined(__QNX__)
 static int disconnects = 0;
-#endif /* !__sun && !_AIX  && !__MVS__ */
+#endif /* !__sun && !_AIX  && !__MVS__ && !__QNX__*/
 
 static int got_eagain(void) {
 #ifdef _WIN32
@@ -409,7 +409,7 @@ static void connection_poll_cb(uv_poll_t* handle, int status, int events) {
       new_events &= ~UV_WRITABLE;
     }
   }
-#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__) && !defined(__QNX__)
   if (events & UV_DISCONNECT) {
     context->got_disconnect = 1;
     ++disconnects;
@@ -417,9 +417,9 @@ static void connection_poll_cb(uv_poll_t* handle, int status, int events) {
   }
 
   if (context->got_fin && context->sent_fin && context->got_disconnect) {
-#else /* __sun && _AIX  && __MVS__ */
+#else /* __sun && _AIX  && __MVS__ && __QNX__*/
   if (context->got_fin && context->sent_fin) {
-#endif /* !__sun && !_AIX && !__MVS__  */
+#endif /* !__sun && !_AIX && !__MVS__ && !__QNX__ */
     /* Sent and received FIN. Close and destroy context. */
     close_socket(context->sock);
     destroy_connection_context(context);
@@ -587,7 +587,7 @@ static void start_poll_test(void) {
             spurious_writable_wakeups > 20, 0);
 
   ASSERT_EQ(closed_connections, NUM_CLIENTS * 2);
-#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__)
+#if !defined(__sun) && !defined(_AIX) && !defined(__MVS__) && !defined(__QNX__)
   ASSERT_EQ(disconnects, NUM_CLIENTS * 2);
 #endif
   MAKE_VALGRIND_HAPPY(uv_default_loop());
@@ -626,26 +626,59 @@ TEST_IMPL(poll_unidirectional) {
 
 
 /* Windows won't let you open a directory so we open a file instead.
- * OS X lets you poll a file so open the $PWD instead.  Both fail
- * on Linux so it doesn't matter which one we pick.  Both succeed
- * on FreeBSD, Solaris and AIX so skip the test on those platforms.
+ * OS X lets you poll a file so open the $PWD instead. Both fail
+ * on Linux so it doesn't matter which one we pick. Both succeed
+ * on Solaris and AIX so skip the test on those platforms.
+ * On *BSD/Darwin, we disallow polling of regular files, directories.
+ * In addition to regular files, we also disallow FIFOs on Darwin.
  */
+#ifdef __APPLE__
+#define TEST_POLL_FIFO_PATH "uv-test-poll-fifo"
+#endif
 TEST_IMPL(poll_bad_fdtype) {
-#if !defined(__DragonFly__) && !defined(__FreeBSD__) && !defined(__sun) && \
+#if !defined(__sun) && \
     !defined(_AIX) && !defined(__MVS__) && \
-    !defined(__OpenBSD__) && !defined(__CYGWIN__) && !defined(__MSYS__) && \
-    !defined(__NetBSD__)
+    !defined(__CYGWIN__) && !defined(__MSYS__) && !defined(__QNX__)
   uv_poll_t poll_handle;
-  int fd;
+  int fd[2];
 
 #if defined(_WIN32)
-  fd = _open("test/fixtures/empty_file", UV_FS_O_RDONLY);
+  fd[0] = _open("test/fixtures/empty_file", UV_FS_O_RDONLY);
 #else
-  fd = open(".", UV_FS_O_RDONLY);
+  fd[0] = open(".", UV_FS_O_RDONLY);
 #endif
-  ASSERT_NE(fd, -1);
-  ASSERT_NE(0, uv_poll_init(uv_default_loop(), &poll_handle, fd));
-  ASSERT_OK(close(fd));
+  ASSERT_NE(fd[0], -1);
+  ASSERT_NE(0, uv_poll_init(uv_default_loop(), &poll_handle, fd[0]));
+  ASSERT_OK(close(fd[0]));
+#if defined(__APPLE__)     || \
+    defined(__DragonFly__) || \
+    defined(__FreeBSD__)   || \
+    defined(__OpenBSD__)   || \
+    defined(__NetBSD__)
+  fd[0] = open("test/fixtures/empty_file", UV_FS_O_RDONLY);
+  ASSERT_NE(fd[0], -1);
+  /* Regular files should be banned from kqueue. */
+  ASSERT_NE(0, uv_poll_init(uv_default_loop(), &poll_handle, fd[0]));
+  ASSERT_OK(close(fd[0]));
+#ifdef __APPLE__
+  ASSERT_OK(pipe(fd));
+  /* Pipes should be permitted in kqueue. */
+  ASSERT_EQ(0, uv_poll_init(uv_default_loop(), &poll_handle, fd[0]));
+  ASSERT_OK(close(fd[0]));
+  ASSERT_OK(close(fd[1]));
+
+  ASSERT_OK(mkfifo(TEST_POLL_FIFO_PATH, 0600));
+  fd[0] = open(TEST_POLL_FIFO_PATH, O_RDONLY | O_NONBLOCK);
+  ASSERT_NE(fd[0], -1);
+  fd[1] = open(TEST_POLL_FIFO_PATH, O_WRONLY | O_NONBLOCK);
+  ASSERT_NE(fd[1], -1);
+  /* FIFOs should be banned from kqueue. */
+  ASSERT_NE(0, uv_poll_init(uv_default_loop(), &poll_handle, fd[0]));
+  ASSERT_OK(close(fd[0]));
+  ASSERT_OK(close(fd[1]));
+  unlink(TEST_POLL_FIFO_PATH);
+#endif
+#endif
 #endif
 
   MAKE_VALGRIND_HAPPY(uv_default_loop());

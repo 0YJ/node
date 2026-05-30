@@ -1,35 +1,66 @@
 'use strict'
 
+const assert = require('node:assert')
+
+/**
+ * @deprecated
+ */
 module.exports = class DecoratorHandler {
+  #handler
+  #onCompleteCalled = false
+  #onErrorCalled = false
+  #onResponseStartCalled = false
+
   constructor (handler) {
-    this.handler = handler
+    if (typeof handler !== 'object' || handler === null) {
+      throw new TypeError('handler must be an object')
+    }
+    this.#handler = handler
   }
 
-  onConnect (...args) {
-    return this.handler.onConnect(...args)
+  onRequestStart (...args) {
+    this.#handler.onRequestStart?.(...args)
   }
 
-  onError (...args) {
-    return this.handler.onError(...args)
+  onRequestUpgrade (...args) {
+    assert(!this.#onCompleteCalled)
+    assert(!this.#onErrorCalled)
+
+    return this.#handler.onRequestUpgrade?.(...args)
   }
 
-  onUpgrade (...args) {
-    return this.handler.onUpgrade(...args)
+  onResponseStart (...args) {
+    assert(!this.#onCompleteCalled)
+    assert(!this.#onErrorCalled)
+    assert(!this.#onResponseStartCalled)
+
+    this.#onResponseStartCalled = true
+
+    return this.#handler.onResponseStart?.(...args)
   }
 
-  onHeaders (...args) {
-    return this.handler.onHeaders(...args)
+  onResponseData (...args) {
+    assert(!this.#onCompleteCalled)
+    assert(!this.#onErrorCalled)
+
+    return this.#handler.onResponseData?.(...args)
   }
 
-  onData (...args) {
-    return this.handler.onData(...args)
+  onResponseEnd (...args) {
+    assert(!this.#onCompleteCalled)
+    assert(!this.#onErrorCalled)
+
+    this.#onCompleteCalled = true
+    return this.#handler.onResponseEnd?.(...args)
   }
 
-  onComplete (...args) {
-    return this.handler.onComplete(...args)
+  onResponseError (...args) {
+    this.#onErrorCalled = true
+    return this.#handler.onResponseError?.(...args)
   }
 
-  onBodySent (...args) {
-    return this.handler.onBodySent(...args)
-  }
+  /**
+   * @deprecated
+   */
+  onBodySent () {}
 }

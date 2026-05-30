@@ -4,17 +4,19 @@ Undici exposes a fetch() method starts the process of fetching a resource from t
 
 Documentation and examples can be found on [MDN](https://developer.mozilla.org/en-US/docs/Web/API/fetch).
 
-## File
-
-This API is implemented as per the standard, you can find documentation on [MDN](https://developer.mozilla.org/en-US/docs/Web/API/File)
-
-In Node versions v18.13.0 and above and v19.2.0 and above, undici will default to using Node's [File](https://nodejs.org/api/buffer.html#class-file) class. In versions where it's not available, it will default to the undici one.
-
 ## FormData
 
 This API is implemented as per the standard, you can find documentation on [MDN](https://developer.mozilla.org/en-US/docs/Web/API/FormData).
 
 If any parameters are passed to the FormData constructor other than `undefined`, an error will be thrown. Other parameters are ignored.
+
+When you use `FormData` as a request body, keep `fetch` and `FormData` from the
+same implementation. Use the built-in global `FormData` with the built-in
+global `fetch()`, and use `undici`'s `FormData` with `undici.fetch()`.
+
+If you want the installed `undici` package to provide the globals, call
+[`install()`](/docs/api/GlobalInstallation.md) so `fetch`, `Headers`,
+`Response`, `Request`, and `FormData` are installed together as a matching set.
 
 ## Response
 
@@ -34,6 +36,7 @@ This API is implemented as per the standard, you can find documentation on [MDN]
 
 - [`.arrayBuffer()`](https://fetch.spec.whatwg.org/#dom-body-arraybuffer)
 - [`.blob()`](https://fetch.spec.whatwg.org/#dom-body-blob)
+- [`.bytes()`](https://fetch.spec.whatwg.org/#dom-body-bytes)
 - [`.formData()`](https://fetch.spec.whatwg.org/#dom-body-formdata)
 - [`.json()`](https://fetch.spec.whatwg.org/#dom-body-json)
 - [`.text()`](https://fetch.spec.whatwg.org/#dom-body-text)

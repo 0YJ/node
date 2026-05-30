@@ -6,6 +6,7 @@
 
 #include "src/execution/isolate.h"
 #include "src/objects/string-inl.h"
+#include "src/regexp/regexp-ast-printer.h"
 #include "src/regexp/regexp-ast.h"
 #include "src/regexp/regexp-macro-assembler.h"
 #include "src/regexp/regexp.h"
@@ -155,14 +156,10 @@ void RegExpTextBuilder::FlushText() {
 
 void RegExpTextBuilder::AddCharacter(base::uc16 c) {
   FlushPendingSurrogate();
-  if (NeedsDesugaringForIgnoreCase(c)) {
-    AddClassRangesForDesugaring(c);
-  } else {
-    if (characters_ == nullptr) {
-      characters_ = zone()->New<ZoneList<base::uc16>>(4, zone());
-    }
-    characters_->Add(c, zone());
+  if (characters_ == nullptr) {
+    characters_ = zone()->New<ZoneList<base::uc16>>(4, zone());
   }
+  characters_->Add(c, zone());
 }
 
 void RegExpTextBuilder::AddUnicodeCharacter(base::uc32 c) {
@@ -241,6 +238,9 @@ bool RegExpTextBuilder::NeedsDesugaringForUnicode(RegExpClassRanges* cc) {
   return false;
 }
 
+// We only use this for characters made of surrogate pairs.  All other
+// characters outside of character classes are made case independent in the
+// code generation.
 bool RegExpTextBuilder::NeedsDesugaringForIgnoreCase(base::uc32 c) {
 #ifdef V8_INTL_SUPPORT
   if (IsUnicodeMode() && ignore_case()) {
@@ -280,9 +280,9 @@ RegExpTree* RegExpTextBuilder::PopLastAtom() {
 
 RegExpTree* RegExpTextBuilder::ToRegExp() {
   FlushText();
-  size_t num_alternatives = terms_->size();
-  if (num_alternatives == 0) return zone()->New<RegExpEmpty>();
-  if (num_alternatives == 1) return terms_->back();
+  size_t number_of_terms = terms_->size();
+  if (number_of_terms == 0) return zone()->New<RegExpEmpty>();
+  if (number_of_terms == 1) return terms_->back();
   return zone()->New<RegExpAlternative>(zone()->New<ZoneList<RegExpTree*>>(
       base::VectorOf(terms_->begin(), terms_->size()), zone()));
 }
@@ -307,7 +307,7 @@ class RegExpBuilder {
   void AddTerm(RegExpTree* tree);
   void AddAssertion(RegExpTree* tree);
   void NewAlternative();  // '|'
-  bool AddQuantifierToAtom(int min, int max,
+  bool AddQuantifierToAtom(int min, int max, int index,
                            RegExpQuantifier::QuantifierType type);
   void FlushText();
   RegExpTree* ToRegExp();
@@ -359,7 +359,16 @@ class RegExpParserState : public ZoneObject {
         group_type_(group_type),
         lookaround_type_(lookaround_type),
         disjunction_capture_index_(disjunction_capture_index),
-        capture_name_(capture_name) {}
+        capture_name_(capture_name),
+        non_participating_capture_group_intervals_(zone) {
+    if (previous_state != nullptr) {
+      non_participating_capture_group_intervals_.insert(
+          non_participating_capture_group_intervals_.begin(),
+          previous_state->non_participating_capture_group_intervals_);
+    }
+  }
+  using IntervalVector = SmallZoneVector<Interval, 1>;
+
   // Parser state of containing expression, if any.
   RegExpParserState* previous_state() const { return previous_state_; }
   bool IsSubexpression() { return previous_state_ != nullptr; }
@@ -376,6 +385,9 @@ class RegExpParserState : public ZoneObject {
   // The name of the current sub-expression, if group_type is CAPTURE. Only
   // used for named captures.
   const ZoneVector<base::uc16>* capture_name() const { return capture_name_; }
+  const IntervalVector& non_participating_capture_group_intervals() const {
+    return non_participating_capture_group_intervals_;
+  }
 
   bool IsNamedCapture() const { return capture_name_ != nullptr; }
 
@@ -403,6 +415,27 @@ class RegExpParserState : public ZoneObject {
     return false;
   }
 
+  void NewAlternative(int captures_started) {
+    // Nothing to do if there were no new captures started before the
+    // alternative.
+    if (capture_index() == captures_started) return;
+
+    // +1 to create a closed interval (capture_index() is exclusive).
+    int from = capture_index() + 1;
+    int to = captures_started;
+    DCHECK_LE(from, to);
+    // Extend the last interval if we increase its range by exactly 1.
+    if (!non_participating_capture_group_intervals().empty() &&
+        non_participating_capture_group_intervals().back().to() + 1 == to) {
+      Interval& interval = non_participating_capture_group_intervals_.back();
+      DCHECK(!interval.is_empty());
+      DCHECK_GE(from, interval.from());
+      interval = interval.Union({from, to});
+    } else {
+      non_participating_capture_group_intervals_.push_back({from, to});
+    }
+  }
+
  private:
   // Linked list implementation of stack of states.
   RegExpParserState* const previous_state_;
@@ -416,6 +449,11 @@ class RegExpParserState : public ZoneObject {
   const int disjunction_capture_index_;
   // Stored capture name (if any).
   const ZoneVector<base::uc16>* const capture_name_;
+  // List of Intervals of (named) capture indices [from, to] that are not
+  // participating in the current state (i.e. they cannot match).
+  // Capture indices are not participating if they were created in a different
+  // alternative.
+  IntervalVector non_participating_capture_group_intervals_;
 };
 
 template <class CharT>
@@ -512,7 +550,13 @@ class RegExpParserImpl final {
   bool contains_anchor() const { return contains_anchor_; }
   void set_contains_anchor() { contains_anchor_ = true; }
   int captures_started() const { return captures_started_; }
-  int position() const { return next_pos_ - 1; }
+  int position() const {
+    const bool current_is_surrogate =
+        current() != kEndMarker &&
+        current() > unibrow::Utf16::kMaxNonSurrogateCharCode;
+    const int rewind_bytes = current_is_surrogate ? 2 : 1;
+    return next_pos_ - rewind_bytes;
+  }
   bool failed() const { return failed_; }
   RegExpFlags flags() const { return flags_; }
   bool IsUnicodeMode() const {
@@ -537,7 +581,7 @@ class RegExpParserImpl final {
   // Creates a new named capture at the specified index. Must be called exactly
   // once for each named capture. Fails if a capture with the same name is
   // encountered.
-  bool CreateNamedCaptureAtIndex(const ZoneVector<base::uc16>* name, int index);
+  bool CreateNamedCaptureAtIndex(const RegExpParserState* state, int index);
 
   // Parses the name of a capture group (?<name>pattern). The name must adhere
   // to IdentifierName in the ECMAScript standard.
@@ -552,7 +596,7 @@ class RegExpParserImpl final {
   // to avoid complicating cases in which references comes before the capture.
   void PatchNamedBackReferences();
 
-  ZoneVector<RegExpCapture*>* GetNamedCaptures() const;
+  ZoneVector<RegExpCapture*>* GetNamedCaptures();
 
   // Returns true iff the pattern contains named captures. May call
   // ScanForCaptures to look ahead at the remaining pattern.
@@ -602,9 +646,10 @@ class RegExpParserImpl final {
   RegExpError error_ = RegExpError::kNone;
   int error_pos_ = 0;
   ZoneList<RegExpCapture*>* captures_;
-  ZoneSet<RegExpCapture*, RegExpCaptureNameLess>* named_captures_;
+  // Maps capture names to a list of capture indices with this name.
+  ZoneMap<RegExpCapture*, ZoneList<int>*, RegExpCaptureNameLess>*
+      named_captures_;
   ZoneList<RegExpBackReference*>* named_back_references_;
-  ZoneList<CharacterRange>* temp_ranges_;
   const CharT* const input_;
   const int input_length_;
   base::uc32 current_;
@@ -613,6 +658,7 @@ class RegExpParserImpl final {
   int next_pos_;
   int captures_started_;
   int capture_count_;  // Only valid after we have scanned for captures.
+  int quantifier_count_;
   int lookaround_count_;  // Only valid after we have scanned for lookbehinds.
   bool has_more_;
   bool simple_;
@@ -640,6 +686,7 @@ RegExpParserImpl<CharT>::RegExpParserImpl(
       next_pos_(0),
       captures_started_(0),
       capture_count_(0),
+      quantifier_count_(0),
       lookaround_count_(0),
       has_more_(true),
       simple_(false),
@@ -921,8 +968,7 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
         // Build result of subexpression.
         if (group_type == CAPTURE) {
           if (state->IsNamedCapture()) {
-            CreateNamedCaptureAtIndex(state->capture_name(),
-                                      capture_index CHECK_FAILED);
+            CreateNamedCaptureAtIndex(state, capture_index CHECK_FAILED);
           }
           RegExpCapture* capture = GetCapture(capture_index);
           capture->set_body(body);
@@ -950,6 +996,7 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
       }
       case '|': {
         Advance();
+        state->NewAlternative(captures_started());
         builder->NewAlternative();
         continue;
       }
@@ -1052,7 +1099,7 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
               } else {
                 RegExpCapture* capture = GetCapture(index);
                 RegExpTree* atom =
-                    zone()->template New<RegExpBackReference>(capture);
+                    zone()->template New<RegExpBackReference>(capture, zone());
                 builder->AddAtom(atom);
               }
               break;
@@ -1068,7 +1115,7 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
               Advance(2);
               break;
             }
-            V8_FALLTHROUGH;
+            [[fallthrough]];
           }
           case '0': {
             Advance();
@@ -1166,7 +1213,7 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
               break;
             }
           }
-            V8_FALLTHROUGH;
+            [[fallthrough]];
           // AtomEscape ::
           //   CharacterEscape
           default: {
@@ -1187,14 +1234,14 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
         int dummy;
         bool parsed = ParseIntervalQuantifier(&dummy, &dummy CHECK_FAILED);
         if (parsed) return ReportError(RegExpError::kNothingToRepeat);
-        V8_FALLTHROUGH;
+        [[fallthrough]];
       }
       case '}':
       case ']':
         if (IsUnicodeMode()) {
           return ReportError(RegExpError::kLoneQuantifierBrackets);
         }
-        V8_FALLTHROUGH;
+        [[fallthrough]];
       default:
         builder->AddUnicodeCharacter(current());
         Advance();
@@ -1247,9 +1294,11 @@ RegExpTree* RegExpParserImpl<CharT>::ParseDisjunction() {
       quantifier_type = RegExpQuantifier::POSSESSIVE;
       Advance();
     }
-    if (!builder->AddQuantifierToAtom(min, max, quantifier_type)) {
+    if (!builder->AddQuantifierToAtom(min, max, quantifier_count_,
+                                      quantifier_type)) {
       return ReportError(RegExpError::kInvalidQuantifier);
     }
+    ++quantifier_count_;
   }
 }
 
@@ -1267,7 +1316,8 @@ RegExpParserState* RegExpParserImpl<CharT>::ParseOpenParenthesis(
   Advance();
   if (current() == '?') {
     do {
-      switch (Next()) {
+      base::uc32 next = Next();
+      switch (next) {
         case '-':
           if (!v8_flags.js_regexp_modifiers) {
             ReportError(RegExpError::kInvalidGroup);
@@ -1290,7 +1340,7 @@ RegExpParserState* RegExpParserImpl<CharT>::ParseOpenParenthesis(
           }
           Advance();
           parsing_modifiers = true;
-          RegExpFlag flag = TryRegExpFlagFromChar(current()).value();
+          RegExpFlag flag = TryRegExpFlagFromChar(next).value();
           if ((modifiers & flag) != 0) {
             ReportError(RegExpError::kRepeatedFlag);
             return nullptr;
@@ -1306,19 +1356,31 @@ RegExpParserState* RegExpParserImpl<CharT>::ParseOpenParenthesis(
           break;
         case '=':
           Advance(2);
-          parsing_modifiers = false;
+          if (parsing_modifiers) {
+            DCHECK(v8_flags.js_regexp_modifiers);
+            ReportError(RegExpError::kInvalidGroup);
+            return nullptr;
+          }
           lookaround_type = RegExpLookaround::LOOKAHEAD;
           subexpr_type = POSITIVE_LOOKAROUND;
           break;
         case '!':
           Advance(2);
-          parsing_modifiers = false;
+          if (parsing_modifiers) {
+            DCHECK(v8_flags.js_regexp_modifiers);
+            ReportError(RegExpError::kInvalidGroup);
+            return nullptr;
+          }
           lookaround_type = RegExpLookaround::LOOKAHEAD;
           subexpr_type = NEGATIVE_LOOKAROUND;
           break;
         case '<':
           Advance();
-          parsing_modifiers = false;
+          if (parsing_modifiers) {
+            DCHECK(v8_flags.js_regexp_modifiers);
+            ReportError(RegExpError::kInvalidGroup);
+            return nullptr;
+          }
           if (Next() == '=') {
             Advance(2);
             lookaround_type = RegExpLookaround::LOOKBEHIND;
@@ -1573,7 +1635,10 @@ const ZoneVector<base::uc16>* RegExpParserImpl<CharT>::ParseCaptureGroupName() {
 
 template <class CharT>
 bool RegExpParserImpl<CharT>::CreateNamedCaptureAtIndex(
-    const ZoneVector<base::uc16>* name, int index) {
+    const RegExpParserState* state, int index) {
+  const ZoneVector<base::uc16>* name = state->capture_name();
+  const auto& non_participating_capture_group_intervals =
+      state->non_participating_capture_group_intervals();
   DCHECK(0 < index && index <= captures_started_);
   DCHECK_NOT_NULL(name);
 
@@ -1583,21 +1648,57 @@ bool RegExpParserImpl<CharT>::CreateNamedCaptureAtIndex(
   capture->set_name(name);
 
   if (named_captures_ == nullptr) {
-    named_captures_ =
-        zone_->template New<ZoneSet<RegExpCapture*, RegExpCaptureNameLess>>(
-            zone());
+    named_captures_ = zone_->template New<
+        ZoneMap<RegExpCapture*, ZoneList<int>*, RegExpCaptureNameLess>>(zone());
   } else {
     // Check for duplicates and bail if we find any.
-
     const auto& named_capture_it = named_captures_->find(capture);
     if (named_capture_it != named_captures_->end()) {
+      if (v8_flags.js_regexp_duplicate_named_groups) {
+        ZoneList<int>* named_capture_indices = named_capture_it->second;
+        DCHECK_NOT_NULL(named_capture_indices);
+        DCHECK(!named_capture_indices->is_empty());
+        for (int named_index : *named_capture_indices) {
+          bool is_duplicate = true;
+          for (Interval interval : non_participating_capture_group_intervals) {
+            DCHECK(!interval.is_empty());
+            // We can stop as soon as we are inside one non-participating
+            // interval. There can't be a non-participating and participating
+            // interval, as intervals are never decreasing.
+            if (interval.Contains(named_index)) {
+              is_duplicate = false;
+              break;
+            }
+            // Intervals are ordered strictly increasing, so we can stop early
+            // when the current interval is past the current index.
+            if (named_index <= interval.from()) {
+              break;
+            }
+          }
+          if (is_duplicate) {
+            ReportError(RegExpError::kDuplicateCaptureGroupName);
+            return false;
+          }
+        }
+      } else {
+        ReportError(RegExpError::kDuplicateCaptureGroupName);
+        return false;
+      }
+    }
+  }
+  if (v8_flags.js_regexp_duplicate_named_groups) {
+    // Check for nested named captures. This is necessary to find duplicate
+    // named captures within the same disjunct.
+    RegExpParserState* parent_state = state->previous_state();
+    if (parent_state && parent_state->IsInsideCaptureGroup(name)) {
       ReportError(RegExpError::kDuplicateCaptureGroupName);
       return false;
     }
   }
 
-  named_captures_->emplace(capture);
-
+  auto entry = named_captures_->try_emplace(
+      capture, zone()->template New<ZoneList<int>>(1, zone()));
+  entry.first->second->Add(index, zone());
   return true;
 }
 
@@ -1619,7 +1720,8 @@ bool RegExpParserImpl<CharT>::ParseNamedBackReference(
   if (state->IsInsideCaptureGroup(name)) {
     builder->AddEmpty();
   } else {
-    RegExpBackReference* atom = zone()->template New<RegExpBackReference>();
+    RegExpBackReference* atom =
+        zone()->template New<RegExpBackReference>(zone());
     atom->set_name(name);
 
     builder->AddAtom(atom);
@@ -1656,16 +1758,17 @@ void RegExpParserImpl<CharT>::PatchNamedBackReferences() {
     DCHECK_NULL(search_capture->name());
     search_capture->set_name(ref->name());
 
-    int index = -1;
     const auto& capture_it = named_captures_->find(search_capture);
-    if (capture_it != named_captures_->end()) {
-      index = (*capture_it)->index();
-    } else {
+    if (capture_it == named_captures_->end()) {
       ReportError(RegExpError::kInvalidNamedCaptureReference);
       return;
     }
 
-    ref->set_capture(GetCapture(index));
+    DCHECK_IMPLIES(!v8_flags.js_regexp_duplicate_named_groups,
+                   capture_it->second->length() == 1);
+    for (int index : *capture_it->second) {
+      ref->add_capture(GetCapture(index), zone());
+    }
   }
 }
 
@@ -1675,7 +1778,7 @@ RegExpCapture* RegExpParserImpl<CharT>::GetCapture(int index) {
   // zero-based.
   const int known_captures =
       is_scanned_for_captures_ ? capture_count_ : captures_started_;
-  DCHECK(index <= known_captures);
+  SBXCHECK(index >= 1 && index <= known_captures);
   if (captures_ == nullptr) {
     captures_ =
         zone()->template New<ZoneList<RegExpCapture*>>(known_captures, zone());
@@ -1688,13 +1791,22 @@ RegExpCapture* RegExpParserImpl<CharT>::GetCapture(int index) {
 }
 
 template <class CharT>
-ZoneVector<RegExpCapture*>* RegExpParserImpl<CharT>::GetNamedCaptures() const {
-  if (named_captures_ == nullptr || named_captures_->empty()) {
+ZoneVector<RegExpCapture*>* RegExpParserImpl<CharT>::GetNamedCaptures() {
+  if (named_captures_ == nullptr) {
     return nullptr;
   }
+  DCHECK(!named_captures_->empty());
 
-  return zone()->template New<ZoneVector<RegExpCapture*>>(
-      named_captures_->begin(), named_captures_->end(), zone());
+  ZoneVector<RegExpCapture*>* flattened_named_captures =
+      zone()->template New<ZoneVector<RegExpCapture*>>(zone());
+  for (auto capture : *named_captures_) {
+    DCHECK_IMPLIES(!v8_flags.js_regexp_duplicate_named_groups,
+                   capture.second->length() == 1);
+    for (int index : *capture.second) {
+      flattened_named_captures->push_back(GetCapture(index));
+    }
+  }
+  return flattened_named_captures;
 }
 
 template <class CharT>
@@ -2299,7 +2411,7 @@ base::uc32 RegExpParserImpl<CharT>::ParseCharacterEscape(
         Advance();
         return 0;
       }
-      V8_FALLTHROUGH;
+      [[fallthrough]];
     case '1':
     case '2':
     case '3':
@@ -2314,7 +2426,7 @@ base::uc32 RegExpParserImpl<CharT>::ParseCharacterEscape(
       if (IsUnicodeMode()) {
         // With /u or /v, decimal escape is not interpreted as octal character
         // code.
-        ReportError(RegExpError::kInvalidClassEscape);
+        ReportError(RegExpError::kInvalidDecimalEscape);
         return 0;
       }
       return ParseOctalLiteral();
@@ -2965,6 +3077,13 @@ RegExpTree* RegExpParserImpl<CharT>::ParseCharacterClass(
     Advance();
     RegExpClassRanges::ClassRangesFlags character_class_flags;
     if (is_negated) character_class_flags = RegExpClassRanges::NEGATED;
+    if (!ignore_case()) {
+      character_class_flags |= RegExpClassRanges::NO_CASE_FOLDING_NEEDED;
+    }
+    if (sizeof(CharT) == 1) {
+      // No surrogate pairs.
+      character_class_flags |= RegExpClassRanges::IS_CERTAINLY_ONE_CODE_POINT;
+    }
     return zone()->template New<RegExpClassRanges>(zone(), ranges,
                                                    character_class_flags);
   } else {
@@ -2979,7 +3098,8 @@ RegExpTree* RegExpParserImpl<CharT>::ParseCharacterClass(
         if (Next() == '-') {
           if (operand == nullptr) {
             if (operand_type == ClassSetOperandType::kClassSetCharacter) {
-              ranges->Add(CharacterRange::Singleton(character), zone());
+              AddMaybeSimpleCaseFoldedRange(
+                  ranges, CharacterRange::Singleton(character));
             }
             operand =
                 zone()->template New<RegExpClassSetOperand>(ranges, strings);
@@ -2993,7 +3113,8 @@ RegExpTree* RegExpParserImpl<CharT>::ParseCharacterClass(
         if (Next() == '&') {
           if (operand == nullptr) {
             if (operand_type == ClassSetOperandType::kClassSetCharacter) {
-              ranges->Add(CharacterRange::Singleton(character), zone());
+              AddMaybeSimpleCaseFoldedRange(
+                  ranges, CharacterRange::Singleton(character));
             }
             operand =
                 zone()->template New<RegExpClassSetOperand>(ranges, strings);
@@ -3024,11 +3145,14 @@ bool RegExpParserImpl<CharT>::Parse(RegExpCompileData* result) {
 
   DCHECK_NOT_NULL(tree);
   DCHECK_EQ(error_, RegExpError::kNone);
-  if (v8_flags.trace_regexp_parser) {
+#ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
+  if (V8_UNLIKELY(v8_flags.trace_regexp_parser)) {
     StdoutStream os;
-    tree->Print(os, zone());
+    RegExpAstNodePrinter printer(os, nullptr, zone());
+    printer.Print(tree);
     os << "\n";
   }
+#endif
 
   result->tree = tree;
   const int capture_count = captures_started();
@@ -3126,7 +3250,8 @@ RegExpTree* RegExpBuilder::ToRegExp() {
 }
 
 bool RegExpBuilder::AddQuantifierToAtom(
-    int min, int max, RegExpQuantifier::QuantifierType quantifier_type) {
+    int min, int max, int index,
+    RegExpQuantifier::QuantifierType quantifier_type) {
   if (pending_empty_) {
     pending_empty_ = false;
     return true;
@@ -3158,7 +3283,7 @@ bool RegExpBuilder::AddQuantifierToAtom(
     UNREACHABLE();
   }
   terms_.emplace_back(
-      zone()->New<RegExpQuantifier>(min, max, quantifier_type, atom));
+      zone()->New<RegExpQuantifier>(min, max, quantifier_type, index, atom));
   return true;
 }
 
@@ -3169,7 +3294,7 @@ template class RegExpParserImpl<base::uc16>;
 
 // static
 bool RegExpParser::ParseRegExpFromHeapString(Isolate* isolate, Zone* zone,
-                                             Handle<String> input,
+                                             DirectHandle<String> input,
                                              RegExpFlags flags,
                                              RegExpCompileData* result) {
   DisallowGarbageCollection no_gc;

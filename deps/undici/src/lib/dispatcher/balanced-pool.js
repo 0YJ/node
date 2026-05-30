@@ -13,8 +13,8 @@ const {
   kGetDispatcher
 } = require('./pool-base')
 const Pool = require('./pool')
-const { kUrl, kInterceptors } = require('../core/symbols')
-const { parseOrigin } = require('../core/util')
+const { kUrl } = require('../core/symbols')
+const util = require('../core/util')
 const kFactory = Symbol('factory')
 
 const kOptions = Symbol('options')
@@ -25,9 +25,23 @@ const kWeight = Symbol('kWeight')
 const kMaxWeightPerServer = Symbol('kMaxWeightPerServer')
 const kErrorPenalty = Symbol('kErrorPenalty')
 
+/**
+ * Calculate the greatest common divisor of two numbers by
+ * using the Euclidean algorithm.
+ *
+ * @param {number} a
+ * @param {number} b
+ * @returns {number}
+ */
 function getGreatestCommonDivisor (a, b) {
-  if (b === 0) return a
-  return getGreatestCommonDivisor(b, a % b)
+  if (a === 0) return b
+
+  while (b !== 0) {
+    const t = b
+    b = a % b
+    a = t
+  }
+  return a
 }
 
 function defaultFactory (origin, opts) {
@@ -36,9 +50,13 @@ function defaultFactory (origin, opts) {
 
 class BalancedPool extends PoolBase {
   constructor (upstreams = [], { factory = defaultFactory, ...opts } = {}) {
+    if (typeof factory !== 'function') {
+      throw new InvalidArgumentError('factory must be a function.')
+    }
+
     super()
 
-    this[kOptions] = opts
+    this[kOptions] = { ...util.deepClone(opts) }
     this[kIndex] = -1
     this[kCurrentWeight] = 0
 
@@ -49,13 +67,6 @@ class BalancedPool extends PoolBase {
       upstreams = [upstreams]
     }
 
-    if (typeof factory !== 'function') {
-      throw new InvalidArgumentError('factory must be a function.')
-    }
-
-    this[kInterceptors] = opts.interceptors?.BalancedPool && Array.isArray(opts.interceptors.BalancedPool)
-      ? opts.interceptors.BalancedPool
-      : []
     this[kFactory] = factory
 
     for (const upstream of upstreams) {
@@ -65,7 +76,7 @@ class BalancedPool extends PoolBase {
   }
 
   addUpstream (upstream) {
-    const upstreamOrigin = parseOrigin(upstream).origin
+    const upstreamOrigin = util.parseOrigin(upstream).origin
 
     if (this[kClients].find((pool) => (
       pool[kUrl].origin === upstreamOrigin &&
@@ -74,7 +85,7 @@ class BalancedPool extends PoolBase {
     ))) {
       return this
     }
-    const pool = this[kFactory](upstreamOrigin, Object.assign({}, this[kOptions]))
+    const pool = this[kFactory](upstreamOrigin, this[kOptions])
 
     this[kAddClient](pool)
     pool.on('connect', () => {
@@ -105,11 +116,16 @@ class BalancedPool extends PoolBase {
   }
 
   _updateBalancedPoolStats () {
-    this[kGreatestCommonDivisor] = this[kClients].map(p => p[kWeight]).reduce(getGreatestCommonDivisor, 0)
+    let result = 0
+    for (let i = 0; i < this[kClients].length; i++) {
+      result = getGreatestCommonDivisor(this[kClients][i][kWeight], result)
+    }
+
+    this[kGreatestCommonDivisor] = result
   }
 
   removeUpstream (upstream) {
-    const upstreamOrigin = parseOrigin(upstream).origin
+    const upstreamOrigin = util.parseOrigin(upstream).origin
 
     const pool = this[kClients].find((pool) => (
       pool[kUrl].origin === upstreamOrigin &&
@@ -122,6 +138,16 @@ class BalancedPool extends PoolBase {
     }
 
     return this
+  }
+
+  getUpstream (upstream) {
+    const upstreamOrigin = util.parseOrigin(upstream).origin
+
+    return this[kClients].find((pool) => (
+      pool[kUrl].origin === upstreamOrigin &&
+      pool.closed !== true &&
+      pool.destroyed !== true
+    ))
   }
 
   get upstreams () {
@@ -138,34 +164,13 @@ class BalancedPool extends PoolBase {
       throw new BalancedPoolMissingUpstreamError()
     }
 
-    const dispatcher = this[kClients].find(dispatcher => (
-      !dispatcher[kNeedDrain] &&
-      dispatcher.closed !== true &&
-      dispatcher.destroyed !== true
-    ))
-
-    if (!dispatcher) {
-      return
-    }
-
-    const allClientsBusy = this[kClients].map(pool => pool[kNeedDrain]).reduce((a, b) => a && b, true)
-
-    if (allClientsBusy) {
-      return
-    }
-
     let counter = 0
 
-    let maxWeightIndex = this[kClients].findIndex(pool => !pool[kNeedDrain])
+    let maxWeightIndex = -1
 
     while (counter++ < this[kClients].length) {
       this[kIndex] = (this[kIndex] + 1) % this[kClients].length
       const pool = this[kClients][this[kIndex]]
-
-      // find pool index with the largest weight
-      if (pool[kWeight] > this[kClients][maxWeightIndex][kWeight] && !pool[kNeedDrain]) {
-        maxWeightIndex = this[kIndex]
-      }
 
       // decrease the current weight every `this[kClients].length`.
       if (this[kIndex] === 0) {
@@ -176,9 +181,28 @@ class BalancedPool extends PoolBase {
           this[kCurrentWeight] = this[kMaxWeightPerServer]
         }
       }
-      if (pool[kWeight] >= this[kCurrentWeight] && (!pool[kNeedDrain])) {
+
+      // Skip unavailable pools after updating the current weight for this cycle.
+      if (
+        pool[kNeedDrain] ||
+        pool.closed === true ||
+        pool.destroyed === true
+      ) {
+        continue
+      }
+
+      // Track the best fallback if no pool matches the current weight.
+      if (maxWeightIndex === -1 || pool[kWeight] > this[kClients][maxWeightIndex][kWeight]) {
+        maxWeightIndex = this[kIndex]
+      }
+
+      if (pool[kWeight] >= this[kCurrentWeight]) {
         return pool
       }
+    }
+
+    if (maxWeightIndex === -1) {
+      return
     }
 
     this[kCurrentWeight] = this[kClients][maxWeightIndex][kWeight]

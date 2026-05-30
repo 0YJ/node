@@ -269,7 +269,7 @@ int uv__getsockpeername(const uv_handle_t* handle,
                         int* namelen,
                         int delayed_error);
 
-int uv__random_rtlgenrandom(void* buf, size_t buflen);
+int uv__random_winrandom(void* buf, size_t buflen);
 
 
 /*
@@ -329,5 +329,7 @@ void uv__wake_all_loops(void);
  * Init system wake-up detection
  */
 void uv__init_detect_system_wakeup(void);
+
+int uv_translate_write_sys_error(int sys_errno);
 
 #endif /* UV_WIN_INTERNAL_H_ */

@@ -1,35 +1,60 @@
 'use strict'
 
-const { webidl } = require('../fetch/webidl')
+const { isArrayBuffer } = require('node:util/types')
+const { webidl } = require('../webidl')
 const { URLSerializer } = require('../fetch/data-url')
-const { getGlobalOrigin } = require('../fetch/global')
-const { staticPropertyDescriptors, states, sentCloseFrameState, opcodes, emptyBuffer } = require('./constants')
-const {
-  kWebSocketURL,
-  kReadyState,
-  kController,
-  kBinaryType,
-  kResponse,
-  kSentClose,
-  kByteParser
-} = require('./symbols')
+const { environmentSettingsObject } = require('../fetch/util')
+const { staticPropertyDescriptors, states, sentCloseFrameState, sendHints, opcodes } = require('./constants')
 const {
   isConnecting,
   isEstablished,
-  isClosed,
   isClosing,
+  isClosed,
   isValidSubprotocol,
-  failWebsocketConnection,
-  fireEvent
+  fireEvent,
+  utf8Decode,
+  toArrayBuffer,
+  getURLRecord
 } = require('./util')
-const { establishWebSocketConnection } = require('./connection')
-const { WebsocketFrameSend } = require('./frame')
+const { establishWebSocketConnection, closeWebSocketConnection, failWebsocketConnection } = require('./connection')
 const { ByteParser } = require('./receiver')
-const { kEnumerableProperty, isBlobLike } = require('../../core/util')
+const { kEnumerableProperty } = require('../../core/util')
 const { getGlobalDispatcher } = require('../../global')
-const { types } = require('node:util')
+const { ErrorEvent, CloseEvent, createFastMessageEvent } = require('./events')
+const { SendQueue } = require('./sender')
+const { WebsocketFrameSend } = require('./frame')
+const { channels } = require('../../core/diagnostics')
 
-let experimentalWarned = false
+function getSocketAddress (socket) {
+  if (typeof socket?.address === 'function') {
+    return socket.address()
+  }
+
+  if (typeof socket?.session?.socket?.address === 'function') {
+    return socket.session.socket.address()
+  }
+
+  return null
+}
+
+/**
+ * @typedef {object} Handler
+ * @property {(response: any, extensions?: string[]) => void} onConnectionEstablished
+ * @property {(opcode: number, data: Buffer) => void} onMessage
+ * @property {(error: Error) => void} onParserError
+ * @property {() => void} onParserDrain
+ * @property {(chunk: Buffer) => void} onSocketData
+ * @property {(err: Error) => void} onSocketError
+ * @property {() => void} onSocketClose
+ * @property {(body: Buffer) => void} onPing
+ * @property {(body: Buffer) => void} onPong
+ *
+ * @property {number} readyState
+ * @property {import('stream').Duplex} socket
+ * @property {Set<number>} closeState
+ * @property {import('../fetch/index').Fetch} controller
+ * @property {boolean} [wasEverConnected=false]
+ */
 
 // https://websockets.spec.whatwg.org/#interface-definition
 class WebSocket extends EventTarget {
@@ -44,6 +69,59 @@ class WebSocket extends EventTarget {
   #protocol = ''
   #extensions = ''
 
+  /** @type {SendQueue} */
+  #sendQueue
+
+  /** @type {Handler} */
+  #handler = {
+    onConnectionEstablished: (response, extensions) => this.#onConnectionEstablished(response, extensions),
+    onMessage: (opcode, data) => this.#onMessage(opcode, data),
+    onParserError: (err) => failWebsocketConnection(this.#handler, null, err.message),
+    onParserDrain: () => this.#onParserDrain(),
+    onSocketData: (chunk) => {
+      if (!this.#parser.write(chunk)) {
+        this.#handler.socket.pause()
+      }
+    },
+    onSocketError: (err) => {
+      this.#handler.readyState = states.CLOSING
+
+      if (channels.socketError.hasSubscribers) {
+        channels.socketError.publish(err)
+      }
+
+      this.#handler.socket.destroy()
+    },
+    onSocketClose: () => this.#onSocketClose(),
+    onPing: (body) => {
+      if (channels.ping.hasSubscribers) {
+        channels.ping.publish({
+          payload: body,
+          websocket: this
+        })
+      }
+    },
+    onPong: (body) => {
+      if (channels.pong.hasSubscribers) {
+        channels.pong.publish({
+          payload: body,
+          websocket: this
+        })
+      }
+    },
+
+    readyState: states.CONNECTING,
+    socket: null,
+    closeState: new Set(),
+    controller: null,
+    wasEverConnected: false
+  }
+
+  #url
+  #binaryType
+  /** @type {import('./receiver').ByteParser} */
+  #parser
+
   /**
    * @param {string} url
    * @param {string|string[]} protocols
@@ -51,62 +129,29 @@ class WebSocket extends EventTarget {
   constructor (url, protocols = []) {
     super()
 
-    webidl.argumentLengthCheck(arguments, 1, { header: 'WebSocket constructor' })
+    webidl.util.markAsUncloneable(this)
 
-    if (!experimentalWarned) {
-      experimentalWarned = true
-      process.emitWarning('WebSockets are experimental, expect them to change at any time.', {
-        code: 'UNDICI-WS'
-      })
-    }
+    const prefix = 'WebSocket constructor'
+    webidl.argumentLengthCheck(arguments, 1, prefix)
 
-    const options = webidl.converters['DOMString or sequence<DOMString> or WebSocketInit'](protocols)
+    const options = webidl.converters['DOMString or sequence<DOMString> or WebSocketInit'](protocols, prefix, 'options')
 
     url = webidl.converters.USVString(url)
     protocols = options.protocols
 
     // 1. Let baseURL be this's relevant settings object's API base URL.
-    const baseURL = getGlobalOrigin()
+    const baseURL = environmentSettingsObject.settingsObject.baseUrl
 
-    // 1. Let urlRecord be the result of applying the URL parser to url with baseURL.
-    let urlRecord
+    // 2. Let urlRecord be the result of getting a URL record given url and baseURL.
+    const urlRecord = getURLRecord(url, baseURL)
 
-    try {
-      urlRecord = new URL(url, baseURL)
-    } catch (e) {
-      // 3. If urlRecord is failure, then throw a "SyntaxError" DOMException.
-      throw new DOMException(e, 'SyntaxError')
-    }
-
-    // 4. If urlRecord’s scheme is "http", then set urlRecord’s scheme to "ws".
-    if (urlRecord.protocol === 'http:') {
-      urlRecord.protocol = 'ws:'
-    } else if (urlRecord.protocol === 'https:') {
-      // 5. Otherwise, if urlRecord’s scheme is "https", set urlRecord’s scheme to "wss".
-      urlRecord.protocol = 'wss:'
-    }
-
-    // 6. If urlRecord’s scheme is not "ws" or "wss", then throw a "SyntaxError" DOMException.
-    if (urlRecord.protocol !== 'ws:' && urlRecord.protocol !== 'wss:') {
-      throw new DOMException(
-        `Expected a ws: or wss: protocol, got ${urlRecord.protocol}`,
-        'SyntaxError'
-      )
-    }
-
-    // 7. If urlRecord’s fragment is non-null, then throw a "SyntaxError"
-    //    DOMException.
-    if (urlRecord.hash || urlRecord.href.endsWith('#')) {
-      throw new DOMException('Got fragment', 'SyntaxError')
-    }
-
-    // 8. If protocols is a string, set protocols to a sequence consisting
+    // 3. If protocols is a string, set protocols to a sequence consisting
     //    of just that string.
     if (typeof protocols === 'string') {
       protocols = [protocols]
     }
 
-    // 9. If any of the values in protocols occur more than once or otherwise
+    // 4. If any of the values in protocols occur more than once or otherwise
     //    fail to match the requirements for elements that comprise the value
     //    of `Sec-WebSocket-Protocol` fields as defined by The WebSocket
     //    protocol, then throw a "SyntaxError" DOMException.
@@ -118,29 +163,27 @@ class WebSocket extends EventTarget {
       throw new DOMException('Invalid Sec-WebSocket-Protocol value', 'SyntaxError')
     }
 
-    // 10. Set this's url to urlRecord.
-    this[kWebSocketURL] = new URL(urlRecord.href)
+    // 5. Set this's url to urlRecord.
+    this.#url = new URL(urlRecord.href)
 
-    // 11. Let client be this's relevant settings object.
+    // 6. Let client be this's relevant settings object.
+    const client = environmentSettingsObject.settingsObject
 
-    // 12. Run this step in parallel:
-
-    //    1. Establish a WebSocket connection given urlRecord, protocols,
-    //       and client.
-    this[kController] = establishWebSocketConnection(
+    // 7. Run this step in parallel:
+    // 7.1. Establish a WebSocket connection given urlRecord, protocols,
+    //      and client.
+    this.#handler.controller = establishWebSocketConnection(
       urlRecord,
       protocols,
-      this,
-      (response) => this.#onConnectionEstablished(response),
+      client,
+      this.#handler,
       options
     )
 
     // Each WebSocket object has an associated ready state, which is a
     // number representing the state of the connection. Initially it must
     // be CONNECTING (0).
-    this[kReadyState] = WebSocket.CONNECTING
-
-    this[kSentClose] = sentCloseFrameState.NOT_SENT
+    this.#handler.readyState = WebSocket.CONNECTING
 
     // The extensions attribute must initially return the empty string.
 
@@ -148,7 +191,7 @@ class WebSocket extends EventTarget {
 
     // Each WebSocket object has an associated binary type, which is a
     // BinaryType. Initially it must be "blob".
-    this[kBinaryType] = 'blob'
+    this.#binaryType = 'blob'
   }
 
   /**
@@ -159,102 +202,24 @@ class WebSocket extends EventTarget {
   close (code = undefined, reason = undefined) {
     webidl.brandCheck(this, WebSocket)
 
+    const prefix = 'WebSocket.close'
+
     if (code !== undefined) {
-      code = webidl.converters['unsigned short'](code, { clamp: true })
+      code = webidl.converters['unsigned short'](code, prefix, 'code', webidl.attributes.Clamp)
     }
 
     if (reason !== undefined) {
       reason = webidl.converters.USVString(reason)
     }
 
-    // 1. If code is present, but is neither an integer equal to 1000 nor an
-    //    integer in the range 3000 to 4999, inclusive, throw an
-    //    "InvalidAccessError" DOMException.
-    if (code !== undefined) {
-      if (code !== 1000 && (code < 3000 || code > 4999)) {
-        throw new DOMException('invalid code', 'InvalidAccessError')
-      }
-    }
+    // 1. If code is the special value "missing", then set code to null.
+    code ??= null
 
-    let reasonByteLength = 0
+    // 2. If reason is the special value "missing", then set reason to the empty string.
+    reason ??= ''
 
-    // 2. If reason is present, then run these substeps:
-    if (reason !== undefined) {
-      // 1. Let reasonBytes be the result of encoding reason.
-      // 2. If reasonBytes is longer than 123 bytes, then throw a
-      //    "SyntaxError" DOMException.
-      reasonByteLength = Buffer.byteLength(reason)
-
-      if (reasonByteLength > 123) {
-        throw new DOMException(
-          `Reason must be less than 123 bytes; received ${reasonByteLength}`,
-          'SyntaxError'
-        )
-      }
-    }
-
-    // 3. Run the first matching steps from the following list:
-    if (isClosing(this) || isClosed(this)) {
-      // If this's ready state is CLOSING (2) or CLOSED (3)
-      // Do nothing.
-    } else if (!isEstablished(this)) {
-      // If the WebSocket connection is not yet established
-      // Fail the WebSocket connection and set this's ready state
-      // to CLOSING (2).
-      failWebsocketConnection(this, 'Connection was closed before it was established.')
-      this[kReadyState] = WebSocket.CLOSING
-    } else if (this[kSentClose] === sentCloseFrameState.NOT_SENT) {
-      // If the WebSocket closing handshake has not yet been started
-      // Start the WebSocket closing handshake and set this's ready
-      // state to CLOSING (2).
-      // - If neither code nor reason is present, the WebSocket Close
-      //   message must not have a body.
-      // - If code is present, then the status code to use in the
-      //   WebSocket Close message must be the integer given by code.
-      // - If reason is also present, then reasonBytes must be
-      //   provided in the Close message after the status code.
-
-      this[kSentClose] = sentCloseFrameState.PROCESSING
-
-      const frame = new WebsocketFrameSend()
-
-      // If neither code nor reason is present, the WebSocket Close
-      // message must not have a body.
-
-      // If code is present, then the status code to use in the
-      // WebSocket Close message must be the integer given by code.
-      if (code !== undefined && reason === undefined) {
-        frame.frameData = Buffer.allocUnsafe(2)
-        frame.frameData.writeUInt16BE(code, 0)
-      } else if (code !== undefined && reason !== undefined) {
-        // If reason is also present, then reasonBytes must be
-        // provided in the Close message after the status code.
-        frame.frameData = Buffer.allocUnsafe(2 + reasonByteLength)
-        frame.frameData.writeUInt16BE(code, 0)
-        // the body MAY contain UTF-8-encoded data with value /reason/
-        frame.frameData.write(reason, 2, 'utf-8')
-      } else {
-        frame.frameData = emptyBuffer
-      }
-
-      /** @type {import('stream').Duplex} */
-      const socket = this[kResponse].socket
-
-      socket.write(frame.createFrame(opcodes.CLOSE), (err) => {
-        if (!err) {
-          this[kSentClose] = sentCloseFrameState.SENT
-        }
-      })
-
-      // Upon either sending or receiving a Close control frame, it is said
-      // that _The WebSocket Closing Handshake is Started_ and that the
-      // WebSocket connection is in the CLOSING state.
-      this[kReadyState] = states.CLOSING
-    } else {
-      // Otherwise
-      // Set this's ready state to CLOSING (2).
-      this[kReadyState] = WebSocket.CLOSING
-    }
+    // 3. Close the WebSocket with this, code, and reason.
+    closeWebSocketConnection(this.#handler, code, reason, true)
   }
 
   /**
@@ -264,13 +229,14 @@ class WebSocket extends EventTarget {
   send (data) {
     webidl.brandCheck(this, WebSocket)
 
-    webidl.argumentLengthCheck(arguments, 1, { header: 'WebSocket.send' })
+    const prefix = 'WebSocket.send'
+    webidl.argumentLengthCheck(arguments, 1, prefix)
 
-    data = webidl.converters.WebSocketSendData(data)
+    data = webidl.converters.WebSocketSendData(data, prefix, 'data')
 
     // 1. If this's ready state is CONNECTING, then throw an
     //    "InvalidStateError" DOMException.
-    if (isConnecting(this)) {
+    if (isConnecting(this.#handler.readyState)) {
       throw new DOMException('Sent before connected.', 'InvalidStateError')
     }
 
@@ -278,12 +244,9 @@ class WebSocket extends EventTarget {
     // https://datatracker.ietf.org/doc/html/rfc6455#section-6.1
     // https://datatracker.ietf.org/doc/html/rfc6455#section-5.2
 
-    if (!isEstablished(this) || isClosing(this)) {
+    if (!isEstablished(this.#handler.readyState) || isClosing(this.#handler.readyState)) {
       return
     }
-
-    /** @type {import('stream').Duplex} */
-    const socket = this[kResponse].socket
 
     // If data is a string
     if (typeof data === 'string') {
@@ -298,15 +261,13 @@ class WebSocket extends EventTarget {
       // the bufferedAmount attribute by the number of bytes needed to
       // express the argument as UTF-8.
 
-      const value = Buffer.from(data)
-      const frame = new WebsocketFrameSend(value)
-      const buffer = frame.createFrame(opcodes.TEXT)
+      const buffer = Buffer.from(data)
 
-      this.#bufferedAmount += value.byteLength
-      socket.write(buffer, () => {
-        this.#bufferedAmount -= value.byteLength
-      })
-    } else if (types.isArrayBuffer(data)) {
+      this.#bufferedAmount += buffer.byteLength
+      this.#sendQueue.add(buffer, () => {
+        this.#bufferedAmount -= buffer.byteLength
+      }, sendHints.text)
+    } else if (isArrayBuffer(data)) {
       // If the WebSocket connection is established, and the WebSocket
       // closing handshake has not yet started, then the user agent must
       // send a WebSocket Message comprised of data using a binary frame
@@ -319,14 +280,10 @@ class WebSocket extends EventTarget {
       // increase the bufferedAmount attribute by the length of the
       // ArrayBuffer in bytes.
 
-      const value = Buffer.from(data)
-      const frame = new WebsocketFrameSend(value)
-      const buffer = frame.createFrame(opcodes.BINARY)
-
-      this.#bufferedAmount += value.byteLength
-      socket.write(buffer, () => {
-        this.#bufferedAmount -= value.byteLength
-      })
+      this.#bufferedAmount += data.byteLength
+      this.#sendQueue.add(data, () => {
+        this.#bufferedAmount -= data.byteLength
+      }, sendHints.arrayBuffer)
     } else if (ArrayBuffer.isView(data)) {
       // If the WebSocket connection is established, and the WebSocket
       // closing handshake has not yet started, then the user agent must
@@ -340,16 +297,11 @@ class WebSocket extends EventTarget {
       // not throw an exception must increase the bufferedAmount attribute
       // by the length of data’s buffer in bytes.
 
-      const ab = Buffer.from(data, data.byteOffset, data.byteLength)
-
-      const frame = new WebsocketFrameSend(ab)
-      const buffer = frame.createFrame(opcodes.BINARY)
-
-      this.#bufferedAmount += ab.byteLength
-      socket.write(buffer, () => {
-        this.#bufferedAmount -= ab.byteLength
-      })
-    } else if (isBlobLike(data)) {
+      this.#bufferedAmount += data.byteLength
+      this.#sendQueue.add(data, () => {
+        this.#bufferedAmount -= data.byteLength
+      }, sendHints.typedArray)
+    } else if (webidl.is.Blob(data)) {
       // If the WebSocket connection is established, and the WebSocket
       // closing handshake has not yet started, then the user agent must
       // send a WebSocket Message comprised of data using a binary frame
@@ -361,18 +313,10 @@ class WebSocket extends EventTarget {
       // an exception must increase the bufferedAmount attribute by the size
       // of the Blob object’s raw data, in bytes.
 
-      const frame = new WebsocketFrameSend()
-
-      data.arrayBuffer().then((ab) => {
-        const value = Buffer.from(ab)
-        frame.frameData = value
-        const buffer = frame.createFrame(opcodes.BINARY)
-
-        this.#bufferedAmount += value.byteLength
-        socket.write(buffer, () => {
-          this.#bufferedAmount -= value.byteLength
-        })
-      })
+      this.#bufferedAmount += data.size
+      this.#sendQueue.add(data, () => {
+        this.#bufferedAmount -= data.size
+      }, sendHints.blob)
     }
   }
 
@@ -380,7 +324,7 @@ class WebSocket extends EventTarget {
     webidl.brandCheck(this, WebSocket)
 
     // The readyState getter steps are to return this's ready state.
-    return this[kReadyState]
+    return this.#handler.readyState
   }
 
   get bufferedAmount () {
@@ -393,7 +337,7 @@ class WebSocket extends EventTarget {
     webidl.brandCheck(this, WebSocket)
 
     // The url getter steps are to return this's url, serialized.
-    return URLSerializer(this[kWebSocketURL])
+    return URLSerializer(this.#url)
   }
 
   get extensions () {
@@ -421,9 +365,11 @@ class WebSocket extends EventTarget {
       this.removeEventListener('open', this.#events.open)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('open', listener)
       this.#events.open = fn
-      this.addEventListener('open', fn)
     } else {
       this.#events.open = null
     }
@@ -442,9 +388,11 @@ class WebSocket extends EventTarget {
       this.removeEventListener('error', this.#events.error)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('error', listener)
       this.#events.error = fn
-      this.addEventListener('error', fn)
     } else {
       this.#events.error = null
     }
@@ -463,9 +411,11 @@ class WebSocket extends EventTarget {
       this.removeEventListener('close', this.#events.close)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('close', listener)
       this.#events.close = fn
-      this.addEventListener('close', fn)
     } else {
       this.#events.close = null
     }
@@ -484,9 +434,11 @@ class WebSocket extends EventTarget {
       this.removeEventListener('message', this.#events.message)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('message', listener)
       this.#events.message = fn
-      this.addEventListener('message', fn)
     } else {
       this.#events.message = null
     }
@@ -495,37 +447,41 @@ class WebSocket extends EventTarget {
   get binaryType () {
     webidl.brandCheck(this, WebSocket)
 
-    return this[kBinaryType]
+    return this.#binaryType
   }
 
   set binaryType (type) {
     webidl.brandCheck(this, WebSocket)
 
     if (type !== 'blob' && type !== 'arraybuffer') {
-      this[kBinaryType] = 'blob'
+      this.#binaryType = 'blob'
     } else {
-      this[kBinaryType] = type
+      this.#binaryType = type
     }
   }
 
   /**
    * @see https://websockets.spec.whatwg.org/#feedback-from-the-protocol
    */
-  #onConnectionEstablished (response) {
-    // processResponse is called when the "response’s header list has been received and initialized."
+  #onConnectionEstablished (response, parsedExtensions) {
+    // processResponse is called when the "response's header list has been received and initialized."
     // once this happens, the connection is open
-    this[kResponse] = response
+    this.#handler.socket = response.socket
 
-    const parser = new ByteParser(this)
-    parser.on('drain', function onParserDrain () {
-      this.ws[kResponse].socket.resume()
+    // Get maxPayloadSize from dispatcher options
+    const maxPayloadSize = this.#handler.controller.dispatcher?.webSocketOptions?.maxPayloadSize
+
+    const parser = new ByteParser(this.#handler, parsedExtensions, {
+      maxPayloadSize
     })
+    parser.on('drain', () => this.#handler.onParserDrain())
+    parser.on('error', (err) => this.#handler.onParserError(err))
 
-    response.socket.ws = this
-    this[kByteParser] = parser
+    this.#parser = parser
+    this.#sendQueue = new SendQueue(response.socket)
 
     // 1. Change the ready state to OPEN (1).
-    this[kReadyState] = states.OPEN
+    this.#handler.readyState = states.OPEN
 
     // 2. Change the extensions attribute’s value to the extensions in use, if
     //    it is not the null value.
@@ -547,8 +503,159 @@ class WebSocket extends EventTarget {
 
     // 4. Fire an event named open at the WebSocket object.
     fireEvent('open', this)
+
+    if (channels.open.hasSubscribers) {
+      // Convert headers to a plain object for the event
+      const headers = response.headersList.entries
+      channels.open.publish({
+        address: getSocketAddress(response.socket),
+        protocol: this.#protocol,
+        extensions: this.#extensions,
+        websocket: this,
+        handshakeResponse: {
+          status: response.status,
+          statusText: response.statusText,
+          headers
+        }
+      })
+    }
+  }
+
+  #onMessage (type, data) {
+    // 1. If ready state is not OPEN (1), then return.
+    if (this.#handler.readyState !== states.OPEN) {
+      return
+    }
+
+    // 2. Let dataForEvent be determined by switching on type and binary type:
+    let dataForEvent
+
+    if (type === opcodes.TEXT) {
+      // -> type indicates that the data is Text
+      //      a new DOMString containing data
+      try {
+        dataForEvent = utf8Decode(data)
+      } catch {
+        failWebsocketConnection(this.#handler, 1007, 'Received invalid UTF-8 in text frame.')
+        return
+      }
+    } else if (type === opcodes.BINARY) {
+      if (this.#binaryType === 'blob') {
+        // -> type indicates that the data is Binary and binary type is "blob"
+        //      a new Blob object, created in the relevant Realm of the WebSocket
+        //      object, that represents data as its raw data
+        dataForEvent = new Blob([data])
+      } else {
+        // -> type indicates that the data is Binary and binary type is "arraybuffer"
+        //      a new ArrayBuffer object, created in the relevant Realm of the
+        //      WebSocket object, whose contents are data
+        dataForEvent = toArrayBuffer(data)
+      }
+    }
+
+    // 3. Fire an event named message at the WebSocket object, using MessageEvent,
+    //    with the origin attribute initialized to the serialization of the WebSocket
+    //    object’s url's origin, and the data attribute initialized to dataForEvent.
+    fireEvent('message', this, createFastMessageEvent, {
+      origin: this.#url.origin,
+      data: dataForEvent
+    })
+  }
+
+  #onParserDrain () {
+    this.#handler.socket.resume()
+  }
+
+  /**
+   * @see https://websockets.spec.whatwg.org/#feedback-from-the-protocol
+   * @see https://datatracker.ietf.org/doc/html/rfc6455#section-7.1.4
+   */
+  #onSocketClose () {
+    // If the TCP connection was closed after the
+    // WebSocket closing handshake was completed, the WebSocket connection
+    // is said to have been closed _cleanly_.
+    const wasClean =
+      this.#handler.closeState.has(sentCloseFrameState.SENT) &&
+      this.#handler.closeState.has(sentCloseFrameState.RECEIVED)
+
+    let code = 1005
+    let reason = ''
+
+    const result = this.#parser?.closingInfo
+
+    if (result && !result.error) {
+      code = result.code ?? 1005
+      reason = result.reason
+    }
+
+    // 1. Change the ready state to CLOSED (3).
+    this.#handler.readyState = states.CLOSED
+
+    // 2. If the user agent was required to fail the WebSocket
+    //    connection, or if the WebSocket connection was closed
+    //    after being flagged as full, fire an event named error
+    //    at the WebSocket object.
+    if (!this.#handler.closeState.has(sentCloseFrameState.RECEIVED)) {
+      // If _The WebSocket
+      // Connection is Closed_ and no Close control frame was received by the
+      // endpoint (such as could occur if the underlying transport connection
+      // is lost), _The WebSocket Connection Close Code_ is considered to be
+      // 1006.
+      code = 1006
+
+      fireEvent('error', this, (type, init) => new ErrorEvent(type, init), {
+        error: new TypeError(reason)
+      })
+    }
+
+    // 3. Fire an event named close at the WebSocket object,
+    //    using CloseEvent, with the wasClean attribute
+    //    initialized to true if the connection closed cleanly
+    //    and false otherwise, the code attribute initialized to
+    //    the WebSocket connection close code, and the reason
+    //    attribute initialized to the result of applying UTF-8
+    //    decode without BOM to the WebSocket connection close
+    //    reason.
+    // TODO: process.nextTick
+    fireEvent('close', this, (type, init) => new CloseEvent(type, init), {
+      wasClean, code, reason
+    })
+
+    if (channels.close.hasSubscribers) {
+      channels.close.publish({
+        websocket: this,
+        code,
+        reason
+      })
+    }
+  }
+
+  /**
+   * @param {WebSocket} ws
+   * @param {Buffer|undefined} buffer
+   */
+  static ping (ws, buffer) {
+    if (Buffer.isBuffer(buffer)) {
+      if (buffer.length > 125) {
+        throw new TypeError('A PING frame cannot have a body larger than 125 bytes.')
+      }
+    } else if (buffer !== undefined) {
+      throw new TypeError('Expected buffer payload')
+    }
+
+    // An endpoint MAY send a Ping frame any time after the connection is
+    // established and before the connection is closed.
+    const readyState = ws.#handler.readyState
+
+    if (isEstablished(readyState) && !isClosing(readyState) && !isClosed(readyState)) {
+      const frame = new WebsocketFrameSend(buffer)
+      ws.#handler.socket.write(frame.createFrame(opcodes.PING))
+    }
   }
 }
+
+const { ping } = WebSocket
+Reflect.deleteProperty(WebSocket, 'ping')
 
 // https://websockets.spec.whatwg.org/#dom-websocket-connecting
 WebSocket.CONNECTING = WebSocket.prototype.CONNECTING = states.CONNECTING
@@ -595,29 +702,25 @@ webidl.converters['sequence<DOMString>'] = webidl.sequenceConverter(
   webidl.converters.DOMString
 )
 
-webidl.converters['DOMString or sequence<DOMString>'] = function (V) {
-  if (webidl.util.Type(V) === 'Object' && Symbol.iterator in V) {
+webidl.converters['DOMString or sequence<DOMString>'] = function (V, prefix, argument) {
+  if (webidl.util.Type(V) === webidl.util.Types.OBJECT && Symbol.iterator in V) {
     return webidl.converters['sequence<DOMString>'](V)
   }
 
-  return webidl.converters.DOMString(V)
+  return webidl.converters.DOMString(V, prefix, argument)
 }
 
-// This implements the propsal made in https://github.com/whatwg/websockets/issues/42
+// This implements the proposal made in https://github.com/whatwg/websockets/issues/42
 webidl.converters.WebSocketInit = webidl.dictionaryConverter([
   {
     key: 'protocols',
     converter: webidl.converters['DOMString or sequence<DOMString>'],
-    get defaultValue () {
-      return []
-    }
+    defaultValue: () => []
   },
   {
     key: 'dispatcher',
-    converter: (V) => V,
-    get defaultValue () {
-      return getGlobalDispatcher()
-    }
+    converter: webidl.converters.any,
+    defaultValue: () => getGlobalDispatcher()
   },
   {
     key: 'headers',
@@ -626,7 +729,7 @@ webidl.converters.WebSocketInit = webidl.dictionaryConverter([
 ])
 
 webidl.converters['DOMString or sequence<DOMString> or WebSocketInit'] = function (V) {
-  if (webidl.util.Type(V) === 'Object' && !(Symbol.iterator in V)) {
+  if (webidl.util.Type(V) === webidl.util.Types.OBJECT && !(Symbol.iterator in V)) {
     return webidl.converters.WebSocketInit(V)
   }
 
@@ -634,13 +737,13 @@ webidl.converters['DOMString or sequence<DOMString> or WebSocketInit'] = functio
 }
 
 webidl.converters.WebSocketSendData = function (V) {
-  if (webidl.util.Type(V) === 'Object') {
-    if (isBlobLike(V)) {
-      return webidl.converters.Blob(V, { strict: false })
+  if (webidl.util.Type(V) === webidl.util.Types.OBJECT) {
+    if (webidl.is.Blob(V)) {
+      return V
     }
 
-    if (ArrayBuffer.isView(V) || types.isArrayBuffer(V)) {
-      return webidl.converters.BufferSource(V)
+    if (webidl.is.BufferSource(V)) {
+      return V
     }
   }
 
@@ -648,5 +751,6 @@ webidl.converters.WebSocketSendData = function (V) {
 }
 
 module.exports = {
-  WebSocket
+  WebSocket,
+  ping
 }

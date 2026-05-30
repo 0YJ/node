@@ -15,6 +15,14 @@ IF (CARES_SHARED)
 	# Include resource file in windows builds for versioned DLLs
 	IF (WIN32)
 		TARGET_SOURCES (${PROJECT_NAME} PRIVATE cares.rc)
+		
+		# Check for use of llvm-rc (implies clang is being used). We need to set the
+		# compile flags to use the correct codepage for the resource compiler.
+		# This is needed for the copyright symbol to be encoded correctly.
+		# The default codepage is 1252 (Windows Latin-1) but llvm-rc defaults to UTF-8.
+		if (CMAKE_RC_COMPILER MATCHES "llvm-rc")
+			set_source_files_properties(cares.rc PROPERTIES COMPILE_FLAGS "/C 1252")
+		endif()
 	ENDIF()
 
 	# Convert CARES_LIB_VERSIONINFO libtool version format into VERSION and SOVERSION
@@ -36,6 +44,10 @@ IF (CARES_SHARED)
 		C_STANDARD                   90
 	)
 
+	IF (ANDROID)
+		SET_TARGET_PROPERTIES (${PROJECT_NAME} PROPERTIES C_STANDARD 99)
+	ENDIF ()
+
 	IF (CARES_SYMBOL_HIDING)
 		SET_TARGET_PROPERTIES (${PROJECT_NAME} PROPERTIES
 			C_VISIBILITY_PRESET hidden
@@ -49,6 +61,7 @@ IF (CARES_SHARED)
 		       "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
 		       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+		        "${CMAKE_CURRENT_SOURCE_DIR}/include"
 	)
 
 	TARGET_COMPILE_DEFINITIONS (${PROJECT_NAME} PRIVATE HAVE_CONFIG_H=1 CARES_BUILDING_LIBRARY)
@@ -87,10 +100,26 @@ IF (CARES_STATIC)
 
 	SET_TARGET_PROPERTIES (${LIBNAME} PROPERTIES
 		EXPORT_NAME                  cares${STATIC_SUFFIX}
-		OUTPUT_NAME                  cares${STATIC_SUFFIX}
 		COMPILE_PDB_NAME             cares${STATIC_SUFFIX}
 		C_STANDARD                   90
 	)
+
+	# On Windows, the output name should have a static suffix since otherwise
+	# we would have conflicting output names (libcares.lib) for the link
+	# library.
+	# However on Unix-like systems, we typically have something like
+	# libcares.so  for shared libraries  and libcares.a for static
+	# libraries, so these don't conflict.
+	# This behavior better emulates what happens with autotools builds
+	IF (WIN32)
+		SET_TARGET_PROPERTIES(${LIBNAME} PROPERTIES OUTPUT_NAME cares${STATIC_SUFFIX})
+	ELSE ()
+		SET_TARGET_PROPERTIES(${LIBNAME} PROPERTIES OUTPUT_NAME cares)
+	ENDIF()
+
+	IF (ANDROID)
+		SET_TARGET_PROPERTIES (${LIBNAME} PROPERTIES C_STANDARD 99)
+	ENDIF ()
 
 	IF (CARES_STATIC_PIC)
 		SET_TARGET_PROPERTIES (${LIBNAME} PROPERTIES POSITION_INDEPENDENT_CODE True)
@@ -102,6 +131,7 @@ IF (CARES_STATIC)
 		       "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
 		       "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>"
 		PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+		        "${CMAKE_CURRENT_SOURCE_DIR}/include"
 	)
 
 	TARGET_COMPILE_DEFINITIONS (${LIBNAME} PRIVATE HAVE_CONFIG_H=1 CARES_BUILDING_LIBRARY)

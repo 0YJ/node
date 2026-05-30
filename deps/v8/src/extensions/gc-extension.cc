@@ -4,6 +4,7 @@
 
 #include "src/extensions/gc-extension.h"
 
+#include "include/v8-exception.h"
 #include "include/v8-isolate.h"
 #include "include/v8-maybe.h"
 #include "include/v8-microtask-queue.h"
@@ -19,29 +20,40 @@
 #include "src/profiler/heap-profiler.h"
 #include "src/tasks/cancelable-task.h"
 
-namespace v8 {
-namespace internal {
-
+namespace v8::internal {
 namespace {
+const char kDefaultHeapSnapshotFileName[] = "heap.heapsnapshot";
 
 enum class GCType { kMinor, kMajor, kMajorWithSnapshot };
 enum class ExecutionType { kAsync, kSync };
+enum class Flavor { kRegular, kLastResort };
 
 struct GCOptions {
   static GCOptions GetDefault() {
-    return {GCType::kMajor, ExecutionType::kSync, "heap.heapsnapshot"};
+    const char* filename = v8_flags.heap_snapshot_path
+                               ? v8_flags.heap_snapshot_path
+                               : kDefaultHeapSnapshotFileName;
+    return {GCType::kMajor, ExecutionType::kSync, Flavor::kRegular, filename};
   }
   static GCOptions GetDefaultForTruthyWithoutOptionsBag() {
-    return {GCType::kMinor, ExecutionType::kSync, "heap.heapsnapshot"};
+    const char* filename = v8_flags.heap_snapshot_path
+                               ? v8_flags.heap_snapshot_path
+                               : kDefaultHeapSnapshotFileName;
+    return {GCType::kMinor, ExecutionType::kSync, Flavor::kRegular, filename};
   }
+
+  // Used with Nothing<GCOptions>.
+  GCOptions() = default;
 
   GCType type;
   ExecutionType execution;
+  Flavor flavor;
   std::string filename;
 
  private:
-  GCOptions(GCType type, ExecutionType execution, std::string filename)
-      : type(type), execution(execution), filename(filename) {}
+  GCOptions(GCType type, ExecutionType execution, Flavor flavor,
+            std::string filename)
+      : type(type), execution(execution), flavor(flavor), filename(filename) {}
 };
 
 MaybeLocal<v8::String> ReadProperty(v8::Isolate* isolate,
@@ -50,11 +62,9 @@ MaybeLocal<v8::String> ReadProperty(v8::Isolate* isolate,
                                     const char* key) {
   auto k = v8::String::NewFromUtf8(isolate, key).ToLocalChecked();
   auto maybe_property = object->Get(ctx, k);
-  // Handle the exception.
-  if (maybe_property.IsEmpty()) return MaybeLocal<v8::String>();
-  auto property = maybe_property.ToLocalChecked();
-  if (!property->IsString()) {
-    return MaybeLocal<v8::String>();
+  v8::Local<v8::Value> property;
+  if (!maybe_property.ToLocal(&property) || !property->IsString()) {
+    return {};
   }
   return MaybeLocal<v8::String>(property.As<v8::String>());
 }
@@ -97,6 +107,22 @@ void ParseExecution(v8::Isolate* isolate,
   }
 }
 
+void ParseFlavor(v8::Isolate* isolate, MaybeLocal<v8::String> maybe_execution,
+                 GCOptions* options, bool* found_options_object) {
+  if (maybe_execution.IsEmpty()) return;
+
+  auto type = maybe_execution.ToLocalChecked();
+  if (type->StrictEquals(
+          v8::String::NewFromUtf8(isolate, "regular").ToLocalChecked())) {
+    *found_options_object = true;
+    options->flavor = Flavor::kRegular;
+  } else if (type->StrictEquals(v8::String::NewFromUtf8(isolate, "last-resort")
+                                    .ToLocalChecked())) {
+    *found_options_object = true;
+    options->flavor = Flavor::kLastResort;
+  }
+}
+
 Maybe<GCOptions> Parse(v8::Isolate* isolate,
                        const v8::FunctionCallbackInfo<v8::Value>& info) {
   DCHECK(ValidateCallbackInfo(info));
@@ -113,18 +139,38 @@ Maybe<GCOptions> Parse(v8::Isolate* isolate,
     auto ctx = isolate->GetCurrentContext();
     auto param = v8::Local<v8::Object>::Cast(info[0]);
 
+    v8::TryCatch catch_block(isolate);
     ParseType(isolate, ReadProperty(isolate, ctx, param, "type"), &options,
               &found_options_object);
+    if (catch_block.HasCaught()) {
+      catch_block.ReThrow();
+      return Nothing<GCOptions>();
+    }
     ParseExecution(isolate, ReadProperty(isolate, ctx, param, "execution"),
                    &options, &found_options_object);
+    if (catch_block.HasCaught()) {
+      catch_block.ReThrow();
+      return Nothing<GCOptions>();
+    }
+    ParseFlavor(isolate, ReadProperty(isolate, ctx, param, "flavor"), &options,
+                &found_options_object);
+    if (catch_block.HasCaught()) {
+      catch_block.ReThrow();
+      return Nothing<GCOptions>();
+    }
 
     if (options.type == GCType::kMajorWithSnapshot) {
       auto maybe_filename = ReadProperty(isolate, ctx, param, "filename");
+      if (catch_block.HasCaught()) {
+        catch_block.ReThrow();
+        return Nothing<GCOptions>();
+      }
       Local<v8::String> filename;
       if (maybe_filename.ToLocal(&filename)) {
-        std::unique_ptr<char[]> buffer(
-            new char[filename->Utf8Length(isolate) + 1]);
-        filename->WriteUtf8(isolate, buffer.get());
+        size_t buffer_size = filename->Utf8LengthV2(isolate) + 1;
+        std::unique_ptr<char[]> buffer(new char[buffer_size]);
+        filename->WriteUtf8V2(isolate, buffer.get(), buffer_size,
+                              v8::String::WriteFlags::kNullTerminate);
         options.filename = std::string(buffer.get());
         // Not setting found_options_object as the option only makes sense with
         // properly set type anyways.
@@ -147,8 +193,8 @@ void InvokeGC(v8::Isolate* isolate, const GCOptions gc_options) {
   EmbedderStackStateScope stack_scope(
       heap,
       gc_options.execution == ExecutionType::kAsync
-          ? EmbedderStackStateScope::kImplicitThroughTask
-          : EmbedderStackStateScope::kExplicitInvocation,
+          ? EmbedderStackStateOrigin::kImplicitThroughTask
+          : EmbedderStackStateOrigin::kExplicitInvocation,
       gc_options.execution == ExecutionType::kAsync
           ? StackState::kNoHeapPointers
           : StackState::kMayContainHeapPointers);
@@ -158,16 +204,24 @@ void InvokeGC(v8::Isolate* isolate, const GCOptions gc_options) {
                            kGCCallbackFlagForced);
       break;
     case GCType::kMajor:
-      heap->PreciseCollectAllGarbage(i::GCFlag::kNoFlags,
-                                     i::GarbageCollectionReason::kTesting,
-                                     kGCCallbackFlagForced);
+      switch (gc_options.flavor) {
+        case Flavor::kRegular:
+          heap->PreciseCollectAllGarbage(i::GCFlag::kNoFlags,
+                                         i::GarbageCollectionReason::kTesting,
+                                         kGCCallbackFlagForced);
+          break;
+        case Flavor::kLastResort:
+          heap->CollectAllAvailableGarbage(
+              i::GarbageCollectionReason::kTesting);
+
+          break;
+      }
       break;
     case GCType::kMajorWithSnapshot:
       heap->PreciseCollectAllGarbage(i::GCFlag::kNoFlags,
                                      i::GarbageCollectionReason::kTesting,
                                      kGCCallbackFlagForced);
-      i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-      HeapProfiler* heap_profiler = i_isolate->heap_profiler();
+      HeapProfiler* heap_profiler = heap->heap_profiler();
       // Since this API is intended for V8 devs, we do not treat globals as
       // roots here on purpose.
       v8::HeapProfiler::HeapSnapshotOptions options;
@@ -182,8 +236,6 @@ void InvokeGC(v8::Isolate* isolate, const GCOptions gc_options) {
 
 class AsyncGC final : public CancelableTask {
  public:
-  ~AsyncGC() final = default;
-
   AsyncGC(v8::Isolate* isolate, v8::Local<v8::Promise::Resolver> resolver,
           GCOptions options)
       : CancelableTask(reinterpret_cast<Isolate*>(isolate)),
@@ -193,6 +245,20 @@ class AsyncGC final : public CancelableTask {
         options_(options) {}
   AsyncGC(const AsyncGC&) = delete;
   AsyncGC& operator=(const AsyncGC&) = delete;
+
+  ~AsyncGC() final {
+    // Check if the task was running and not cancelled.
+    Status previous;
+    if (TryRun(&previous) || previous == kRunning) {
+      ctx_.Reset();
+      resolver_.Reset();
+    } else {
+      DCHECK_EQ(previous, kCanceled);
+      // The task is never cancelled manually but only on Isolate tear down
+      // which destroyes the handles unconditionally. As such, this doesn't
+      // create leaks.
+    }
+  }
 
   void RunInternal() final {
     v8::HandleScope scope(isolate_);
@@ -206,8 +272,11 @@ class AsyncGC final : public CancelableTask {
 
  private:
   v8::Isolate* isolate_;
-  v8::Global<v8::Context> ctx_;
-  v8::Global<v8::Promise::Resolver> resolver_;
+  // We use Persistent and not Global here because d8 can terminate the main
+  // thread prematurely (with `d8.terminate()`) while an AsyncGC task is still
+  // scheduled. In such a case we must not destroy the Persistent below.
+  v8::Persistent<v8::Context> ctx_;
+  v8::Persistent<v8::Promise::Resolver> resolver_;
   GCOptions options_;
 };
 
@@ -228,9 +297,11 @@ void GCExtension::GC(const v8::FunctionCallbackInfo<v8::Value>& info) {
     return;
   }
 
-  auto maybe_options = Parse(isolate, info);
-  if (maybe_options.IsNothing()) return;
-  GCOptions options = maybe_options.ToChecked();
+  GCOptions options;
+  if (!Parse(isolate, info).To(&options)) {
+    // Parsing ran into an exception. Just bail out without GC in this case.
+    return;
+  }
   switch (options.execution) {
     case ExecutionType::kSync:
       InvokeGC(isolate, options);
@@ -249,5 +320,4 @@ void GCExtension::GC(const v8::FunctionCallbackInfo<v8::Value>& info) {
   }
 }
 
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal

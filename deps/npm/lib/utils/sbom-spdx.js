@@ -1,6 +1,6 @@
 
-const crypto = require('crypto')
-const normalizeData = require('normalize-package-data')
+const crypto = require('node:crypto')
+const PackageJson = require('@npmcli/package-json')
 const npa = require('npm-package-arg')
 const ssri = require('ssri')
 
@@ -26,6 +26,16 @@ const spdxOutput = ({ npm, nodes, packageType }) => {
   const uuid = crypto.randomUUID()
   const ns = `http://spdx.org/spdxdocs/${npa(rootID).escapedName}-${rootNode.version}-${uuid}`
 
+  // Create list of child nodes w/ unique IDs
+  const childNodeMap = new Map()
+  for (const item of childNodes) {
+    const id = toSpdxID(item)
+    if (!childNodeMap.has(id)) {
+      childNodeMap.set(id, item)
+    }
+  }
+  const uniqueChildNodes = Array.from(childNodeMap.values())
+
   const relationships = []
   const seen = new Set()
   for (let node of nodes) {
@@ -38,11 +48,23 @@ const spdxOutput = ({ npm, nodes, packageType }) => {
     }
     seen.add(node)
 
+    // A node can have multiple outgoing edges resolving to the same
+    // `name@version` of the same edge type (e.g. via npm aliases), which
+    // would produce identical relationship triples. Dedupe per source node.
+    const seenRels = new Set()
     const rels = [...node.edgesOut.values()]
       // Filter out edges that are linking to nodes not in the list
       .filter(edge => nodes.find(n => n === edge.to))
       .map(edge => toSpdxRelationship(node, edge))
       .filter(rel => rel)
+      .filter(rel => {
+        const key = `${rel.spdxElementId}|${rel.relatedSpdxElement}|${rel.relationshipType}`
+        if (seenRels.has(key)) {
+          return false
+        }
+        seenRels.add(key)
+        return true
+      })
 
     relationships.push(...rels)
   }
@@ -65,7 +87,7 @@ const spdxOutput = ({ npm, nodes, packageType }) => {
       ],
     },
     documentDescribes: [toSpdxID(rootNode)],
-    packages: [toSpdxItem(rootNode, { packageType }), ...childNodes.map(toSpdxItem)],
+    packages: [toSpdxItem(rootNode, { packageType }), ...uniqueChildNodes.map(toSpdxItem)],
     relationships: [
       {
         spdxElementId: SPDX_IDENTIFER,
@@ -80,7 +102,9 @@ const spdxOutput = ({ npm, nodes, packageType }) => {
 }
 
 const toSpdxItem = (node, { packageType }) => {
-  normalizeData(node.package)
+  const toNormalize = new PackageJson()
+  toNormalize.fromContent(node.package).normalize({ steps: ['normalizeData'] })
+  node.package = toNormalize.content
 
   // Calculate purl from package spec
   let spec = npa(node.pkgid)
@@ -98,6 +122,11 @@ const toSpdxItem = (node, { packageType }) => {
     if (typeof license === 'object') {
       license = license.type
     }
+  } else if (Array.isArray(node.package?.licenses)) {
+    license = node.package.licenses
+      .map(l => (typeof l === 'object' ? l.type : l))
+      .filter(Boolean)
+      .join(' OR ')
   }
 
   const pkg = {
@@ -173,7 +202,7 @@ const isGitNode = (node) => {
   try {
     const { type } = npa(node.resolved)
     return type === 'git' || type === 'hosted'
-  } catch (err) {
+  } catch {
     /* istanbul ignore next */
     return false
   }

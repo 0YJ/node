@@ -56,9 +56,9 @@ Handle<Code> BuildCaller(Isolate* isolate, CallDescriptor* call_descriptor,
 }
 
 // Setup function, which calls "caller".
-Handle<Code> BuildSetupFunction(Isolate* isolate,
-                                CallDescriptor* caller_descriptor,
-                                CallDescriptor* callee_descriptor) {
+DirectHandle<Code> BuildSetupFunction(Isolate* isolate,
+                                      CallDescriptor* caller_descriptor,
+                                      CallDescriptor* callee_descriptor) {
   CodeAssemblerTester tester(isolate, JSParameterCount(0));
   CodeStubAssembler assembler(tester.state());
   std::vector<Node*> params;
@@ -95,10 +95,11 @@ CallDescriptor* CreateDescriptorForStackArguments(Zone* zone, int param_slots) {
 
   return zone->New<CallDescriptor>(
       CallDescriptor::kCallCodeObject,  // kind
+      kCodeEntrypointTagForTesting,     // tag
       MachineType::AnyTagged(),         // target MachineType
       LinkageLocation::ForAnyRegister(
           MachineType::AnyTagged()),  // target location
-      locations.Build(),              // location_sig
+      locations.Get(),                // location_sig
       param_slots,                    // stack parameter slots
       Operator::kNoProperties,        // properties
       kNoCalleeSaved,                 // callee-saved registers
@@ -118,13 +119,13 @@ class RunTailCallsTest : public TestWithContextAndZone {
         CreateDescriptorForStackArguments(zone(), n);
     CallDescriptor* callee_descriptor =
         CreateDescriptorForStackArguments(zone(), m);
-    Handle<Code> setup =
+    DirectHandle<Code> setup =
         BuildSetupFunction(isolate, caller_descriptor, callee_descriptor);
     FunctionTester ft(isolate, setup, 0);
-    Handle<Object> result = ft.Call().ToHandleChecked();
+    DirectHandle<Object> result = ft.Call().ToHandleChecked();
     int expected = 0;
     for (int i = 0; i < m; ++i) expected += (i + 1) * i;
-    CHECK_EQ(expected, Smi::cast(*result).value());
+    CHECK_EQ(expected, Cast<Smi>(*result).value());
   }
 };
 

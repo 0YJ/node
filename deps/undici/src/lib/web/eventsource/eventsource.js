@@ -3,14 +3,13 @@
 const { pipeline } = require('node:stream')
 const { fetching } = require('../fetch')
 const { makeRequest } = require('../fetch/request')
-const { getGlobalOrigin } = require('../fetch/global')
-const { webidl } = require('../fetch/webidl')
+const { webidl } = require('../webidl')
 const { EventSourceStream } = require('./eventsource-stream')
 const { parseMIMEType } = require('../fetch/data-url')
-const { MessageEvent } = require('../websocket/events')
+const { createFastMessageEvent } = require('../websocket/events')
 const { isNetworkError } = require('../fetch/response')
-const { delay } = require('./util')
 const { kEnumerableProperty } = require('../../core/util')
+const { environmentSettingsObject } = require('../fetch/util')
 
 let experimentalWarned = false
 
@@ -28,7 +27,8 @@ const defaultReconnectionTime = 3000
 
 /**
  * The readyState attribute represents the state of the connection.
- * @enum
+ * @typedef ReadyState
+ * @type {0|1|2}
  * @readonly
  * @see https://html.spec.whatwg.org/multipage/server-sent-events.html#dom-eventsource-readystate-dev
  */
@@ -66,12 +66,6 @@ const ANONYMOUS = 'anonymous'
 const USE_CREDENTIALS = 'use-credentials'
 
 /**
- * @typedef {object} EventSourceInit
- * @property {boolean} [withCredentials] indicates whether the request
- * should include credentials.
- */
-
-/**
  * The EventSource interface is used to receive server-sent events. It
  * connects to a server over HTTP and receives events in text/event-stream
  * format without closing the connection.
@@ -86,33 +80,38 @@ class EventSource extends EventTarget {
     message: null
   }
 
-  #url = null
+  #url
   #withCredentials = false
 
+  /**
+   * @type {ReadyState}
+   */
   #readyState = CONNECTING
 
   #request = null
   #controller = null
 
+  #dispatcher
+
   /**
-   * @type {object}
-   * @property {string} lastEventId
-   * @property {number} reconnectionTime
-   * @property {any} reconnectionTimer
+   * @type {import('./eventsource-stream').eventSourceSettings}
    */
-  #settings = null
+  #state
 
   /**
    * Creates a new EventSource object.
    * @param {string} url
-   * @param {EventSourceInit} [eventSourceInitDict]
+   * @param {EventSourceInit} [eventSourceInitDict={}]
    * @see https://html.spec.whatwg.org/multipage/server-sent-events.html#the-eventsource-interface
    */
   constructor (url, eventSourceInitDict = {}) {
     // 1. Let ev be a new EventSource object.
     super()
 
-    webidl.argumentLengthCheck(arguments, 1, { header: 'EventSource constructor' })
+    webidl.util.markAsUncloneable(this)
+
+    const prefix = 'EventSource constructor'
+    webidl.argumentLengthCheck(arguments, 1, prefix)
 
     if (!experimentalWarned) {
       experimentalWarned = true
@@ -122,25 +121,24 @@ class EventSource extends EventTarget {
     }
 
     url = webidl.converters.USVString(url)
-    eventSourceInitDict = webidl.converters.EventSourceInitDict(eventSourceInitDict)
+    eventSourceInitDict = webidl.converters.EventSourceInitDict(eventSourceInitDict, prefix, 'eventSourceInitDict')
+
+    this.#dispatcher = eventSourceInitDict.node.dispatcher || eventSourceInitDict.dispatcher
+    this.#state = {
+      lastEventId: '',
+      reconnectionTime: eventSourceInitDict.node.reconnectionTime
+    }
 
     // 2. Let settings be ev's relevant settings object.
     // https://html.spec.whatwg.org/multipage/webappapis.html#environment-settings-object
-    this.#settings = {
-      origin: getGlobalOrigin(),
-      policyContainer: {
-        referrerPolicy: 'no-referrer'
-      },
-      lastEventId: '',
-      reconnectionTime: defaultReconnectionTime
-    }
+    const settings = environmentSettingsObject
 
     let urlRecord
 
     try {
       // 3. Let urlRecord be the result of encoding-parsing a URL given url, relative to settings.
-      urlRecord = new URL(url, this.#settings.origin)
-      this.#settings.origin = urlRecord.origin
+      urlRecord = new URL(url, settings.settingsObject.baseUrl)
+      this.#state.origin = urlRecord.origin
     } catch (e) {
       // 4. If urlRecord is failure, then throw a "SyntaxError" DOMException.
       throw new DOMException(e, 'SyntaxError')
@@ -155,7 +153,7 @@ class EventSource extends EventTarget {
     // 7. If the value of eventSourceInitDict's withCredentials member is true,
     // then set corsAttributeState to Use Credentials and set ev's
     // withCredentials attribute to true.
-    if (eventSourceInitDict.withCredentials) {
+    if (eventSourceInitDict.withCredentials === true) {
       corsAttributeState = USE_CREDENTIALS
       this.#withCredentials = true
     }
@@ -174,7 +172,7 @@ class EventSource extends EventTarget {
     }
 
     // 9. Set request's client to settings.
-    initRequest.client = this.#settings
+    initRequest.client = environmentSettingsObject.settingsObject
 
     // 10. User agents may set (`Accept`, `text/event-stream`) in request's header list.
     initRequest.headersList = [['accept', { name: 'accept', value: 'text/event-stream' }]]
@@ -196,7 +194,7 @@ class EventSource extends EventTarget {
   /**
    * Returns the state of this EventSource object's connection. It can have the
    * values described below.
-   * @returns {0|1|2}
+   * @returns {ReadyState}
    * @readonly
    */
   get readyState () {
@@ -225,25 +223,23 @@ class EventSource extends EventTarget {
 
     this.#readyState = CONNECTING
 
-    const fetchParam = {
-      request: this.#request
+    const fetchParams = {
+      request: this.#request,
+      dispatcher: this.#dispatcher
     }
 
     // 14. Let processEventSourceEndOfBody given response res be the following step: if res is not a network error, then reestablish the connection.
     const processEventSourceEndOfBody = (response) => {
-      if (isNetworkError(response)) {
-        this.dispatchEvent(new Event('error'))
-        this.close()
+      if (!isNetworkError(response)) {
+        return this.#reconnect()
       }
-
-      this.#reconnect()
     }
 
     // 15. Fetch request, with processResponseEndOfBody set to processEventSourceEndOfBody...
-    fetchParam.processResponseEndOfBody = processEventSourceEndOfBody
+    fetchParams.processResponseEndOfBody = processEventSourceEndOfBody
 
     // and processResponse set to the following steps given response res:
-    fetchParam.processResponse = (response) => {
+    fetchParams.processResponse = (response) => {
       // 1. If res is an aborted network error, then fail the connection.
 
       if (isNetworkError(response)) {
@@ -292,12 +288,12 @@ class EventSource extends EventTarget {
       this.dispatchEvent(new Event('open'))
 
       // If redirected to a different origin, set the origin to the new origin.
-      this.#settings.origin = response.urlList[response.urlList.length - 1].origin
+      this.#state.origin = response.urlList[response.urlList.length - 1].origin
 
       const eventSourceStream = new EventSourceStream({
-        eventSourceSettings: this.#settings,
+        eventSourceSettings: this.#state,
         push: (event) => {
-          this.dispatchEvent(new MessageEvent(
+          this.dispatchEvent(createFastMessageEvent(
             event.type,
             event.options
           ))
@@ -316,14 +312,14 @@ class EventSource extends EventTarget {
         })
     }
 
-    this.#controller = fetching(fetchParam)
+    this.#controller = fetching(fetchParams)
   }
 
   /**
    * @see https://html.spec.whatwg.org/multipage/server-sent-events.html#sse-processing-model
-   * @returns {Promise<void>}
+   * @returns {void}
    */
-  async #reconnect () {
+  #reconnect () {
     // When a user agent is to reestablish the connection, the user agent must
     // run the following steps. These steps are run in parallel, not as part of
     // a task. (The tasks that it queues, of course, are run like normal tasks
@@ -341,27 +337,27 @@ class EventSource extends EventTarget {
     this.dispatchEvent(new Event('error'))
 
     // 2. Wait a delay equal to the reconnection time of the event source.
-    await delay(this.#settings.reconnectionTime)
+    setTimeout(() => {
+      // 5. Queue a task to run the following steps:
 
-    // 5. Queue a task to run the following steps:
+      //   1. If the EventSource object's readyState attribute is not set to
+      //      CONNECTING, then return.
+      if (this.#readyState !== CONNECTING) return
 
-    //   1. If the EventSource object's readyState attribute is not set to
-    //      CONNECTING, then return.
-    if (this.#readyState !== CONNECTING) return
+      //   2. Let request be the EventSource object's request.
+      //   3. If the EventSource object's last event ID string is not the empty
+      //      string, then:
+      //      1. Let lastEventIDValue be the EventSource object's last event ID
+      //         string, encoded as UTF-8.
+      //      2. Set (`Last-Event-ID`, lastEventIDValue) in request's header
+      //         list.
+      if (this.#state.lastEventId.length) {
+        this.#request.headersList.set('last-event-id', this.#state.lastEventId, true)
+      }
 
-    //   2. Let request be the EventSource object's request.
-    //   3. If the EventSource object's last event ID string is not the empty
-    //      string, then:
-    //      1. Let lastEventIDValue be the EventSource object's last event ID
-    //         string, encoded as UTF-8.
-    //      2. Set (`Last-Event-ID`, lastEventIDValue) in request's header
-    //         list.
-    if (this.#settings.lastEventId !== '') {
-      this.#request.headersList.set('last-event-id', this.#settings.lastEventId, true)
-    }
-
-    //   4. Fetch request and process the response obtained in this fashion, if any, as described earlier in this section.
-    this.#connect()
+      //   4. Fetch request and process the response obtained in this fashion, if any, as described earlier in this section.
+      this.#connect()
+    }, this.#state.reconnectionTime)?.unref()
   }
 
   /**
@@ -373,12 +369,8 @@ class EventSource extends EventTarget {
 
     if (this.#readyState === CLOSED) return
     this.#readyState = CLOSED
-    clearTimeout(this.#settings.reconnectionTimer)
     this.#controller.abort()
-
-    if (this.#request) {
-      this.#request = null
-    }
+    this.#request = null
   }
 
   get onopen () {
@@ -390,9 +382,11 @@ class EventSource extends EventTarget {
       this.removeEventListener('open', this.#events.open)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('open', listener)
       this.#events.open = fn
-      this.addEventListener('open', fn)
     } else {
       this.#events.open = null
     }
@@ -407,9 +401,11 @@ class EventSource extends EventTarget {
       this.removeEventListener('message', this.#events.message)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('message', listener)
       this.#events.message = fn
-      this.addEventListener('message', fn)
     } else {
       this.#events.message = null
     }
@@ -424,9 +420,11 @@ class EventSource extends EventTarget {
       this.removeEventListener('error', this.#events.error)
     }
 
-    if (typeof fn === 'function') {
+    const listener = webidl.converters.EventHandlerNonNull(fn)
+
+    if (listener !== null) {
+      this.addEventListener('error', listener)
       this.#events.error = fn
-      this.addEventListener('error', fn)
     } else {
       this.#events.error = null
     }
@@ -471,7 +469,30 @@ Object.defineProperties(EventSource.prototype, {
 })
 
 webidl.converters.EventSourceInitDict = webidl.dictionaryConverter([
-  { key: 'withCredentials', converter: webidl.converters.boolean, defaultValue: false }
+  {
+    key: 'withCredentials',
+    converter: webidl.converters.boolean,
+    defaultValue: () => false
+  },
+  {
+    key: 'dispatcher', // undici only
+    converter: webidl.converters.any
+  },
+  {
+    key: 'node', // undici only
+    converter: webidl.dictionaryConverter([
+      {
+        key: 'reconnectionTime',
+        converter: webidl.converters['unsigned long'],
+        defaultValue: () => defaultReconnectionTime
+      },
+      {
+        key: 'dispatcher',
+        converter: webidl.converters.any
+      }
+    ]),
+    defaultValue: () => ({})
+  }
 ])
 
 module.exports = {

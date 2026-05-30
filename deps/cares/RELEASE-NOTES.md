@@ -1,49 +1,42 @@
-## c-ares version 1.28.1 - Mar 30 2024
+## c-ares version 1.34.6 - December 8 2025
 
-This release contains a fix for a single significant regression introduced
-in c-ares 1.28.0.
+This is a security release.
 
-* `ares_search()` and `ares_getaddrinfo()` resolution fails if no search domains
-  are specified. [Issue #737](https://github.com/c-ares/c-ares/issues/737)
-
-
-## c-ares version 1.28.0 - Mar 29 2024
-
-This is a feature and bugfix release.
-
-Features:
-
-* Emit warnings when deprecated c-ares functions are used.  This can be
-  disabled by passing a compiler definition of `CARES_NO_DEPRECATED`. [PR #732](https://github.com/c-ares/c-ares/pull/732)
-* Add function `ares_search_dnsrec()` to search for records using the new DNS
-  record data structures. [PR #719](https://github.com/c-ares/c-ares/pull/719)
-* Rework internals to pass around `ares_dns_record_t` instead of binary data,
-  this introduces new public functions of `ares_query_dnsrec()` and
-  `ares_send_dnsrec()`. [PR #730](https://github.com/c-ares/c-ares/pull/730)
+Security:
+* CVE-2025-62408. A use-after-free bug has been uncovered in read_answers() that
+  was introduced in v1.32.3. Please see https://github.com/c-ares/c-ares/security/advisories/GHSA-jq53-42q6-pqr5
 
 Changes:
-
-* tests: when performing simulated queries, reduce timeouts to make tests run
-  faster
-* Replace configuration file parsers with memory-safe parser. [PR #725](https://github.com/c-ares/c-ares/pull/725)
-* Remove `acountry` completely, the manpage might still get installed otherwise. [Issue #718](https://github.com/c-ares/c-ares/pull/718)
+* Ignore Windows IDN Search Domains until proper IDN support is added. [PR #1034](https://github.com/c-ares/c-ares/pull/1034)
 
 Bugfixes:
+* Event Thread could stall when not notified of new queries on existing
+  connections that are in a bad state
+  [PR #1032](https://github.com/c-ares/c-ares/pull/1032)
+* fix conversion of invalid service to port number in ares_getaddrinfo()
+  [PR #1029](https://github.com/c-ares/c-ares/pull/1029)
+* fix memory leak in ares_uri
+  [PR #1012](https://github.com/c-ares/c-ares/pull/1012)
+* Ignore ares_event_configchg_init failures
+  [PR #1009](https://github.com/c-ares/c-ares/pull/1009)
+* Use XOR for random seed generation on fallback logic.
+  [PR #994](https://github.com/c-ares/c-ares/pull/994)
+* Fix clang build on windows.
+  [PR #996](https://github.com/c-ares/c-ares/pull/996)
+* Fix IPv6 link-local nameservers in /etc/resolv.conf
+  [PR #996](https://github.com/c-ares/c-ares/pull/997)
+* Fix a few build issues on MidnightBSD.
+  [PR #983](https://github.com/c-ares/c-ares/pull/983)
 
-* CMake: don't overwrite global required libraries/definitions/includes which
-  could cause build errors for projects chain building c-ares. [Issue #729](https://github.com/c-ares/c-ares/issues/729)
-* On some platforms, `netinet6/in6.h` is not included by `netinet/in.h`
-  and needs to be included separately. [PR #728](https://github.com/c-ares/c-ares/pull/728)
-* Fix a potential memory leak in `ares_init()`. [Issue #724](https://github.com/c-ares/c-ares/issues/724)
-* Some platforms don't have the `isascii()` function.  Implement as a macro. [PR #721](https://github.com/c-ares/c-ares/pull/721)
-* CMake: Fix Chain building if CMAKE runtime paths not set
-* NDots configuration should allow a value of zero. [PR #735](https://github.com/c-ares/c-ares/pull/735)
-
-Thanks go to these friendly people for their efforts and contributions for this release:
+Thanks go to these friendly people for their efforts and contributions for this
+release:
 
 * Brad House (@bradh352)
-* Cristian Rodríguez (@crrodriguez)
-* Daniel Stenberg (@bagder)
-* Faraz (@farazrbx)
-* Faraz Fallahi (@fffaraz)
-* Oliver Welsh (@oliverwelsh)
+* (@F3lixTheCat)
+* Lucas Holt (@laffer1)
+* @oargon
+* Pavel P (@pps83)
+* Sean Harmer (@seanharmer)
+* Uwe (@nixblik)
+
+

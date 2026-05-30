@@ -269,3 +269,32 @@ const assert = require('assert');
   }));
   duplex.destroy();
 }
+
+{
+  // Check Symbol.asyncDispose
+  const duplex = new Duplex({
+    write(chunk, enc, cb) { cb(); },
+    read() {},
+  });
+  let count = 0;
+  duplex.on('error', common.mustCall((e) => {
+    assert.strictEqual(count++, 0); // Ensure not called twice
+    assert.strictEqual(e.name, 'AbortError');
+  }));
+  duplex.on('close', common.mustCall());
+  duplex[Symbol.asyncDispose]().then(common.mustCall());
+}
+
+(async () => {
+  // Check Symbol.asyncDispose implicitly
+  await using duplex = new Duplex({
+    write(chunk, enc, cb) { cb(); },
+    read() {},
+  });
+  duplex.on('error', common.mustCall(function(e) {
+    assert.strictEqual(e.name, 'AbortError');
+    assert.strictEqual(this.destroyed, true);
+    assert.strictEqual(this.errored.name, 'AbortError');
+  }));
+  duplex.on('close', common.mustCall());
+})().then(common.mustCall());

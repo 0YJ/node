@@ -18,7 +18,11 @@ class FSPermission final : public PermissionBase {
   void Apply(Environment* env,
              const std::vector<std::string>& allow,
              PermissionScope scope) override;
-  bool is_granted(PermissionScope perm,
+  void Drop(Environment* env,
+            PermissionScope scope,
+            const std::string_view& param = "") override;
+  bool is_granted(Environment* env,
+                  PermissionScope perm,
                   const std::string_view& param) const override;
 
   struct RadixTree {
@@ -128,7 +132,7 @@ class FSPermission final : public PermissionBase {
       // ---> er
       // ---> n
       bool IsEndNode() const {
-        if (children.size() == 0) {
+        if (children.empty()) {
           return true;
         }
         return is_leaf;
@@ -138,6 +142,7 @@ class FSPermission final : public PermissionBase {
     RadixTree();
     ~RadixTree();
     void Insert(const std::string& s);
+    void Clear();
     bool Lookup(const std::string_view& s) const { return Lookup(s, false); }
     bool Lookup(const std::string_view& s, bool when_empty_return) const;
 
@@ -147,9 +152,14 @@ class FSPermission final : public PermissionBase {
 
  private:
   void GrantAccess(PermissionScope scope, const std::string& param);
+  void RevokeAccess(PermissionScope scope, const std::string& param);
+  void RebuildTree(PermissionScope scope);
   // fs granted on startup
   RadixTree granted_in_fs_;
   RadixTree granted_out_fs_;
+
+  std::vector<std::string> granted_paths_in_;
+  std::vector<std::string> granted_paths_out_;
 
   bool deny_all_in_ = true;
   bool deny_all_out_ = true;

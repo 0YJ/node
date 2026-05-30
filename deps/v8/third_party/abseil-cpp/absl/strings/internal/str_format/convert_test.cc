@@ -27,6 +27,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <thread>  // NOLINT
 #include <type_traits>
 #include <vector>
@@ -45,10 +46,6 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "absl/types/span.h"
-
-#if defined(ABSL_HAVE_STD_STRING_VIEW)
-#include <string_view>
-#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -287,6 +284,11 @@ const NativePrintfTraits &VerifyNativeImplementation() {
   return native_traits;
 }
 
+bool IsNativeHexFloatConversion(char f) { return f == 'a' || f == 'A'; }
+bool IsNativeFloatConversion(char f) {
+  return f == 'f' || f == 'F' || f == 'e' || f == 'E' || f == 'a' || f == 'A';
+}
+
 class FormatConvertTest : public ::testing::Test { };
 
 template <typename T>
@@ -322,10 +324,8 @@ TEST_F(FormatConvertTest, BasicString) {
   TestStringConvert(std::string("hello"));
   TestStringConvert(std::wstring(L"hello"));
   TestStringConvert(string_view("hello"));
-#if defined(ABSL_HAVE_STD_STRING_VIEW)
   TestStringConvert(std::string_view("hello"));
   TestStringConvert(std::wstring_view(L"hello"));
-#endif  // ABSL_HAVE_STD_STRING_VIEW
 }
 
 TEST_F(FormatConvertTest, NullString) {
@@ -785,8 +785,7 @@ TEST_F(FormatConvertTest, Uint128) {
 }
 
 template <typename Floating>
-void TestWithMultipleFormatsHelper(const std::vector<Floating> &floats,
-                                   const std::set<Floating> &skip_verify) {
+void TestWithMultipleFormatsHelper(Floating tested_float) {
   const NativePrintfTraits &native_traits = VerifyNativeImplementation();
   // Reserve the space to ensure we don't allocate memory in the output itself.
   std::string str_format_result;
@@ -805,53 +804,52 @@ void TestWithMultipleFormatsHelper(const std::vector<Floating> &floats,
                    'e', 'E'}) {
       std::string fmt_str = std::string(fmt) + f;
 
-      if (fmt == absl::string_view("%.5000") && f != 'f' && f != 'F' &&
-          f != 'a' && f != 'A') {
+      if (fmt == absl::string_view("%.5000") && !IsNativeFloatConversion(f)) {
         // This particular test takes way too long with snprintf.
         // Disable for the case we are not implementing natively.
         continue;
       }
 
-      if ((f == 'a' || f == 'A') &&
+      if (IsNativeHexFloatConversion(f) &&
           !native_traits.hex_float_has_glibc_rounding) {
         continue;
       }
 
-      for (Floating d : floats) {
-        if (!native_traits.hex_float_prefers_denormal_repr &&
-            (f == 'a' || f == 'A') && std::fpclassify(d) == FP_SUBNORMAL) {
-          continue;
-        }
+      if (!native_traits.hex_float_prefers_denormal_repr &&
+          IsNativeHexFloatConversion(f) &&
+          std::fpclassify(tested_float) == FP_SUBNORMAL) {
+        continue;
+      }
         int i = -10;
-        FormatArgImpl args[2] = {FormatArgImpl(d), FormatArgImpl(i)};
+        FormatArgImpl args[2] = {FormatArgImpl(tested_float), FormatArgImpl(i)};
         UntypedFormatSpecImpl format(fmt_str);
 
         string_printf_result.clear();
-        StrAppend(&string_printf_result, fmt_str.c_str(), d, i);
+        StrAppend(&string_printf_result, fmt_str.c_str(), tested_float, i);
         str_format_result.clear();
 
         {
           AppendPack(&str_format_result, format, absl::MakeSpan(args));
         }
 
+        // For values that we know won't match the standard library
+        // implementation we skip verification, but still run the algorithm to
+        // catch asserts/sanitizer bugs.
 #ifdef _MSC_VER
         // MSVC has a different rounding policy than us so we can't test our
         // implementation against the native one there.
         continue;
 #elif defined(__APPLE__)
         // Apple formats NaN differently (+nan) vs. (nan)
-        if (std::isnan(d)) continue;
+        if (std::isnan(tested_float)) continue;
 #endif
-        if (string_printf_result != str_format_result &&
-            skip_verify.find(d) == skip_verify.end()) {
-          // We use ASSERT_EQ here because failures are usually correlated and a
-          // bug would print way too many failed expectations causing the test
-          // to time out.
-          ASSERT_EQ(string_printf_result, str_format_result)
-              << fmt_str << " " << StrPrint("%.18g", d) << " "
-              << StrPrint("%a", d) << " " << StrPrint("%.50f", d);
-        }
-      }
+        // We use ASSERT_EQ here because failures are usually correlated and a
+        // bug would print way too many failed expectations causing the test
+        // to time out.
+        ASSERT_EQ(string_printf_result, str_format_result)
+            << fmt_str << " " << StrPrint("%.18g", tested_float) << " "
+            << StrPrint("%a", tested_float) << " "
+            << StrPrint("%.50f", tested_float);
     }
   }
 }
@@ -904,14 +902,12 @@ TEST_F(FormatConvertTest, Float) {
   });
   floats.erase(std::unique(floats.begin(), floats.end()), floats.end());
 
-  TestWithMultipleFormatsHelper(floats, {});
+  for (float f : floats) {
+    TestWithMultipleFormatsHelper(f);
+  }
 }
 
 TEST_F(FormatConvertTest, Double) {
-  // For values that we know won't match the standard library implementation we
-  // skip verification, but still run the algorithm to catch asserts/sanitizer
-  // bugs.
-  std::set<double> skip_verify;
   std::vector<double> doubles = {0.0,
                                  -0.0,
                                  .99999999999999,
@@ -946,32 +942,9 @@ TEST_F(FormatConvertTest, Double) {
     }
   }
 
-  // Workaround libc bug.
-  // https://sourceware.org/bugzilla/show_bug.cgi?id=22142
-  const bool gcc_bug_22142 =
-      StrPrint("%f", std::numeric_limits<double>::max()) !=
-      "1797693134862315708145274237317043567980705675258449965989174768031"
-      "5726078002853876058955863276687817154045895351438246423432132688946"
-      "4182768467546703537516986049910576551282076245490090389328944075868"
-      "5084551339423045832369032229481658085593321233482747978262041447231"
-      "68738177180919299881250404026184124858368.000000";
-
   for (int exp = -300; exp <= 300; ++exp) {
     const double all_ones_mantissa = 0x1fffffffffffff;
     doubles.push_back(std::ldexp(all_ones_mantissa, exp));
-    if (gcc_bug_22142) {
-      skip_verify.insert(doubles.back());
-    }
-  }
-
-  if (gcc_bug_22142) {
-    using L = std::numeric_limits<double>;
-    skip_verify.insert(L::max());
-    skip_verify.insert(L::min());  // NOLINT
-    skip_verify.insert(L::denorm_min());
-    skip_verify.insert(-L::max());
-    skip_verify.insert(-L::min());  // NOLINT
-    skip_verify.insert(-L::denorm_min());
   }
 
   // Remove duplicates to speed up the logic below.
@@ -982,7 +955,9 @@ TEST_F(FormatConvertTest, Double) {
   });
   doubles.erase(std::unique(doubles.begin(), doubles.end()), doubles.end());
 
-  TestWithMultipleFormatsHelper(doubles, skip_verify);
+  for (double d : doubles) {
+    TestWithMultipleFormatsHelper(d);
+  }
 }
 
 TEST_F(FormatConvertTest, DoubleRound) {
@@ -1088,6 +1063,17 @@ TEST_F(FormatConvertTest, DoubleRound) {
             "0.000000000000000000000000000000000002"
             "25694915357879201529997415146671170141"
             "1837869002408041296803276054561138153076171875");
+
+  // Scientific exponent cases
+  // Round to even with all zeros after round digit
+  EXPECT_EQ(format("%0.13e", 1671075773261250), "1.6710757732612e+15");
+
+  // Rounding where precision is in first digit run
+  EXPECT_EQ(format("%0.1e", -1.93437090148818698e-297), "-1.9e-297");
+  EXPECT_EQ(format("%0.1e", -9.92255780642280927e-298), "-9.9e-298");
+
+  // Rounding large negative exponent first digit
+  EXPECT_EQ(format("%0.1e", -8.956e-294), "-9.0e-294");
 }
 
 TEST_F(FormatConvertTest, DoubleRoundA) {
@@ -1346,14 +1332,13 @@ TEST_F(FormatConvertTest, LongDouble) {
                    'e', 'E'}) {
       std::string fmt_str = std::string(fmt) + 'L' + f;
 
-      if (fmt == absl::string_view("%.5000") && f != 'f' && f != 'F' &&
-          f != 'a' && f != 'A') {
+      if (fmt == absl::string_view("%.5000") && !IsNativeFloatConversion(f)) {
         // This particular test takes way too long with snprintf.
         // Disable for the case we are not implementing natively.
         continue;
       }
 
-      if (f == 'a' || f == 'A') {
+      if (IsNativeHexFloatConversion(f)) {
         if (!native_traits.hex_float_has_glibc_rounding ||
             !native_traits.hex_float_optimizes_leading_digit_bit_count) {
           continue;

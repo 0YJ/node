@@ -105,7 +105,7 @@ template <typename T>
 std::vector<T> BlobDeserializer<Impl>::ReadVector() {
   if (is_debug) {
     std::string name = GetName<T>();
-    Debug("\nReadVector<%s>()(%d-byte)\n", name.c_str(), sizeof(T));
+    Debug("\nReadVector<%s>()(%d-byte)\n", name, sizeof(T));
   }
   size_t count = static_cast<size_t>(ReadArithmetic<size_t>());
   if (count == 0) {
@@ -123,7 +123,7 @@ std::vector<T> BlobDeserializer<Impl>::ReadVector() {
   if (is_debug) {
     std::string str = std::is_arithmetic_v<T> ? "" : ToStr(result);
     std::string name = GetName<T>();
-    Debug("ReadVector<%s>() read %s\n", name.c_str(), str.c_str());
+    Debug("ReadVector<%s>() read %s\n", name, str);
   }
   return result;
 }
@@ -163,7 +163,7 @@ void BlobDeserializer<Impl>::ReadArithmetic(T* out, size_t count) {
   DCHECK_GT(count, 0);  // Should not read contents for vectors of size 0.
   if (is_debug) {
     std::string name = GetName<T>();
-    Debug("Read<%s>()(%d-byte), count=%d: ", name.c_str(), sizeof(T), count);
+    Debug("Read<%s>()(%d-byte), count=%d: ", name, sizeof(T), count);
   }
 
   size_t size = sizeof(T) * count;
@@ -172,7 +172,7 @@ void BlobDeserializer<Impl>::ReadArithmetic(T* out, size_t count) {
   if (is_debug) {
     std::string str =
         "{ " + std::to_string(out[0]) + (count > 1 ? ", ... }" : " }");
-    Debug("%s, read %zu bytes\n", str.c_str(), size);
+    Debug("%s, read %zu bytes\n", str, size);
   }
   read_total += size;
 }
@@ -238,15 +238,16 @@ size_t BlobSerializer<Impl>::WriteVector(const std::vector<T>& data) {
   if (is_debug) {
     std::string str = std::is_arithmetic_v<T> ? "" : ToStr(data);
     std::string name = GetName<T>();
-    Debug("\nWriteVector<%s>() (%d-byte), count=%d: %s\n",
-          name.c_str(),
+    Debug("\nAt 0x%x: WriteVector<%s>() (%d-byte), count=%d: %s\n",
+          sink.size(),
+          name,
           sizeof(T),
           data.size(),
-          str.c_str());
+          str);
   }
 
   size_t written_total = WriteArithmetic<size_t>(data.size());
-  if (data.size() == 0) {
+  if (data.empty()) {
     return written_total;
   }
 
@@ -258,7 +259,7 @@ size_t BlobSerializer<Impl>::WriteVector(const std::vector<T>& data) {
 
   if (is_debug) {
     std::string name = GetName<T>();
-    Debug("WriteVector<%s>() wrote %d bytes\n", name.c_str(), written_total);
+    Debug("WriteVector<%s>() wrote %d bytes\n", name, written_total);
   }
 
   return written_total;
@@ -270,7 +271,10 @@ size_t BlobSerializer<Impl>::WriteVector(const std::vector<T>& data) {
 template <typename Impl>
 size_t BlobSerializer<Impl>::WriteStringView(std::string_view data,
                                              StringLogMode mode) {
-  Debug("WriteStringView(), length=%zu: %p\n", data.size(), data.data());
+  Debug("At 0x%x: WriteStringView(), length=%zu: %p\n",
+        sink.size(),
+        data.size(),
+        data.data());
   size_t written_total = WriteArithmetic<size_t>(data.size());
 
   size_t length = data.size();
@@ -294,6 +298,8 @@ size_t BlobSerializer<Impl>::WriteString(const std::string& data) {
   return WriteStringView(data, StringLogMode::kAddressAndContent);
 }
 
+static size_t kPreviewCount = 16;
+
 // Helper for writing an array of numeric types.
 template <typename Impl>
 template <typename T>
@@ -301,14 +307,22 @@ size_t BlobSerializer<Impl>::WriteArithmetic(const T* data, size_t count) {
   static_assert(std::is_arithmetic_v<T>, "Arithmetic type");
   DCHECK_GT(count, 0);  // Should not write contents for vectors of size 0.
   if (is_debug) {
-    std::string str =
-        "{ " + std::to_string(data[0]) + (count > 1 ? ", ... }" : " }");
+    size_t preview_count = count < kPreviewCount ? count : kPreviewCount;
+    std::string str = "{ ";
+    for (size_t i = 0; i < preview_count; ++i) {
+      str += (std::to_string(data[i]) + ",");
+    }
+    if (count > preview_count) {
+      str += "...";
+    }
+    str += "}";
     std::string name = GetName<T>();
-    Debug("Write<%s>() (%zu-byte), count=%zu: %s",
-          name.c_str(),
+    Debug("At 0x%x: Write<%s>() (%zu-byte), count=%zu: %s",
+          sink.size(),
+          name,
           sizeof(T),
           count,
-          str.c_str());
+          str);
   }
 
   size_t size = sizeof(T) * count;

@@ -14,6 +14,9 @@
 # limitations under the License.
 #
 
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//absl:copts/configure_copts.bzl",
     "ABSL_DEFAULT_COPTS",
@@ -66,6 +69,7 @@ cc_library(
         ":path_util",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:no_destructor",
         "//absl/strings",
         "//absl/synchronization",
     ],
@@ -87,6 +91,7 @@ cc_library(
         ":program_name",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:no_destructor",
         "//absl/strings",
         "//absl/synchronization",
     ],
@@ -163,6 +168,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl/flags:__pkg__",
+        "//absl/flags/rust:__pkg__",
     ],
     deps = [
         ":commandlineflag",
@@ -190,6 +196,7 @@ cc_library(
         ":private_handle_accessor",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:fast_type_id",
         "//absl/base:no_destructor",
         "//absl/container:flat_hash_map",
         "//absl/strings",
@@ -219,6 +226,8 @@ cc_library(
         "//absl/base:config",
         "//absl/base:core_headers",
         "//absl/base:dynamic_annotations",
+        "//absl/base:fast_type_id",
+        "//absl/base:no_destructor",
         "//absl/memory",
         "//absl/meta:type_traits",
         "//absl/strings",
@@ -236,12 +245,13 @@ cc_library(
     copts = ABSL_DEFAULT_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
     deps = [
+        ":commandlineflag",
         ":config",
         ":flag_internal",
         ":reflection",
-        "//absl/base",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:nullability",
         "//absl/strings",
     ],
 )
@@ -270,6 +280,7 @@ cc_library(
         ":reflection",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:no_destructor",
         "//absl/strings",
         "//absl/synchronization",
     ],
@@ -318,6 +329,7 @@ cc_library(
         "//absl/algorithm:container",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:no_destructor",
         "//absl/strings",
         "//absl/synchronization",
     ],
@@ -343,15 +355,14 @@ cc_test(
     ],
     deps = [
         ":commandlineflag",
-        ":commandlineflag_internal",
         ":config",
         ":flag",
         ":private_handle_accessor",
         ":reflection",
         "//absl/memory",
         "//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -365,8 +376,8 @@ cc_test(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     deps = [
         ":config",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -391,20 +402,23 @@ cc_test(
         ":flag",
         ":flag_internal",
         ":marshalling",
+        ":parse",
         ":reflection",
         "//absl/base:core_headers",
         "//absl/base:malloc_internal",
+        "//absl/base:raw_logging_internal",
         "//absl/numeric:int128",
         "//absl/strings",
         "//absl/time",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "//absl/types:optional",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
 cc_binary(
     name = "flag_benchmark",
-    testonly = 1,
+    testonly = True,
     srcs = [
         "flag_benchmark.cc",
     ],
@@ -423,7 +437,7 @@ cc_binary(
         "//absl/strings",
         "//absl/time",
         "//absl/types:optional",
-        "@com_github_google_benchmark//:benchmark_main",
+        "@google_benchmark//:benchmark_main",
     ],
 )
 
@@ -437,8 +451,8 @@ cc_test(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     deps = [
         ":marshalling",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -459,6 +473,7 @@ cc_test(
         "no_test_wasm",
     ],
     deps = [
+        ":config",
         ":flag",
         ":parse",
         ":reflection",
@@ -467,8 +482,8 @@ cc_test(
         "//absl/log",
         "//absl/strings",
         "//absl/types:span",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -482,8 +497,8 @@ cc_test(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     deps = [
         ":path_util",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -495,12 +510,15 @@ cc_test(
     ],
     copts = ABSL_TEST_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
-    tags = ["no_test_wasm"],
+    tags = [
+        "no_test_fuchsia_x64",
+        "no_test_wasm",
+    ],
     deps = [
         ":program_name",
         "//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -520,15 +538,13 @@ cc_test(
         "no_test_wasm",
     ],
     deps = [
-        ":commandlineflag_internal",
+        ":config",
         ":flag",
-        ":marshalling",
         ":reflection",
-        ":usage_internal",
         "//absl/memory",
         "//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -548,8 +564,8 @@ cc_test(
         "//absl/base",
         "//absl/container:fixed_array",
         "//absl/time",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -566,8 +582,8 @@ cc_test(
         ":path_util",
         ":program_name",
         "//absl/strings",
-        "@com_google_googletest//:gtest",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -596,6 +612,6 @@ cc_test(
         ":usage",
         ":usage_internal",
         "//absl/strings",
-        "@com_google_googletest//:gtest",
+        "@googletest//:gtest",
     ],
 )
