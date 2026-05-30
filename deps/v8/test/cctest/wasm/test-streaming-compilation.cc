@@ -46,7 +46,7 @@ class MockPlatform final : public TestPlatform {
   }
 
   std::shared_ptr<TaskRunner> GetForegroundTaskRunner(
-      v8::Isolate* isolate) override {
+      v8::Isolate* isolate, v8::TaskPriority) override {
     return task_runner_;
   }
 
@@ -63,29 +63,34 @@ class MockPlatform final : public TestPlatform {
  private:
   class MockTaskRunner final : public TaskRunner {
    public:
-    void PostTask(std::unique_ptr<v8::Task> task) override {
+    void PostTaskImpl(std::unique_ptr<v8::Task> task,
+                      const SourceLocation& location) override {
       base::MutexGuard lock_scope(&tasks_lock_);
       tasks_.push(std::move(task));
     }
 
-    void PostNonNestableTask(std::unique_ptr<Task> task) override {
+    void PostNonNestableTaskImpl(std::unique_ptr<Task> task,
+                                 const SourceLocation& location) override {
       PostTask(std::move(task));
     }
 
-    void PostDelayedTask(std::unique_ptr<Task> task,
-                         double delay_in_seconds) override {
+    void PostDelayedTaskImpl(std::unique_ptr<Task> task,
+                             double delay_in_seconds,
+                             const SourceLocation& location) override {
       base::MutexGuard lock_scope(&tasks_lock_);
       delayed_tasks_.emplace_back(
           std::move(task), base::TimeTicks::Now() +
                                base::TimeDelta::FromSecondsD(delay_in_seconds));
     }
 
-    void PostNonNestableDelayedTask(std::unique_ptr<Task> task,
-                                    double delay_in_seconds) override {
+    void PostNonNestableDelayedTaskImpl(
+        std::unique_ptr<Task> task, double delay_in_seconds,
+        const SourceLocation& location) override {
       PostDelayedTask(std::move(task), delay_in_seconds);
     }
 
-    void PostIdleTask(std::unique_ptr<IdleTask> task) override {
+    void PostIdleTaskImpl(std::unique_ptr<IdleTask> task,
+                          const SourceLocation& location) override {
       UNREACHABLE();
     }
 
@@ -174,20 +179,21 @@ class TestResolver : public CompilationResultResolver {
  public:
   TestResolver(i::Isolate* isolate, CompilationState* state,
                std::string* error_message,
-               Handle<WasmModuleObject>* module_object)
+               IndirectHandle<WasmModuleObject>* module_object)
       : isolate_(isolate),
         state_(state),
         error_message_(error_message),
         module_object_(module_object) {}
 
-  void OnCompilationSucceeded(i::Handle<i::WasmModuleObject> module) override {
+  void OnCompilationSucceeded(
+      i::DirectHandle<i::WasmModuleObject> module) override {
     *state_ = CompilationState::kFinished;
     *module_object_ = isolate_->global_handles()->Create(*module);
   }
 
-  void OnCompilationFailed(i::Handle<i::Object> error_reason) override {
+  void OnCompilationFailed(i::DirectHandle<i::JSAny> error_reason) override {
     *state_ = CompilationState::kFailed;
-    Handle<String> str =
+    DirectHandle<String> str =
         Object::ToString(isolate_, error_reason).ToHandleChecked();
     error_message_->assign(str->ToCString().get());
     // Print the error message, for easier debugging on tests that unexpectedly
@@ -199,7 +205,7 @@ class TestResolver : public CompilationResultResolver {
   i::Isolate* isolate_;
   CompilationState* const state_;
   std::string* const error_message_;
-  Handle<WasmModuleObject>* const module_object_;
+  IndirectHandle<WasmModuleObject>* const module_object_;
 };
 
 class StreamTester {
@@ -207,20 +213,19 @@ class StreamTester {
   explicit StreamTester(v8::Isolate* isolate)
       : zone_(&allocator_, "StreamTester") {
     Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-    v8::Local<v8::Context> context = isolate->GetCurrentContext();
 
-    WasmFeatures features = WasmFeatures::FromIsolate(i_isolate);
+    WasmEnabledFeatures features = WasmEnabledFeatures::FromIsolate(i_isolate);
     stream_ = GetWasmEngine()->StartStreamingCompilation(
-        i_isolate, features, CompileTimeImports{},
-        v8::Utils::OpenHandle(*context), "WebAssembly.compileStreaming()",
+        features, CompileTimeImports{}, "WebAssembly.compileStreaming()",
         std::make_shared<TestResolver>(i_isolate, &state_, &error_message_,
                                        &module_object_));
+    stream_->InitializeIsolateSpecificInfo(i_isolate);
   }
 
   std::shared_ptr<StreamingDecoder> stream() const { return stream_; }
 
   // Compiled module object, valid after successful compile.
-  Handle<WasmModuleObject> module_object() const {
+  DirectHandle<WasmModuleObject> module_object() const {
     CHECK(!module_object_.is_null());
     return module_object_;
   }
@@ -248,11 +253,19 @@ class StreamTester {
     stream_->OnBytesReceived(base::Vector<const uint8_t>(start, length));
   }
 
-  void FinishStream() { stream_->Finish(); }
+  void FinishStream() { stream_->Finish({}); }
 
-  void SetCompiledModuleBytes(base::Vector<const uint8_t> bytes) {
-    stream_->SetCompiledModuleBytes(bytes);
+  void FinishStreamWithCachedModuleBytes(
+      base::Vector<const uint8_t> cached_bytes) {
+    stream_->Finish(
+        [cached_bytes](
+            WasmStreaming::ModuleCachingInterface& caching_interface) {
+          caching_interface.SetCachedCompiledModuleBytes(
+              {cached_bytes.begin(), cached_bytes.size()});
+        });
   }
+
+  void SetHasCompiledModuleBytes() { stream_->SetHasCompiledModuleBytes(); }
 
   Zone* zone() { return &zone_; }
 
@@ -263,7 +276,8 @@ class StreamTester {
   Zone zone_;
   CompilationState state_ = CompilationState::kPending;
   std::string error_message_;
-  Handle<WasmModuleObject> module_object_;
+  // This is always a global handle.
+  IndirectHandle<WasmModuleObject> module_object_;
   std::shared_ptr<StreamingDecoder> stream_;
 };
 }  // namespace
@@ -275,7 +289,7 @@ class StreamTester {
   v8::Context::Scope context_scope(context);                                 \
   /* Reduce tiering budget so we do not need to execute too long. */         \
   i::FlagScope<int> reduced_tiering_budget(&i::v8_flags.wasm_tiering_budget, \
-                                           10);                              \
+                                           1);                               \
   RunStream_##name(&platform, isolate);
 
 #define STREAM_TEST(name)                                                  \
@@ -303,8 +317,7 @@ ZoneBuffer GetValidModuleBytes(Zone* zone) {
   uint8_t i = 0;
   for (const char* export_name : kExportNames) {
     WasmFunctionBuilder* f = builder.AddFunction(sigs.i_iii());
-    uint8_t code[] = {kExprLocalGet, i, kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprLocalGet, i, kExprEnd});
     CHECK_GE(3, ++i);
     builder.AddExport(base::CStrVector(export_name), f);
   }
@@ -327,19 +340,23 @@ ZoneBuffer GetValidCompiledModuleBytes(v8::Isolate* isolate, Zone* zone,
   CHECK_NOT_NULL(native_module);
 
   auto* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  ErrorThrower thrower{i_isolate, "GetValidCompiledModuleBytes"};
-  Handle<WasmInstanceObject> instance =
-      GetWasmEngine()
-          ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {}, {})
-          .ToHandleChecked();
-  CHECK(!thrower.error());
+  std::vector<IndirectHandle<WasmExportedFunction>> exported_functions;
+  {
+    ErrorThrower thrower{i_isolate, "GetValidCompiledModuleBytes"};
+    DirectHandle<WasmInstanceObject> instance =
+        GetWasmEngine()
+            ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {},
+                              {})
+            .ToHandleChecked();
+    CHECK(!thrower.error());
 
-  // Call the exported functions repeatedly until they are all tiered up.
-  std::vector<Handle<WasmExportedFunction>> exported_functions;
-  for (const char* export_name : kExportNames) {
-    exported_functions.push_back(
-        testing::GetExportedFunction(i_isolate, instance, export_name)
-            .ToHandleChecked());
+    // Call the exported functions repeatedly until they are all tiered up.
+    for (const char* export_name : kExportNames) {
+      exported_functions.push_back(indirect_handle(
+          testing::GetExportedFunction(i_isolate, instance, export_name)
+              .ToHandleChecked(),
+          i_isolate));
+    }
   }
   while (true) {
     WasmCodeRefScope code_ref_scope;
@@ -349,14 +366,14 @@ ZoneBuffer GetValidCompiledModuleBytes(v8::Isolate* isolate, Zone* zone,
         })) {
       break;
     }
-    for (Handle<WasmExportedFunction> exported_function : exported_functions) {
-      Handle<Object> return_value =
+    for (DirectHandle<WasmExportedFunction> exported_function :
+         exported_functions) {
+      DirectHandle<Object> return_value =
           Execution::Call(i_isolate, exported_function,
-                          ReadOnlyRoots{i_isolate}.undefined_value_handle(), 0,
-                          nullptr)
+                          i_isolate->factory()->undefined_value(), {})
               .ToHandleChecked();
       CHECK(IsSmi(*return_value));
-      CHECK_EQ(0, Smi::cast(*return_value).value());
+      CHECK_EQ(0, Cast<Smi>(*return_value).value());
     }
     tester.RunCompilerTasks();
   }
@@ -402,8 +419,10 @@ STREAM_TEST(TestAllBytesArriveAOTCompilerFinishesFirst) {
 
 size_t GetFunctionOffset(i::Isolate* isolate, base::Vector<const uint8_t> bytes,
                          size_t index) {
-  ModuleResult result = DecodeWasmModule(WasmFeatures::All(), bytes, false,
-                                         ModuleOrigin::kWasmOrigin);
+  WasmDetectedFeatures unused_detected_features;
+  ModuleResult result =
+      DecodeWasmModule(WasmEnabledFeatures::All(), bytes, false,
+                       ModuleOrigin::kWasmOrigin, &unused_detected_features);
   CHECK(result.ok());
   const WasmFunction* func = &result.value()->functions[index];
   return func->code.offset();
@@ -454,18 +473,15 @@ ZoneBuffer GetModuleWithInvalidSection(Zone* zone) {
   builder.AddGlobal(kWasmVoid, true, WasmInitExpr::GlobalGet(12));
   {
     WasmFunctionBuilder* f = builder.AddFunction(sigs.i_iii());
-    uint8_t code[] = {kExprLocalGet, 0, kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprLocalGet, 0, kExprEnd});
   }
   {
     WasmFunctionBuilder* f = builder.AddFunction(sigs.i_iii());
-    uint8_t code[] = {kExprLocalGet, 1, kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprLocalGet, 1, kExprEnd});
   }
   {
     WasmFunctionBuilder* f = builder.AddFunction(sigs.i_iii());
-    uint8_t code[] = {kExprLocalGet, 2, kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprLocalGet, 2, kExprEnd});
   }
   builder.WriteTo(&buffer);
   return buffer;
@@ -1205,8 +1221,7 @@ STREAM_TEST(TestModuleWithImportedFunction) {
   builder.AddImport(base::ArrayVector("Test"), sigs.i_iii());
   {
     WasmFunctionBuilder* f = builder.AddFunction(sigs.i_iii());
-    uint8_t code[] = {kExprLocalGet, 0, kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprLocalGet, 0, kExprEnd});
   }
   builder.WriteTo(&buffer);
 
@@ -1222,6 +1237,8 @@ STREAM_TEST(TestIncrementalCaching) {
   FLAG_VALUE_SCOPE(wasm_tier_up, false);
   constexpr int threshold = 10;  // 10 bytes
   FlagScope<int> caching_threshold(&v8_flags.wasm_caching_threshold, threshold);
+  FlagScope<int> caching_hard_threshold(&v8_flags.wasm_caching_hard_threshold,
+                                        threshold);
   StreamTester tester(isolate);
   int call_cache_counter = 0;
   tester.stream()->SetMoreFunctionsCanBeSerializedCallback(
@@ -1233,7 +1250,7 @@ STREAM_TEST(TestIncrementalCaching) {
   ZoneBuffer buffer(tester.zone());
   TestSignatures sigs;
   WasmModuleBuilder builder(tester.zone());
-  builder.SetMinMemorySize(1);
+  builder.AddMemory(1);
 
   base::Vector<const char> function_names[] = {
       base::CStrVector("f0"), base::CStrVector("f1"), base::CStrVector("f2")};
@@ -1265,45 +1282,57 @@ STREAM_TEST(TestIncrementalCaching) {
   tester.native_module();
   constexpr base::Vector<const char> kNoSourceUrl{"", 0};
   Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
-  Handle<Script> script = GetWasmEngine()->GetOrCreateScript(
-      i_isolate, tester.shared_native_module(), kNoSourceUrl);
-  Handle<WasmModuleObject> module_object =
-      WasmModuleObject::New(i_isolate, tester.shared_native_module(), script);
-  ErrorThrower thrower(i_isolate, "Instantiation");
-  // We instantiated before, so the second instantiation must also succeed:
-  Handle<WasmInstanceObject> instance =
-      GetWasmEngine()
-          ->SyncInstantiate(i_isolate, &thrower, module_object, {}, {})
-          .ToHandleChecked();
-  CHECK(!thrower.error());
+  IndirectHandle<WasmInstanceObject> instance;
+  {
+    DirectHandle<Script> script = GetWasmEngine()->GetOrCreateScript(
+        i_isolate, tester.shared_native_module(), kNoSourceUrl);
+    DirectHandle<WasmModuleObject> module_object =
+        WasmModuleObject::New(i_isolate, tester.shared_native_module(), script);
+    ErrorThrower thrower(i_isolate, "Instantiation");
+    // We instantiated before, so the second instantiation must also succeed:
+    instance = indirect_handle(
+        GetWasmEngine()
+            ->SyncInstantiate(i_isolate, &thrower, module_object, {}, {})
+            .ToHandleChecked(),
+        i_isolate);
+    CHECK(!thrower.error());
 
-  WasmCodeRefScope code_scope;
-  NativeModule* module = tester.native_module();
-  CHECK(module->GetCode(0) == nullptr || module->GetCode(0)->is_liftoff());
-  CHECK(module->GetCode(1) == nullptr || module->GetCode(1)->is_liftoff());
-  CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
-  // No TurboFan compilation happened yet, and therefore no call to the cache.
-  CHECK_EQ(0, call_cache_counter);
-  i::wasm::TriggerTierUp(instance->trusted_data(i_isolate), 0);
+    WasmCodeRefScope code_scope;
+    NativeModule* module = tester.native_module();
+    CHECK(module->GetCode(0) == nullptr || module->GetCode(0)->is_liftoff());
+    CHECK(module->GetCode(1) == nullptr || module->GetCode(1)->is_liftoff());
+    CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
+    // No TurboFan compilation happened yet, and therefore no call to the cache.
+    CHECK_EQ(0, call_cache_counter);
+    i::wasm::TriggerTierUp(i_isolate, instance->trusted_data(i_isolate), 0);
+  }
   tester.RunCompilerTasks();
-  CHECK(!module->GetCode(0)->is_liftoff());
-  CHECK(module->GetCode(1) == nullptr || module->GetCode(1)->is_liftoff());
-  CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
-  CHECK_EQ(1, call_cache_counter);
   size_t serialized_size;
   {
-    i::wasm::WasmSerializer serializer(tester.native_module());
-    serialized_size = serializer.GetSerializedNativeModuleSize();
+    WasmCodeRefScope code_scope;
+    NativeModule* module = tester.native_module();
+    CHECK(!module->GetCode(0)->is_liftoff());
+    CHECK(module->GetCode(1) == nullptr || module->GetCode(1)->is_liftoff());
+    CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
+    CHECK_EQ(1, call_cache_counter);
+    {
+      i::wasm::WasmSerializer serializer(tester.native_module());
+      serialized_size = serializer.GetSerializedNativeModuleSize();
+    }
+    i::wasm::TriggerTierUp(i_isolate, instance->trusted_data(i_isolate), 1);
   }
-  i::wasm::TriggerTierUp(instance->trusted_data(i_isolate), 1);
   tester.RunCompilerTasks();
-  CHECK(!module->GetCode(0)->is_liftoff());
-  CHECK(!module->GetCode(1)->is_liftoff());
-  CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
-  CHECK_EQ(2, call_cache_counter);
   {
-    i::wasm::WasmSerializer serializer(tester.native_module());
-    CHECK_LT(serialized_size, serializer.GetSerializedNativeModuleSize());
+    WasmCodeRefScope code_scope;
+    NativeModule* module = tester.native_module();
+    CHECK(!module->GetCode(0)->is_liftoff());
+    CHECK(!module->GetCode(1)->is_liftoff());
+    CHECK(module->GetCode(2) == nullptr || module->GetCode(2)->is_liftoff());
+    CHECK_EQ(2, call_cache_counter);
+    {
+      i::wasm::WasmSerializer serializer(tester.native_module());
+      CHECK_LT(serialized_size, serializer.GetSerializedNativeModuleSize());
+    }
   }
 }
 
@@ -1347,9 +1376,9 @@ STREAM_TEST(TestDeserializationBypassesCompilation) {
   ZoneBuffer wire_bytes = GetValidModuleBytes(tester.zone());
   ZoneBuffer module_bytes =
       GetValidCompiledModuleBytes(isolate, tester.zone(), wire_bytes);
-  tester.SetCompiledModuleBytes(base::VectorOf(module_bytes));
+  tester.SetHasCompiledModuleBytes();
   tester.OnBytesReceived(wire_bytes.begin(), wire_bytes.size());
-  tester.FinishStream();
+  tester.FinishStreamWithCachedModuleBytes(base::VectorOf(module_bytes));
 
   tester.RunCompilerTasks();
 
@@ -1365,9 +1394,9 @@ STREAM_TEST(TestDeserializationFails) {
   // corrupt header
   uint8_t first_byte = *module_bytes.begin();
   module_bytes.patch_u8(0, first_byte + 1);
-  tester.SetCompiledModuleBytes(base::VectorOf(module_bytes));
+  tester.SetHasCompiledModuleBytes();
   tester.OnBytesReceived(wire_bytes.begin(), wire_bytes.size());
-  tester.FinishStream();
+  tester.FinishStreamWithCachedModuleBytes(base::VectorOf(module_bytes));
 
   tester.RunCompilerTasks();
 
@@ -1408,6 +1437,8 @@ STREAM_TEST(TestMoreFunctionsCanBeSerializedCallback) {
   // Reduce the caching threshold to 10 bytes so that our three small functions
   // trigger caching.
   FlagScope<int> caching_threshold(&v8_flags.wasm_caching_threshold, 10);
+  FlagScope<int> caching_hard_threshold(&v8_flags.wasm_caching_hard_threshold,
+                                        10);
   StreamTester tester(isolate);
   bool callback_called = false;
   tester.stream()->SetMoreFunctionsCanBeSerializedCallback(
@@ -1448,26 +1479,32 @@ STREAM_TEST(TestMoreFunctionsCanBeSerializedCallback) {
   // Continue executing functions (eventually triggering tier-up) until the
   // callback is called at least once.
   auto* i_isolate = CcTest::i_isolate();
-  ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
-  Handle<WasmInstanceObject> instance =
-      GetWasmEngine()
-          ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {}, {})
-          .ToHandleChecked();
-  CHECK(!thrower.error());
+  std::vector<IndirectHandle<WasmExportedFunction>> exported_functions;
+  {
+    ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
+    DirectHandle<WasmInstanceObject> instance =
+        GetWasmEngine()
+            ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {},
+                              {})
+            .ToHandleChecked();
+    CHECK(!thrower.error());
 
-  Handle<WasmExportedFunction> exported_functions[]{
-      testing::GetExportedFunction(i_isolate, instance, "a").ToHandleChecked(),
-      testing::GetExportedFunction(i_isolate, instance, "b").ToHandleChecked(),
-      testing::GetExportedFunction(i_isolate, instance, "c").ToHandleChecked()};
+    for (const char* function_name : {"a", "b", "c"}) {
+      exported_functions.push_back(indirect_handle(
+          testing::GetExportedFunction(i_isolate, instance, function_name)
+              .ToHandleChecked(),
+          i_isolate));
+    }
+  }
 
   // If Liftoff is enabled, then the callback should only be called after
   // tiering up.
   CHECK_IMPLIES(v8_flags.liftoff, !callback_called);
   while (!callback_called) {
-    for (Handle<WasmExportedFunction> exported_function : exported_functions) {
+    for (DirectHandle<WasmExportedFunction> exported_function :
+         exported_functions) {
       Execution::Call(i_isolate, exported_function,
-                      ReadOnlyRoots{i_isolate}.undefined_value_handle(), 0,
-                      nullptr)
+                      i_isolate->factory()->undefined_value(), {})
           .Check();
     }
     tester.RunCompilerTasks();
@@ -1482,6 +1519,8 @@ STREAM_TEST(TestMoreFunctionsCanBeSerializedCallbackWithTimeout) {
   // Reduce the caching threshold to 10 bytes so that our three small functions
   // trigger caching.
   FlagScope<int> caching_threshold(&v8_flags.wasm_caching_threshold, 10);
+  FlagScope<int> caching_hard_threshold(&v8_flags.wasm_caching_hard_threshold,
+                                        10);
   // Set the caching timeout to 10ms.
   constexpr int kCachingTimeoutMs = 10;
   FlagScope<int> caching_timeout(&v8_flags.wasm_caching_timeout_ms,
@@ -1554,22 +1593,28 @@ STREAM_TEST(TestMoreFunctionsCanBeSerializedCallbackWithTimeout) {
   tester.RunCompilerTasks();
   CHECK(tester.IsPromiseFulfilled());
 
-  // Create an instance.
   auto* i_isolate = CcTest::i_isolate();
-  ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
-  Handle<WasmInstanceObject> instance =
-      GetWasmEngine()
-          ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {}, {})
-          .ToHandleChecked();
-  CHECK(!thrower.error());
+  IndirectHandle<WasmInstanceObject> instance;
+  {
+    // Create an instance.
+    ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
+    instance =
+        indirect_handle(GetWasmEngine()
+                            ->SyncInstantiate(i_isolate, &thrower,
+                                              tester.module_object(), {}, {})
+                            .ToHandleChecked(),
+                        i_isolate);
+    CHECK(!thrower.error());
 
-  // Execute the first function 100 times (which triggers tier-up and hence
-  // caching).
-  Handle<WasmExportedFunction> func_a =
-      testing::GetExportedFunction(i_isolate, instance, "a").ToHandleChecked();
-  Handle<Object> receiver = ReadOnlyRoots{i_isolate}.undefined_value_handle();
-  for (int i = 0; i < 100; ++i) {
-    Execution::Call(i_isolate, func_a, receiver, 0, nullptr).Check();
+    // Execute the first function 100 times (which triggers tier-up and hence
+    // caching).
+    DirectHandle<WasmExportedFunction> func_a =
+        testing::GetExportedFunction(i_isolate, instance, "a")
+            .ToHandleChecked();
+    DirectHandle<Object> receiver = i_isolate->factory()->undefined_value();
+    for (int i = 0; i < 100; ++i) {
+      Execution::Call(i_isolate, func_a, receiver, {}).Check();
+    }
   }
 
   // Ensure that background compilation is being executed.
@@ -1581,14 +1626,19 @@ STREAM_TEST(TestMoreFunctionsCanBeSerializedCallbackWithTimeout) {
   // There should be no other caching happening within the next 20ms.
   CHECK(!WaitForCaching(no_caching_expected_timeout_ms));
 
-  // Now execute the other two functions 100 times and validate that this
-  // triggers another event (but not two).
-  Handle<WasmExportedFunction> func_b_and_c[]{
-      testing::GetExportedFunction(i_isolate, instance, "b").ToHandleChecked(),
-      testing::GetExportedFunction(i_isolate, instance, "c").ToHandleChecked()};
-  for (int i = 0; i < 100; ++i) {
-    for (auto func : func_b_and_c) {
-      Execution::Call(i_isolate, func, receiver, 0, nullptr).Check();
+  {
+    // Now execute the other two functions 100 times and validate that this
+    // triggers another event (but not two).
+    DirectHandle<WasmExportedFunction> func_b_and_c[]{
+        testing::GetExportedFunction(i_isolate, instance, "b")
+            .ToHandleChecked(),
+        testing::GetExportedFunction(i_isolate, instance, "c")
+            .ToHandleChecked()};
+    DirectHandle<Object> receiver = i_isolate->factory()->undefined_value();
+    for (int i = 0; i < 100; ++i) {
+      for (auto func : func_b_and_c) {
+        Execution::Call(i_isolate, func, receiver, {}).Check();
+      }
     }
   }
 
@@ -1610,7 +1660,7 @@ STREAM_TEST(TestHardCachingThreshold) {
   // Reduce the caching threshold to 1 byte and set the hard threshold to 10
   // bytes so that one small function hits both thresholds.
   FlagScope<int> caching_threshold(&v8_flags.wasm_caching_threshold, 1);
-  FlagScope<int> hard_caching_threshold(&v8_flags.wasm_caching_hard_threshold,
+  FlagScope<int> caching_hard_threshold(&v8_flags.wasm_caching_hard_threshold,
                                         10);
   // Set a caching timeout such that the hard threshold has any meaning. This
   // timeout should never be reached.
@@ -1647,22 +1697,27 @@ STREAM_TEST(TestHardCachingThreshold) {
 
   CHECK(!caching_was_triggered);
 
-  // Create an instance.
-  auto* i_isolate = CcTest::i_isolate();
-  ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
-  Handle<WasmInstanceObject> instance =
-      GetWasmEngine()
-          ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {}, {})
-          .ToHandleChecked();
-  CHECK(!thrower.error());
-  CHECK(!caching_was_triggered);
+  {
+    // Create an instance.
+    auto* i_isolate = CcTest::i_isolate();
+    ErrorThrower thrower{i_isolate, "TestMoreFunctionsCanBeSerializedCallback"};
+    DirectHandle<WasmInstanceObject> instance =
+        GetWasmEngine()
+            ->SyncInstantiate(i_isolate, &thrower, tester.module_object(), {},
+                              {})
+            .ToHandleChecked();
+    CHECK(!thrower.error());
+    CHECK(!caching_was_triggered);
 
-  // Execute the function 100 times (which triggers tier-up and hence caching).
-  Handle<WasmExportedFunction> func_a =
-      testing::GetExportedFunction(i_isolate, instance, "a").ToHandleChecked();
-  Handle<Object> receiver = ReadOnlyRoots{i_isolate}.undefined_value_handle();
-  for (int i = 0; i < 100; ++i) {
-    Execution::Call(i_isolate, func_a, receiver, 0, nullptr).Check();
+    // Execute the function 100 times (which triggers tier-up and hence
+    // caching).
+    DirectHandle<WasmExportedFunction> func_a =
+        testing::GetExportedFunction(i_isolate, instance, "a")
+            .ToHandleChecked();
+    DirectHandle<Object> receiver = i_isolate->factory()->undefined_value();
+    for (int i = 0; i < 100; ++i) {
+      Execution::Call(i_isolate, func_a, receiver, {}).Check();
+    }
   }
 
   // Ensure that background compilation is being executed.
@@ -1773,8 +1828,7 @@ STREAM_TEST(TestProfilingMidStreaming) {
     TestSignatures sigs;
     WasmModuleBuilder builder(zone);
     WasmFunctionBuilder* f = builder.AddFunction(sigs.v_v());
-    uint8_t code[] = {kExprEnd};
-    f->EmitCode(code, arraysize(code));
+    f->EmitCode({kExprEnd});
     builder.AddExport(base::VectorOf("foo", 3), f);
     builder.WriteTo(&buffer);
   }

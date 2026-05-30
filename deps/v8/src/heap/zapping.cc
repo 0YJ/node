@@ -5,6 +5,7 @@
 #include "src/heap/zapping.h"
 
 #include "src/base/memory.h"
+#include "src/heap/base-page-inl.h"
 #include "src/heap/heap.h"
 #include "src/objects/slots-inl.h"
 
@@ -14,7 +15,7 @@ void ZapCodeBlock(Address start, int size_in_bytes) {
 #ifdef DEBUG
   DCHECK(ShouldZapGarbage());
   CodePageMemoryModificationScopeForDebugging code_modification_scope(
-      BasicMemoryChunk::FromAddress(start));
+      BasePage::FromAddress(Isolate::Current(), start));
   DCHECK(IsAligned(start, kIntSize));
   for (int i = 0; i < size_in_bytes / kIntSize; i++) {
     base::Memory<int>(start + i * kIntSize) = kCodeZapValue;

@@ -6,6 +6,7 @@
 #define V8_WASM_BASELINE_LIFTOFF_ASSEMBLER_INL_H_
 
 #include "src/wasm/baseline/liftoff-assembler.h"
+// Include the non-inl header before the rest of the headers.
 
 // Include platform specific implementation.
 #if V8_TARGET_ARCH_IA32
@@ -16,13 +17,13 @@
 #include "src/wasm/baseline/arm64/liftoff-assembler-arm64-inl.h"
 #elif V8_TARGET_ARCH_ARM
 #include "src/wasm/baseline/arm/liftoff-assembler-arm-inl.h"
-#elif V8_TARGET_ARCH_PPC || V8_TARGET_ARCH_PPC64
+#elif V8_TARGET_ARCH_PPC64
 #include "src/wasm/baseline/ppc/liftoff-assembler-ppc-inl.h"
 #elif V8_TARGET_ARCH_MIPS64
 #include "src/wasm/baseline/mips64/liftoff-assembler-mips64-inl.h"
 #elif V8_TARGET_ARCH_LOONG64
 #include "src/wasm/baseline/loong64/liftoff-assembler-loong64-inl.h"
-#elif V8_TARGET_ARCH_S390
+#elif V8_TARGET_ARCH_S390X
 #include "src/wasm/baseline/s390/liftoff-assembler-s390-inl.h"
 #elif V8_TARGET_ARCH_RISCV64
 #include "src/wasm/baseline/riscv/liftoff-assembler-riscv64-inl.h"
@@ -105,13 +106,13 @@ void LiftoffAssembler::PopToFixedRegister(LiftoffRegister reg) {
 void LiftoffAssembler::LoadFixedArrayLengthAsInt32(LiftoffRegister dst,
                                                    Register array,
                                                    LiftoffRegList pinned) {
-  int offset = FixedArray::kLengthOffset - kHeapObjectTag;
+  int offset = offsetof(FixedArray, length_) - kHeapObjectTag;
   LoadSmiAsInt32(dst, array, offset);
 }
 
 void LiftoffAssembler::LoadSmiAsInt32(LiftoffRegister dst, Register src_addr,
                                       int32_t offset) {
-  if (SmiValuesAre32Bits()) {
+  if constexpr (SmiValuesAre32Bits()) {
 #if V8_TARGET_LITTLE_ENDIAN
     DCHECK_EQ(kSmiShiftSize + kSmiTagSize, 4 * kBitsPerByte);
     offset += 4;
@@ -124,9 +125,15 @@ void LiftoffAssembler::LoadSmiAsInt32(LiftoffRegister dst, Register src_addr,
   }
 }
 
+void LiftoffAssembler::LoadCodePointer(Register dst, Register src_addr,
+                                       int32_t offset_imm) {
+    return Load(LiftoffRegister(dst), src_addr, no_reg, offset_imm,
+                LoadType::kI32Load);
+}
+
 void LiftoffAssembler::emit_ptrsize_add(Register dst, Register lhs,
                                         Register rhs) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_add(LiftoffRegister(dst), LiftoffRegister(lhs),
                  LiftoffRegister(rhs));
   } else {
@@ -136,7 +143,7 @@ void LiftoffAssembler::emit_ptrsize_add(Register dst, Register lhs,
 
 void LiftoffAssembler::emit_ptrsize_sub(Register dst, Register lhs,
                                         Register rhs) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_sub(LiftoffRegister(dst), LiftoffRegister(lhs),
                  LiftoffRegister(rhs));
   } else {
@@ -146,7 +153,7 @@ void LiftoffAssembler::emit_ptrsize_sub(Register dst, Register lhs,
 
 void LiftoffAssembler::emit_ptrsize_and(Register dst, Register lhs,
                                         Register rhs) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_and(LiftoffRegister(dst), LiftoffRegister(lhs),
                  LiftoffRegister(rhs));
   } else {
@@ -156,7 +163,7 @@ void LiftoffAssembler::emit_ptrsize_and(Register dst, Register lhs,
 
 void LiftoffAssembler::emit_ptrsize_shri(Register dst, Register src,
                                          int amount) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_shri(LiftoffRegister(dst), LiftoffRegister(src), amount);
   } else {
     emit_i32_shri(dst, src, amount);
@@ -165,17 +172,26 @@ void LiftoffAssembler::emit_ptrsize_shri(Register dst, Register src,
 
 void LiftoffAssembler::emit_ptrsize_addi(Register dst, Register lhs,
                                          intptr_t imm) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_addi(LiftoffRegister(dst), LiftoffRegister(lhs), imm);
   } else {
     emit_i32_addi(dst, lhs, static_cast<int32_t>(imm));
   }
 }
 
+void LiftoffAssembler::emit_ptrsize_muli(Register dst, Register lhs,
+                                         int32_t imm) {
+  if constexpr (kSystemPointerSize == 8) {
+    emit_i64_muli(LiftoffRegister(dst), LiftoffRegister(lhs), imm);
+  } else {
+    emit_i32_muli(dst, lhs, imm);
+  }
+}
+
 void LiftoffAssembler::emit_ptrsize_set_cond(Condition condition, Register dst,
                                              LiftoffRegister lhs,
                                              LiftoffRegister rhs) {
-  if (kSystemPointerSize == 8) {
+  if constexpr (kSystemPointerSize == 8) {
     emit_i64_set_cond(condition, dst, lhs, rhs);
   } else {
     emit_i32_set_cond(condition, dst, lhs.gp(), rhs.gp());
@@ -196,6 +212,12 @@ void LiftoffAssembler::bailout(LiftoffBailoutReason reason,
 // part.
 
 #ifdef V8_TARGET_ARCH_32_BIT
+
+void LiftoffAssembler::emit_ptrsize_cond_jumpi(Condition cond, Label* label,
+                                               Register lhs, int32_t imm,
+                                               const FreezeCacheState& frozen) {
+  emit_i32_cond_jumpi(cond, label, lhs, imm, frozen);
+}
 
 namespace liftoff {
 template <void (LiftoffAssembler::*op)(Register, Register, Register)>
@@ -288,8 +310,10 @@ void LiftoffAssembler::emit_i64_xori(LiftoffRegister dst, LiftoffRegister lhs,
 }
 
 void LiftoffAssembler::emit_u32_to_uintptr(Register dst, Register src) {
-  // This is a no-op on 32-bit systems.
+  if (dst != src) Move(dst, src, kI32);
 }
+
+void LiftoffAssembler::clear_i32_upper_half(Register dst) { UNREACHABLE(); }
 
 #endif  // V8_TARGET_ARCH_32_BIT
 

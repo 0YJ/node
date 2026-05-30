@@ -1,18 +1,25 @@
 #pragma once
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
-#if HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
 
+#include <memory>
+#include <optional>
+#include "application.h"
 #include "session.h"
 
-namespace node {
-namespace quic {
+namespace node::quic {
 
-std::unique_ptr<Session::Application> createHttp3Application(
+// Create an HTTP/3 Application implementation for the given session.
+// Uses the Application_Options from the session's config for HTTP/3
+// specific settings (qpack, max header length, etc.).
+std::unique_ptr<Session::Application> CreateHttp3Application(
     Session* session, const Session::Application_Options& options);
 
-}  // namespace quic
-}  // namespace node
+// Parse HTTP/3 specific session ticket app data. Called from
+// Application::ParseTicketData() when the type byte is HTTP3.
+// The data includes the type byte prefix.
+std::optional<PendingTicketAppData> ParseHttp3TicketData(const uv_buf_t& data);
 
-#endif  // HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
+}  // namespace node::quic
+
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS

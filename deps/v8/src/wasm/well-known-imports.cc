@@ -4,8 +4,6 @@
 
 #include "src/wasm/well-known-imports.h"
 
-#include "src/wasm/wasm-code-manager.h"
-
 namespace v8::internal::wasm {
 
 const char* WellKnownImportName(WellKnownImport wki) {
@@ -62,6 +60,30 @@ const char* WellKnownImportName(WellKnownImport wki) {
     case WellKnownImport::kDataViewByteLength:
       return "DataView.byteLength";
 
+      // Math functions.
+    case WellKnownImport::kMathF64Acos:
+      return "Math.acos";
+    case WellKnownImport::kMathF64Asin:
+      return "Math.asin";
+    case WellKnownImport::kMathF64Atan:
+      return "Math.atan";
+    case WellKnownImport::kMathF64Atan2:
+      return "Math.atan2";
+    case WellKnownImport::kMathF64Cos:
+      return "Math.cos";
+    case WellKnownImport::kMathF64Sin:
+      return "Math.sin";
+    case WellKnownImport::kMathF64Tan:
+      return "Math.tan";
+    case WellKnownImport::kMathF64Exp:
+      return "Math.exp";
+    case WellKnownImport::kMathF64Log:
+      return "Math.log";
+    case WellKnownImport::kMathF64Pow:
+      return "Math.pow";
+    case WellKnownImport::kMathF64Sqrt:
+      return "Math.sqrt";
+
       // String-related functions:
     case WellKnownImport::kDoubleToString:
       return "DoubleToString";
@@ -101,6 +123,8 @@ const char* WellKnownImportName(WellKnownImport wki) {
       return "js-string:fromCharCodeArray";
     case WellKnownImport::kStringIntoUtf8Array:
       return "text-encoder:encodeStringIntoUTF8Array";
+    case WellKnownImport::kStringToUtf8Array:
+      return "text-encoder:encodeStringToUTF8Array";
     case WellKnownImport::kStringLength:
       return "js-string:length";
     case WellKnownImport::kStringMeasureUtf8:
@@ -111,36 +135,41 @@ const char* WellKnownImportName(WellKnownImport wki) {
       return "js-string:test";
     case WellKnownImport::kStringToWtf16Array:
       return "js-string:intoCharCodeArray";
+
+      // Custom Descriptors
+    case WellKnownImport::kConfigureAllPrototypes:
+      return "js-prototypes:configureAll";
+
+      // Fast API Call:
+    case WellKnownImport::kFastAPICall:
+      return "fast API call";
   }
 }
 
 WellKnownImportsList::UpdateResult WellKnownImportsList::Update(
     base::Vector<WellKnownImport> entries) {
   DCHECK_EQ(entries.size(), static_cast<size_t>(size_));
-  {
-    base::MutexGuard lock(&mutex_);
-    for (size_t i = 0; i < entries.size(); i++) {
-      WellKnownImport entry = entries[i];
-      DCHECK(entry != WellKnownImport::kUninstantiated);
-      WellKnownImport old = statuses_[i].load(std::memory_order_relaxed);
-      if (old == WellKnownImport::kGeneric) continue;
-      if (old == entry) continue;
-      if (old == WellKnownImport::kUninstantiated) {
-        statuses_[i].store(entry, std::memory_order_relaxed);
-      } else {
-        // To avoid having to clear Turbofan code multiple times, we give up
-        // entirely once the first problem occurs.
-        // This is a heuristic; we could also choose to make finer-grained
-        // decisions and only set {statuses_[i] = kGeneric}. We expect that
-        // this case won't ever happen for production modules, so guarding
-        // against pathological cases seems more important than being lenient
-        // towards almost-well-behaved modules.
-        for (size_t j = 0; j < entries.size(); j++) {
-          statuses_[j].store(WellKnownImport::kGeneric,
-                             std::memory_order_relaxed);
-        }
-        return UpdateResult::kFoundIncompatibility;
+  for (size_t i = 0; i < entries.size(); i++) {
+    WellKnownImport entry = entries[i];
+    DCHECK(entry != WellKnownImport::kUninstantiated);
+    WellKnownImport old = statuses_[i].load(std::memory_order_relaxed);
+    if (old == WellKnownImport::kGeneric) continue;
+    if (old == entry) continue;
+    if (old == WellKnownImport::kUninstantiated) {
+      statuses_[i].store(entry, std::memory_order_relaxed);
+    } else {
+      // To avoid having to clear Turbofan code multiple times, we give up
+      // entirely once the first problem occurs.
+      // This is a heuristic; we could also choose to make finer-grained
+      // decisions and only set {statuses_[i] = kGeneric}. We expect that
+      // this case won't ever happen for production modules, so guarding
+      // against pathological cases seems more important than being lenient
+      // towards almost-well-behaved modules.
+      for (size_t j = 0; j < entries.size(); j++) {
+        statuses_[j].store(WellKnownImport::kGeneric,
+                           std::memory_order_relaxed);
       }
+      return UpdateResult::kFoundIncompatibility;
     }
   }
   return UpdateResult::kOK;

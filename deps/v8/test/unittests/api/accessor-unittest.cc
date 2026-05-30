@@ -23,6 +23,7 @@ using testing::IsString;
 using testing::IsUndefined;
 
 using AccessorTest = v8::TestWithContext;
+using AccessorTestWithShadowRealm = v8::TestShadowRealmWithContext;
 
 // The goal is to avoid the callback.
 static void UnreachableCallback(
@@ -31,10 +32,7 @@ static void UnreachableCallback(
 }
 
 TEST_F(AccessorTest, CachedAccessor) {
-  // TurboFan support for fast accessors is not implemented; turbofanned
-  // code uses the slow accessor which breaks this test's expectations.
-  i::v8_flags.always_turbofan = false;
-  v8::Isolate* isolate = context()->GetIsolate();
+  v8::Isolate* isolate = this->isolate();
   v8::HandleScope scope(isolate);
 
   // Create 'foo' class, with a hidden property.
@@ -79,8 +77,7 @@ TEST_F(AccessorTest, CachedAccessor) {
 
 TEST_F(AccessorTest, CachedAccessorTurboFan) {
   i::v8_flags.allow_natives_syntax = true;
-  // i::v8_flags.always_turbofan = false;
-  v8::Isolate* isolate = context()->GetIsolate();
+  v8::Isolate* isolate = this->isolate();
   v8::HandleScope scope(isolate);
 
   // Create 'foo' class, with a hidden property.
@@ -246,24 +243,25 @@ TEST_F(AccessorTest, CachedAccessorOnGlobalObject) {
 namespace {
 
 // Getter return value should be non-null to trigger lazy property paths.
-static void Getter(v8::Local<v8::Name> name,
-                   const v8::PropertyCallbackInfo<v8::Value>& info) {
+void Getter(v8::Local<v8::Name> name,
+            const v8::PropertyCallbackInfo<v8::Value>& info) {
   info.GetReturnValue().Set(
       v8::String::NewFromUtf8(info.GetIsolate(), "return value")
           .ToLocalChecked());
 }
 
-static void StringGetter(v8::Local<v8::String> name,
-                         const v8::PropertyCallbackInfo<v8::Value>& info) {}
+void StringGetter(v8::Local<v8::Name> name,
+                  const v8::PropertyCallbackInfo<v8::Value>& info) {}
 
-static int set_accessor_call_count = 0;
+int set_accessor_call_count = 0;
 
-static void Setter(v8::Local<v8::Name> name, v8::Local<v8::Value> value,
-                   const v8::PropertyCallbackInfo<void>& info) {
+void Setter(v8::Local<v8::Name> name, v8::Local<v8::Value> value,
+            const v8::PropertyCallbackInfo<void>& info) {
   set_accessor_call_count++;
 }
 
-static void EmptyCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {}
+void EmptyCallback(const v8::FunctionCallbackInfo<v8::Value>& info) {}
+
 }  // namespace
 
 // Re-declaration of non-configurable accessors should throw.
@@ -761,7 +759,7 @@ TEST_F(AccessorTest, ObjectTemplateSetLazyPropertyHasNoSideEffect) {
 }
 
 namespace {
-void FunctionNativeGetter(v8::Local<v8::String> property,
+void FunctionNativeGetter(v8::Local<v8::Name> property,
                           const v8::PropertyCallbackInfo<v8::Value>& info) {
   info.GetIsolate()->ThrowError(
       v8::String::NewFromUtf8(info.GetIsolate(), "side effect in getter")
@@ -810,7 +808,7 @@ TEST_F(AccessorTest, BindFunctionTemplateSetNativeDataProperty) {
 namespace {
 v8::MaybeLocal<v8::Context> TestHostCreateShadowRealmContextCallback(
     v8::Local<v8::Context> initiator_context) {
-  v8::Isolate* isolate = initiator_context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   v8::Local<v8::FunctionTemplate> global_constructor =
       v8::FunctionTemplate::New(isolate);
   v8::Local<v8::ObjectTemplate> global_template =
@@ -819,7 +817,7 @@ v8::MaybeLocal<v8::Context> TestHostCreateShadowRealmContextCallback(
   // Check that getter is called on Function.prototype.bind.
   global_template->SetNativeDataProperty(
       v8::String::NewFromUtf8(isolate, "func1").ToLocalChecked(),
-      [](v8::Local<v8::String> property,
+      [](v8::Local<v8::Name> property,
          const v8::PropertyCallbackInfo<v8::Value>& info) {
         v8::Isolate* isolate = info.GetIsolate();
         v8::Local<v8::FunctionTemplate> templ =
@@ -834,7 +832,7 @@ v8::MaybeLocal<v8::Context> TestHostCreateShadowRealmContextCallback(
   // Check that getter is called on Function.prototype.bind.
   global_template->SetNativeDataProperty(
       v8::String::NewFromUtf8(isolate, "func2").ToLocalChecked(),
-      [](v8::Local<v8::String> property,
+      [](v8::Local<v8::Name> property,
          const v8::PropertyCallbackInfo<v8::Value>& info) {
         v8::Isolate* isolate = info.GetIsolate();
         v8::Local<v8::FunctionTemplate> templ =
@@ -850,8 +848,8 @@ v8::MaybeLocal<v8::Context> TestHostCreateShadowRealmContextCallback(
 }
 }  // namespace
 
-TEST_F(AccessorTest, WrapFunctionTemplateSetNativeDataProperty) {
-  i::v8_flags.harmony_shadow_realm = true;
+TEST_F(AccessorTestWithShadowRealm, WrapFunctionTemplateSetNativeDataProperty) {
+  CHECK(i::v8_flags.harmony_shadow_realm);
   isolate()->SetHostCreateShadowRealmContextCallback(
       TestHostCreateShadowRealmContextCallback);
 
@@ -861,11 +859,19 @@ TEST_F(AccessorTest, WrapFunctionTemplateSetNativeDataProperty) {
     v8::TryCatch try_catch(isolate());
     CHECK(TryRunJS("new ShadowRealm().evaluate('globalThis.func1')").IsEmpty());
     CHECK(try_catch.HasCaught());
+    std::string message =
+        *v8::String::Utf8Value(isolate(), try_catch.Exception());
+    CHECK_EQ(message, std::string("TypeError: Cannot wrap target callable "
+                                  "(Error: side effect in getter)"));
   }
   // Check that getter is called on WrappedFunctionCreate.
   {
     v8::TryCatch try_catch(isolate());
     CHECK(TryRunJS("new ShadowRealm().evaluate('globalThis.func2')").IsEmpty());
     CHECK(try_catch.HasCaught());
+    std::string message =
+        *v8::String::Utf8Value(isolate(), try_catch.Exception());
+    CHECK_EQ(message, std::string("TypeError: Cannot wrap target callable "
+                                  "(Error: side effect in getter)"));
   }
 }

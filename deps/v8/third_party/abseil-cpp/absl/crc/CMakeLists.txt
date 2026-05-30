@@ -25,6 +25,7 @@ absl_cc_library(
   DEPS
     absl::base
     absl::config
+    absl::optional
 )
 
 # Internal-only target, do not depend on directly.
@@ -159,6 +160,7 @@ absl_cc_library(
     absl::crc32c
     absl::config
     absl::strings
+    absl::no_destructor
 )
 
 absl_cc_test(

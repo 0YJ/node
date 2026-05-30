@@ -38,6 +38,7 @@
 #include "absl/base/config.h"
 #include "absl/base/macros.h"
 #include "absl/base/port.h"
+#include "absl/types/compare.h"
 
 #if defined(_MSC_VER)
 // In very old versions of MSVC and when the /Zc:wchar_t flag is off, wchar_t is
@@ -163,9 +164,9 @@ class
   constexpr explicit operator __int128() const;
   constexpr explicit operator unsigned __int128() const;
 #endif  // ABSL_HAVE_INTRINSIC_INT128
-  explicit operator float() const;
-  explicit operator double() const;
-  explicit operator long double() const;
+  constexpr explicit operator float() const;
+  constexpr explicit operator double() const;
+  constexpr explicit operator long double() const;
 
   // Trivial copy constructor, assignment operator and destructor.
 
@@ -215,7 +216,11 @@ class
   // Support for absl::Hash.
   template <typename H>
   friend H AbslHashValue(H h, uint128 v) {
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+    return H::combine(std::move(h), static_cast<unsigned __int128>(v));
+#else
     return H::combine(std::move(h), Uint128High64(v), Uint128Low64(v));
+#endif
   }
 
   // Support for absl::StrCat() etc.
@@ -244,11 +249,6 @@ class
 #endif  // byte order
 };
 
-// Prefer to use the constexpr `Uint128Max()`.
-//
-// TODO(absl-team) deprecate kuint128max once migration tool is released.
-ABSL_DLL extern const uint128 kuint128max;
-
 // allow uint128 to be logged
 std::ostream& operator<<(std::ostream& os, uint128 v);
 
@@ -274,7 +274,9 @@ class numeric_limits<absl::uint128> {
   static constexpr bool has_infinity = false;
   static constexpr bool has_quiet_NaN = false;
   static constexpr bool has_signaling_NaN = false;
+  ABSL_INTERNAL_DISABLE_DEPRECATED_DECLARATION_WARNING
   static constexpr float_denorm_style has_denorm = denorm_absent;
+  ABSL_INTERNAL_RESTORE_DEPRECATED_DECLARATION_WARNING
   static constexpr bool has_denorm_loss = false;
   static constexpr float_round_style round_style = round_toward_zero;
   static constexpr bool is_iec559 = false;
@@ -355,14 +357,18 @@ class int128 {
   constexpr int128(unsigned long v);       // NOLINT(runtime/int)
   constexpr int128(long long v);           // NOLINT(runtime/int)
   constexpr int128(unsigned long long v);  // NOLINT(runtime/int)
+  constexpr explicit int128(uint128 v);
 #ifdef ABSL_HAVE_INTRINSIC_INT128
   constexpr int128(__int128 v);  // NOLINT(runtime/explicit)
   constexpr explicit int128(unsigned __int128 v);
-#endif  // ABSL_HAVE_INTRINSIC_INT128
-  constexpr explicit int128(uint128 v);
+  constexpr explicit int128(float v);
+  constexpr explicit int128(double v);
+  constexpr explicit int128(long double v);
+#else
   explicit int128(float v);
   explicit int128(double v);
   explicit int128(long double v);
+#endif  // ABSL_HAVE_INTRINSIC_INT128
 
   // Assignment operators from arithmetic types
   int128& operator=(int v);
@@ -399,9 +405,9 @@ class int128 {
   constexpr explicit operator __int128() const;
   constexpr explicit operator unsigned __int128() const;
 #endif  // ABSL_HAVE_INTRINSIC_INT128
-  explicit operator float() const;
-  explicit operator double() const;
-  explicit operator long double() const;
+  constexpr explicit operator float() const;
+  constexpr explicit operator double() const;
+  constexpr explicit operator long double() const;
 
   // Trivial copy constructor, assignment operator and destructor.
 
@@ -460,7 +466,11 @@ class int128 {
   // Support for absl::Hash.
   template <typename H>
   friend H AbslHashValue(H h, int128 v) {
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+    return H::combine(std::move(h), v.v_);
+#else
     return H::combine(std::move(h), Int128High64(v), Int128Low64(v));
+#endif
   }
 
   // Support for absl::StrCat() etc.
@@ -517,7 +527,9 @@ class numeric_limits<absl::int128> {
   static constexpr bool has_infinity = false;
   static constexpr bool has_quiet_NaN = false;
   static constexpr bool has_signaling_NaN = false;
+  ABSL_INTERNAL_DISABLE_DEPRECATED_DECLARATION_WARNING
   static constexpr float_denorm_style has_denorm = denorm_absent;
+  ABSL_INTERNAL_RESTORE_DEPRECATED_DECLARATION_WARNING
   static constexpr bool has_denorm_loss = false;
   static constexpr float_round_style round_style = round_toward_zero;
   static constexpr bool is_iec559 = false;
@@ -601,9 +613,15 @@ constexpr uint128 operator<<(uint128 lhs, int amount);
 constexpr uint128 operator>>(uint128 lhs, int amount);
 constexpr uint128 operator+(uint128 lhs, uint128 rhs);
 constexpr uint128 operator-(uint128 lhs, uint128 rhs);
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+constexpr uint128 operator*(uint128 lhs, uint128 rhs);
+constexpr uint128 operator/(uint128 lhs, uint128 rhs);
+constexpr uint128 operator%(uint128 lhs, uint128 rhs);
+#else   // ABSL_HAVE_INTRINSIC_INT128
 uint128 operator*(uint128 lhs, uint128 rhs);
 uint128 operator/(uint128 lhs, uint128 rhs);
 uint128 operator%(uint128 lhs, uint128 rhs);
+#endif  // ABSL_HAVE_INTRINSIC_INT128
 
 inline uint128& uint128::operator<<=(int amount) {
   *this = *this << amount;
@@ -780,17 +798,21 @@ constexpr uint128::operator unsigned __int128() const {
 
 // Conversion operators to floating point types.
 
-inline uint128::operator float() const {
-  return static_cast<float>(lo_) + std::ldexp(static_cast<float>(hi_), 64);
+constexpr uint128::operator float() const {
+  // Note: This method might return Inf.
+  constexpr float pow_2_64 = 18446744073709551616.0f;
+  return static_cast<float>(lo_) + static_cast<float>(hi_) * pow_2_64;
 }
 
-inline uint128::operator double() const {
-  return static_cast<double>(lo_) + std::ldexp(static_cast<double>(hi_), 64);
+constexpr uint128::operator double() const {
+  constexpr double pow_2_64 = 18446744073709551616.0;
+  return static_cast<double>(lo_) + static_cast<double>(hi_) * pow_2_64;
 }
 
-inline uint128::operator long double() const {
+constexpr uint128::operator long double() const {
+  constexpr long double pow_2_64 = 18446744073709551616.0L;
   return static_cast<long double>(lo_) +
-         std::ldexp(static_cast<long double>(hi_), 64);
+         static_cast<long double>(hi_) * pow_2_64;
 }
 
 // Comparison operators.
@@ -823,6 +845,36 @@ constexpr bool operator>(uint128 lhs, uint128 rhs) { return rhs < lhs; }
 constexpr bool operator<=(uint128 lhs, uint128 rhs) { return !(rhs < lhs); }
 
 constexpr bool operator>=(uint128 lhs, uint128 rhs) { return !(lhs < rhs); }
+
+#ifdef __cpp_impl_three_way_comparison
+constexpr absl::strong_ordering operator<=>(uint128 lhs, uint128 rhs) {
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+  if (auto lhs_128 = static_cast<unsigned __int128>(lhs),
+      rhs_128 = static_cast<unsigned __int128>(rhs);
+      lhs_128 < rhs_128) {
+    return absl::strong_ordering::less;
+  } else if (lhs_128 > rhs_128) {
+    return absl::strong_ordering::greater;
+  } else {
+    return absl::strong_ordering::equal;
+  }
+#else
+  if (uint64_t lhs_high = Uint128High64(lhs), rhs_high = Uint128High64(rhs);
+      lhs_high < rhs_high) {
+    return absl::strong_ordering::less;
+  } else if (lhs_high > rhs_high) {
+    return absl::strong_ordering::greater;
+  } else if (uint64_t lhs_low = Uint128Low64(lhs), rhs_low = Uint128Low64(rhs);
+             lhs_low < rhs_low) {
+    return absl::strong_ordering::less;
+  } else if (lhs_low > rhs_low) {
+    return absl::strong_ordering::greater;
+  } else {
+    return absl::strong_ordering::equal;
+  }
+#endif
+}
+#endif
 
 // Unary operators.
 
@@ -979,19 +1031,15 @@ constexpr uint128 operator-(uint128 lhs, uint128 rhs) {
 #endif
 }
 
+#if !defined(ABSL_HAVE_INTRINSIC_INT128)
 inline uint128 operator*(uint128 lhs, uint128 rhs) {
-#if defined(ABSL_HAVE_INTRINSIC_INT128)
-  // TODO(strel) Remove once alignment issues are resolved and unsigned __int128
-  // can be used for uint128 storage.
-  return static_cast<unsigned __int128>(lhs) *
-         static_cast<unsigned __int128>(rhs);
-#elif defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
+#if defined(_MSC_VER) && defined(_M_X64) && !defined(_M_ARM64EC)
   uint64_t carry;
   uint64_t low = _umul128(Uint128Low64(lhs), Uint128Low64(rhs), &carry);
   return MakeUint128(Uint128Low64(lhs) * Uint128High64(rhs) +
                          Uint128High64(lhs) * Uint128Low64(rhs) + carry,
                      low);
-#else   // ABSL_HAVE_INTRINSIC128
+#else   // _MSC_VER
   uint64_t a32 = Uint128Low64(lhs) >> 32;
   uint64_t a00 = Uint128Low64(lhs) & 0xffffffff;
   uint64_t b32 = Uint128Low64(rhs) >> 32;
@@ -1003,16 +1051,24 @@ inline uint128 operator*(uint128 lhs, uint128 rhs) {
   result += uint128(a32 * b00) << 32;
   result += uint128(a00 * b32) << 32;
   return result;
-#endif  // ABSL_HAVE_INTRINSIC128
+#endif  // _MSC_VER
 }
+#endif  // ABSL_HAVE_INTRINSIC_INT128
 
 #if defined(ABSL_HAVE_INTRINSIC_INT128)
-inline uint128 operator/(uint128 lhs, uint128 rhs) {
+constexpr uint128 operator*(uint128 lhs, uint128 rhs) {
+  // TODO(strel) Remove once alignment issues are resolved and unsigned __int128
+  // can be used for uint128 storage.
+  return static_cast<unsigned __int128>(lhs) *
+         static_cast<unsigned __int128>(rhs);
+}
+
+constexpr uint128 operator/(uint128 lhs, uint128 rhs) {
   return static_cast<unsigned __int128>(lhs) /
          static_cast<unsigned __int128>(rhs);
 }
 
-inline uint128 operator%(uint128 lhs, uint128 rhs) {
+constexpr uint128 operator%(uint128 lhs, uint128 rhs) {
   return static_cast<unsigned __int128>(lhs) %
          static_cast<unsigned __int128>(rhs);
 }
@@ -1070,9 +1126,15 @@ inline int128& int128::operator=(unsigned long long v) {
 constexpr int128 operator-(int128 v);
 constexpr int128 operator+(int128 lhs, int128 rhs);
 constexpr int128 operator-(int128 lhs, int128 rhs);
+#if defined(ABSL_HAVE_INTRINSIC_INT128)
+constexpr int128 operator*(int128 lhs, int128 rhs);
+constexpr int128 operator/(int128 lhs, int128 rhs);
+constexpr int128 operator%(int128 lhs, int128 rhs);
+#else
 int128 operator*(int128 lhs, int128 rhs);
 int128 operator/(int128 lhs, int128 rhs);
 int128 operator%(int128 lhs, int128 rhs);
+#endif  // ABSL_HAVE_INTRINSIC_INT128
 constexpr int128 operator|(int128 lhs, int128 rhs);
 constexpr int128 operator&(int128 lhs, int128 rhs);
 constexpr int128 operator^(int128 lhs, int128 rhs);

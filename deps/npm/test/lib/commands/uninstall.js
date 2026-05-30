@@ -1,6 +1,6 @@
 const t = require('tap')
-const fs = require('fs')
-const { resolve } = require('path')
+const fs = require('node:fs')
+const { resolve } = require('node:path')
 const _mockNpm = require('../../fixtures/mock-npm')
 
 const mockNpm = async (t, opts = {}) => {
@@ -199,4 +199,18 @@ t.test('non ENOENT error reading from localPrefix package.json', async t => {
     { code: 'EJSONPARSE' },
     'should throw non ENOENT error'
   )
+})
+
+t.test('completion', async t => {
+  const { uninstall } = await _mockNpm(t, {
+    command: 'uninstall',
+    prefixDir: {
+      node_modules: {
+        foo: {},
+        bar: {},
+      },
+    },
+  })
+  const res = await uninstall.completion({ conf: { argv: { remain: ['npm', 'uninstall'] } } })
+  t.match(res, ['bar', 'foo'])
 })

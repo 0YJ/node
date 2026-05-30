@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-stringref --allow-natives-syntax
-// Flags: --experimental-wasm-imported-strings
+// Flags: --allow-natives-syntax --wasm-staging
 // Flags: --trace-wasm-inlining --liftoff
 // Also explicitly enable inlining and disable debug code to avoid differences
 // between --future and --no-future or debug and release builds.
-// Flags: --experimental-wasm-inlining --no-debug-code
+// Flags: --wasm-inlining --no-debug-code
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -134,6 +133,8 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   builder.addImport('wasm:text-encoder', 'measureStringAsUTF8', kSig_i_r);
   builder.addImport('wasm:text-encoder', 'encodeStringIntoUTF8Array',
                     makeSig([kWasmExternRef, a8ref, kWasmI32], [kWasmI32]));
+  builder.addImport('wasm:text-encoder', 'encodeStringToUTF8Array',
+                    makeSig([kWasmExternRef], [wasmRefType(kArrayI8)]));
 
   builder.addImport('related', 'intToString', kSig_e_ii);
   builder.addImport('related', 'doubleToString', kSig_e_d);

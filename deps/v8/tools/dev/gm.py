@@ -6,7 +6,7 @@
 Convenience wrapper for compiling V8 with gn/ninja and running tests.
 Sets up build output directories if they don't exist.
 Produces simulator builds for non-Intel target architectures.
-Uses Goma by default if it is detected (at output directory setup time).
+Uses reclient by default if it is detected (at output directory setup time).
 Expects to be run from the root of a V8 checkout.
 
 Usage:
@@ -27,17 +27,17 @@ not contain spaces.
 # See HELP below for additional documentation.
 
 from __future__ import print_function
+from enum import IntEnum
+from pathlib import Path
 import errno
 import os
 import platform
 import re
+import select
+import shutil
 import subprocess
 import sys
-import shutil
 import time
-
-from enum import IntEnum
-from pathlib import Path
 
 USE_PTY = "linux" in sys.platform
 if USE_PTY:
@@ -51,9 +51,9 @@ BUILD_TARGETS_ALL = ["all"]
 
 # All arches that this script understands.
 ARCHES = [
-    "ia32", "x64", "arm", "arm64", "mips64el", "ppc", "ppc64", "riscv32",
-    "riscv64", "s390", "s390x", "android_arm", "android_arm64", "loong64",
-    "fuchsia_x64", "fuchsia_arm64"
+    "ia32", "x64", "arm", "arm64", "mips64el", "ppc64", "riscv32", "riscv64",
+    "s390x", "android_arm", "android_arm64", "loong64", "fuchsia_x64",
+    "fuchsia_arm64", "android_riscv64"
 ]
 # Arches that get built/run when you don't specify any.
 DEFAULT_ARCHES = ["ia32", "x64", "arm", "arm64"]
@@ -80,8 +80,9 @@ TARGETS = [
 DEFAULT_TARGETS = ["d8"]
 # Tests that run-tests.py would run by default that can be run with
 # BUILD_TARGETS_TESTS.
-DEFAULT_TESTS = ["cctest", "debugger", "intl", "message", "mjsunit",
-                 "unittests"]
+DEFAULT_TESTS = [
+    "cctest", "debugger", "filecheck", "intl", "message", "mjsunit", "unittests"
+]
 # These can be suffixed to any <arch>.<mode> combo, or used standalone,
 # or used as global modifiers (affecting all <arch>.<mode> combos).
 ACTIONS = {
@@ -131,6 +132,7 @@ TESTSUITES_TARGETS = {
     "bigint": "bigint_shell",
     "cctest": "cctest",
     "debugger": "d8",
+    "filecheck": "d8",
     "fuzzer": "v8_fuzzers",
     "inspector": "inspector-test",
     "intl": "d8",
@@ -145,18 +147,35 @@ TESTSUITES_TARGETS = {
     "webkit": "d8"
 }
 
-out_dir_override = os.getenv("V8_GM_OUTDIR")
-if out_dir_override and Path(out_dir_override).is_file:
-  OUTDIR = Path(out_dir_override)
-else:
-  OUTDIR = Path("out")
+QUIET = sys.argv[0] == "quietgm"  # Overridden by "quiet" keyword.
+
+build_dir_prefix = os.getenv("V8_GM_BUILD_DIR_PREFIX")
 
 V8_DIR = Path(__file__).resolve().parent.parent.parent
 GCLIENT_FILE_PATH = V8_DIR.parent / ".gclient"
 RECLIENT_CERT_CACHE = V8_DIR / ".#gm_reclient_cert_cache"
 
-BUILD_DISTRIBUTION_RE = re.compile(r"use_(remoteexec|goma) = (false|true)")
-RECLIENT_CFG_RE = re.compile(r"rbe_cfg_dir = \"[^\"]+\"\n")
+if (V8_DIR.parent / "chrome").exists():
+  CHROMIUM_DIR = V8_DIR.parent
+  GCLIENT_FILE_PATH = CHROMIUM_DIR / ".gclient"
+else:
+  CHROMIUM_DIR = None
+
+out_dir_override = os.getenv("V8_GM_OUTDIR")
+if out_dir_override and Path(out_dir_override).is_dir:
+  OUTDIR = Path(out_dir_override).absolute()
+  OUTDIR_BASENAME = OUTDIR.parts[-1]
+else:
+  OUTDIR_BASENAME = "out"
+  if CHROMIUM_DIR:
+    OUTDIR = Path(CHROMIUM_DIR / OUTDIR_BASENAME)
+  else:
+    OUTDIR = Path(V8_DIR / OUTDIR_BASENAME)
+
+BUILD_DISTRIBUTION_RE = re.compile(r"\nuse_(remoteexec|goma) = (false|true)")
+GOMA_DIR_LINE = re.compile(r"\ngoma_dir = \"[^\"]+\"")
+DEPRECATED_RBE_CFG_RE = re.compile(r"\nrbe_cfg_dir = \"[^\"]+\"")
+RECLIENT_CFG_RE = re.compile(r"\nreclient_cfg_dir = \"[^\"]+\"")
 
 class Reclient(IntEnum):
   NONE = 0
@@ -172,11 +191,12 @@ def get_v8_solution(solutions):
   return None
 
 
+# Note: this function is reused by update-compile-commands.py. When renaming
+# this, please update that file too!
 def detect_reclient():
   if not GCLIENT_FILE_PATH.exists():
     return Reclient.NONE
-  with open(GCLIENT_FILE_PATH) as f:
-    content = f.read()
+  content = GCLIENT_FILE_PATH.read_text()
   try:
     config_dict = {}
     exec(content, config_dict)
@@ -188,78 +208,57 @@ def detect_reclient():
     print("# Can't detect reclient due to missing v8 gclient solution.")
     return Reclient.NONE
   custom_vars = v8_solution.get("custom_vars", {})
-  if custom_vars.get("rbe_instance"):
+  if "rbe_instance" in custom_vars:
     return Reclient.CUSTOM
-  if custom_vars.get("download_remoteexec_cfg"):
+  if "download_remoteexec_cfg" in custom_vars:
     return Reclient.GOOGLE
   return Reclient.NONE
 
 
+# Note: this function is reused by update-compile-commands.py. When renaming
+# this, please update that file too!
 def detect_reclient_cert():
   now = int(time.time())
   # We cache the cert expiration time in a file, because that's much faster
   # to read than invoking `gcertstatus`.
   if RECLIENT_CERT_CACHE.exists():
-    with open(RECLIENT_CERT_CACHE, 'r') as f:
-      cached_time = int(f.read())
+    cached_time = int(RECLIENT_CERT_CACHE.read_text())
     if now < cached_time:
       return True
   cmd = ["gcertstatus", "-nocheck_ssh", "-format=simple"]
   ret = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
   if ret.returncode != 0:
     return False
-  MARGIN = 300  # Request fresh cert if less than 5 mins remain.
-  lifetime = int(ret.stdout.decode("utf-8").strip().split(':')[1]) - MARGIN
+  gcertstatus_output = ret.stdout.decode("utf-8").strip()
+  if not gcertstatus_output:
+    return False
+  # Request fresh cert if less than an hour remains. Reproxy will refuse to
+  # start when the certificate is close to expiring.
+  MARGIN = 3600
+  lifetime = int(gcertstatus_output.split(":")[1]) - MARGIN
   if lifetime < 0:
     return False
-  with open(RECLIENT_CERT_CACHE, 'w') as f:
-    f.write(str(now + lifetime))
+  RECLIENT_CERT_CACHE.write_text(str(now + lifetime))
   return True
-
-# Note: this function is reused by update-compile-commands.py. When renaming
-# this, please update that file too!
-def detect_goma():
-  if os.environ.get("GOMA_DIR"):
-    return Path(os.environ.get("GOMA_DIR"))
-  if os.environ.get("GOMADIR"):
-    return Path(os.environ.get("GOMADIR"))
-  # There is a copy of goma in depot_tools, but it might not be in use on
-  # this machine.
-  goma = shutil.which("goma_ctl")
-  if goma is None: return None
-  cipd_bin = Path(goma).parent / ".cipd_bin"
-  if not cipd_bin.exists():
-    return None
-  # Some machines have one of these files, some have the other, some have both.
-  goma_auth = Path("~/.goma_client_oauth2_config").expanduser()
-  if goma_auth.exists():
-    return cipd_bin
-  goma_auth = Path("~/.goma_oauth2_config").expanduser()
-  if goma_auth.exists():
-    return cipd_bin
-  return None
 
 
 RECLIENT_MODE = detect_reclient()
-GOMADIR = detect_goma()
 
-# Let reclient have precendence over goma.
-IS_GOMA_MACHINE = not RECLIENT_MODE and GOMADIR is not None
+if platform.system() == "Linux":
+  RECLIENT_CFG_REL = "../../buildtools/reclient_cfgs/linux"
+else:
+  RECLIENT_CFG_REL = "../../buildtools/reclient_cfgs"
 
-RECLIENT_CFG_REL = "../../buildtools/reclient_cfgs/linux"
 BUILD_DISTRIBUTION_LINE = ""
 if RECLIENT_MODE:
-  BUILD_DISTRIBUTION_LINE = "use_remoteexec = true"
+  BUILD_DISTRIBUTION_LINE = "\nuse_remoteexec = true"
   if RECLIENT_MODE == Reclient.CUSTOM:
-    BUILD_DISTRIBUTION_LINE += f"\nrbe_cfg_dir = \"{RECLIENT_CFG_REL}\""
-elif IS_GOMA_MACHINE:
-  BUILD_DISTRIBUTION_LINE = "use_goma = true"
+    BUILD_DISTRIBUTION_LINE += f"\nreclient_cfg_dir = \"{RECLIENT_CFG_REL}\""
 
 RELEASE_ARGS_TEMPLATE = f"""\
 is_component_build = false
 is_debug = false
-%s
-{BUILD_DISTRIBUTION_LINE}
+%s{BUILD_DISTRIBUTION_LINE}
 v8_enable_backtrace = true
 v8_enable_disassembler = true
 v8_enable_object_print = true
@@ -271,8 +270,7 @@ DEBUG_ARGS_TEMPLATE = f"""\
 is_component_build = true
 is_debug = true
 symbol_level = 2
-%s
-{BUILD_DISTRIBUTION_LINE}
+%s{BUILD_DISTRIBUTION_LINE}
 v8_enable_backtrace = true
 v8_enable_fast_mksnapshot = true
 v8_enable_slow_dchecks = true
@@ -283,8 +281,7 @@ OPTDEBUG_ARGS_TEMPLATE = f"""\
 is_component_build = true
 is_debug = true
 symbol_level = 1
-%s
-{BUILD_DISTRIBUTION_LINE}
+%s{BUILD_DISTRIBUTION_LINE}
 v8_enable_backtrace = true
 v8_enable_fast_mksnapshot = true
 v8_enable_verify_heap = true
@@ -304,29 +301,47 @@ def print_help_and_exit():
   sys.exit(0)
 
 
+# Used by `tools/bash-completion.sh`
 def print_completions_and_exit():
   for a in ARCHES:
     print(str(a))
     for m in set(MODES.values()):
-      print(str(m))
       print(f"{a}.{m}")
       for t in TARGETS:
-        print(str(t))
-        print("{a}.{m}.{t}")
+        print(f"{a}.{m}.{t}")
+      for k in ACTIONS.keys():
+        print(f"{a}.{m}.{k}")
+  for t in TARGETS:
+    print(str(t))
+  for m in set(MODES.values()):
+    print(str(m))
   sys.exit(0)
 
 
 def _call(cmd, silent=False):
-  if not silent:
+  if not silent and not QUIET:
     print(f"# {cmd}")
   return subprocess.call(cmd, shell=True)
 
 
-def _call_with_output_no_terminal(cmd):
-  return subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=True)
+# Quiet mode means: only print in case of error.
+def _call_quiet(cmd):
+  p = subprocess.run(cmd, shell=True, capture_output=True)
+  stderr = p.stderr.decode('utf-8')
+  if stderr:
+    # Siso prints errors to stdout, so report that as well.
+    sys.stderr.write(p.stdout.decode('utf-8'))
+    sys.stderr.write(stderr)
+  # By not including stdout in the returned output, we implicitly skip the
+  # interactive "re-run mksnapshot in GDB" feature, which is just fitting
+  # for quiet mode.
+  return p.returncode, stderr
 
 
 def _call_with_output(cmd):
+  if QUIET:
+    return _call_quiet(cmd)
+
   print(f"# {cmd}")
   # The following trickery is required so that the 'cmd' thinks it's running
   # in a real terminal, while this script gets to intercept its output.
@@ -336,28 +351,38 @@ def _call_with_output(cmd):
   output = []
   try:
     while True:
-      try:
-        data = os.read(parent, 512).decode('utf-8')
-      except OSError as e:
-        if e.errno != errno.EIO: raise
-        break # EIO means EOF on some systems
-      else:
-        if not data: # EOF
-          break
-        print(data, end="")
-        sys.stdout.flush()
-        output.append(data)
+      # Use select with a timeout to read from the pty. This avoids a potential
+      # hang if the subprocess dies unexpectedly (e.g. OOM killer) without
+      # closing the pty, which would cause a blocking os.read to wait forever.
+      ready, _, _ = select.select([parent], [], [], 0.1)
+      if ready:
+        try:
+          data = os.read(parent, 512).decode('utf-8')
+        except OSError as e:
+          if e.errno != errno.EIO:
+            raise
+          break  # EIO means EOF on some systems
+        else:
+          if not data:  # EOF
+            break
+          print(data, end="")
+          sys.stdout.flush()
+          output.append(data)
+      elif p.poll() is not None:
+        # If the process has exited and no data is available, stop waiting.
+        break
   finally:
     os.close(parent)
-    p.wait()
+    while p.poll() is None:
+      print(".", end="")
+      time.sleep(0.1)
   return p.returncode, "".join(output)
 
 
 def _write(filename, content, log=True):
   if log:
     print(f"# echo > {filename} << EOF\n{content}EOF")
-  with filename.open("w") as f:
-    f.write(content)
+  filename.write_text(content)
 
 
 def _notify(summary, body):
@@ -373,6 +398,8 @@ def _get_machine():
 
 
 def get_path(arch, mode):
+  if build_dir_prefix:
+    return OUTDIR / f"{build_dir_prefix}-{arch}.{mode}"
   return OUTDIR / f"{arch}.{mode}"
 
 
@@ -410,29 +437,63 @@ class RawConfig:
     self.tests.update(tests)
     self.clean |= clean
 
+  def update_build_distribution_args(self):
+    args_gn = self.path / "args.gn"
+    assert args_gn.exists(), f"args.gn does not exist: {args_gn}"
+    gn_args = args_gn.read_text()
+    # Remove custom reclient config path (it will be added again as part of
+    # the config line below if needed).
+    new_gn_args = DEPRECATED_RBE_CFG_RE.sub("", gn_args)
+    new_gn_args = RECLIENT_CFG_RE.sub("", new_gn_args)
+    new_gn_args = BUILD_DISTRIBUTION_RE.sub(BUILD_DISTRIBUTION_LINE,
+                                            new_gn_args)
+    # Remove stale goma_dir to silence GN warnings about unused options.
+    new_gn_args = GOMA_DIR_LINE.sub("", new_gn_args)
+    if gn_args != new_gn_args:
+      print(f"# Updated gn args:{BUILD_DISTRIBUTION_LINE}")
+      _write(args_gn, new_gn_args, log=False)
+
   def build(self):
+    self.update_build_distribution_args()
+    # If the target is to just build args.gn then we are done here; otherwise
+    # drop that target because it's not something ninja can build.
+    if 'gn_args' in self.targets:
+      self.targets.remove('gn_args')
+    if len(self.targets) == 0:
+      return 0
+    # When printing, print a relative path for conciseness.
+    cwd = Path.cwd()
+    if cwd == V8_DIR:
+      try:
+        printable_path = self.path.relative_to(cwd)
+      except:
+        printable_path = self.path
+    else:
+      printable_path = self.path
     build_ninja = self.path / "build.ninja"
     if not build_ninja.exists():
-      code = _call(f"gn gen {self.path}")
+      code = _call(f"gn gen {printable_path}")
       if code != 0:
         return code
     elif self.clean:
-      code = _call(f"gn clean {self.path}")
+      code = _call(f"gn clean {printable_path}")
       if code != 0:
         return code
     targets = " ".join(self.targets)
+    quiet = "--quiet " if QUIET else ""
+    cmd = f"autoninja {quiet}-C {printable_path} {targets}"
+
     # The implementation of mksnapshot failure detection relies on
     # the "pty" module and GDB presence, so skip it on non-Linux.
     if not USE_PTY:
-      return _call(f"autoninja -C {self.path} {targets}")
+      return _call(cmd)
 
-    return_code, output = _call_with_output(
-        f"autoninja -C {self.path} {targets}")
+    return_code, output = _call_with_output(cmd)
     if return_code != 0 and "FAILED:" in output:
       if "snapshot_blob" in output:
         if "gen-static-roots.py" in output:
           _notify("V8 build requires your attention",
-                  "Please re-generate static roots...")
+                  "Please re-generate static roots.")
           return return_code
         csa_trap = re.compile("Specify option( --csa-trap-on-node=[^ ]*)")
         match = csa_trap.search(output)
@@ -462,7 +523,7 @@ class RawConfig:
       tests = ""
     else:
       tests = " ".join(self.tests)
-    run_tests = Path("tools") / "run-tests.py"
+    run_tests = V8_DIR / "tools" / "run-tests.py"
     test_runner_args = " ".join(self.testrunner_args)
     return _call(
         f'"{sys.executable }" {run_tests} --outdir={self.path} {tests} {test_runner_args}'
@@ -493,6 +554,8 @@ class ManagedConfig(RawConfig):
       cpu = "arm"
     elif self.arch == "android_arm64" or self.arch == "fuchsia_arm64":
       cpu = "arm64"
+    elif self.arch == "android_riscv64":
+      cpu = "riscv64"
     elif self.arch == "arm64" and _get_machine() in ("aarch64", "arm64"):
       # arm64 build host:
       cpu = "arm64"
@@ -512,15 +575,17 @@ class ManagedConfig(RawConfig):
       v8_cpu = "arm"
     elif self.arch == "android_arm64" or self.arch == "fuchsia_arm64":
       v8_cpu = "arm64"
-    elif self.arch in ("arm", "arm64", "mips64el", "ppc", "ppc64", "riscv64",
-                       "riscv32", "s390", "s390x", "loong64"):
+    elif self.arch == "android_riscv64":
+      v8_cpu = "riscv64"
+    elif self.arch in ("arm", "arm64", "mips64el", "ppc64", "riscv64",
+                       "riscv32", "s390x", "loong64"):
       v8_cpu = self.arch
     else:
       return []
     return [f"v8_target_cpu = \"{v8_cpu}\""]
 
   def get_target_os(self):
-    if self.arch in ("android_arm", "android_arm64"):
+    if self.arch in ("android_arm", "android_arm64", "android_riscv64"):
       return ["target_os = \"android\""]
     elif self.arch in ("fuchsia_x64", "fuchsia_arm64"):
       return ["target_os = \"fuchsia\""]
@@ -548,20 +613,6 @@ class ManagedConfig(RawConfig):
         self.get_sandbox_flag())
     return template % "\n".join(arch_specific)
 
-  def update_build_distribution_args(self):
-    args_gn = self.path / "args.gn"
-    assert args_gn.exists()
-    with open(args_gn) as f:
-      gn_args = f.read()
-    # Remove custom reclient config path (it will be added again as part of
-    # the config line below if needed).
-    new_gn_args = RECLIENT_CFG_RE.sub("", gn_args)
-    new_gn_args = BUILD_DISTRIBUTION_RE.sub(
-        BUILD_DISTRIBUTION_LINE, new_gn_args)
-    if gn_args != new_gn_args:
-      print(f"# Updated gn args:\n{BUILD_DISTRIBUTION_LINE}")
-      _write(args_gn, new_gn_args, log=False)
-
   def build(self):
     path = self.path
     args_gn = path / "args.gn"
@@ -570,22 +621,28 @@ class ManagedConfig(RawConfig):
       path.mkdir(parents=True)
     if not args_gn.exists():
       _write(args_gn, self.get_gn_args())
-    else:
-      self.update_build_distribution_args()
-    # If the target is to just build args.gn then we are done here; otherwise
-    # drop that target because it's not something ninja can build.
-    if 'gn_args' in self.targets:
-      self.targets.remove('gn_args')
-    if len(self.targets) == 0:
-      return 0
     return super().build()
 
   def run_tests(self):
+    host_arch = _get_machine()
+    if host_arch == "arm64":
+      if platform.system() == "Darwin" and self.arch != "arm64":
+        # MacOS-arm64 doesn't provide a good experience when users
+        # accidentally try to run x64 tests.
+        print(f"Running {self.arch} tests on Mac-arm64 isn't going to work.")
+        return 1
+      if platform.system() == "Linux" and "arm" not in self.arch:
+        # Assume that an arm64 Linux machine may have been set up to run
+        # arm32 binaries and Android on-device tests; refuse everything else.
+        print(f"Running {self.arch} tests on Linux-arm64 isn't going to work.")
+        return 1
     # Special handling for "mkgrokdump": if it was built, run it.
-    if (self.arch == "x64" and self.mode == "release" and
-        "mkgrokdump" in self.targets):
+    if ("mkgrokdump" in self.targets and self.mode == "release" and
+        ((host_arch == "x86_64" and self.arch == "x64") or
+         (host_arch == "arm64" and self.arch == "arm64"))):
       mkgrokdump_bin = self.path / "mkgrokdump"
-      _call(f"{mkgrokdump_bin} > tools/v8heapconst.py")
+      heapconst_output = V8_DIR / "tools" / "v8heapconst.py"
+      _call(f"{mkgrokdump_bin} > {heapconst_output}")
     return super().run_tests()
 
 
@@ -623,7 +680,7 @@ class ArgumentParser(object):
         self.populate_configs(DEFAULT_ARCHES, DEFAULT_MODES, **impact)
 
   def maybe_parse_builddir(self, argstring):
-    outdir_prefix = str(OUTDIR) + os.path.sep
+    outdir_prefix = str(OUTDIR_BASENAME) + os.path.sep
     # {argstring} must have the shape "out/x", and the 'x' part must be
     # at least one character.
     if not argstring.startswith(outdir_prefix):
@@ -633,6 +690,7 @@ class ArgumentParser(object):
     # "out/foo.d8" -> path="out/foo", targets=["d8"]
     # "out/d8.cctest" -> path="out/d8", targets=["cctest"]
     # "out/x.y.d8.cctest" -> path="out/x.y", targets=["d8", "cctest"]
+    argstring = argstring.replace(outdir_prefix, "")
     words = argstring.split('.')
     path_end = len(words)
     targets = []
@@ -652,7 +710,7 @@ class ArgumentParser(object):
         break
       path_end -= 1
     targets = targets or DEFAULT_TARGETS
-    path = Path('.'.join(words[:path_end]))
+    path = OUTDIR / Path('.'.join(words[:path_end]))
     args_gn = path / "args.gn"
     # Only accept existing build output directories, otherwise fall back
     # to regular parsing.
@@ -670,15 +728,22 @@ class ArgumentParser(object):
       print_help_and_exit()
     if argstring == "--print-completions":
       print_completions_and_exit()
+    if argstring == "quiet":
+      global QUIET
+      QUIET = True
+      return
     arches = []
     modes = []
     targets = []
     actions = []
     tests = []
     clean = False
-    # Special handling for "mkgrokdump": build it for x64.release.
+    # Special handling for "mkgrokdump": build it for (arm64|x64).release.
     if argstring == "mkgrokdump":
-      self.populate_configs(["x64"], ["release"], ["mkgrokdump"], [], False)
+      arch = "x64"
+      if _get_machine() in ("aarch64", "arm64"):
+        arch = "arm64"
+      self.populate_configs([arch], ["release"], ["mkgrokdump"], [], False)
       return
     if argstring.startswith("--"):
       # Pass all other flags to test runner.
@@ -689,7 +754,9 @@ class ArgumentParser(object):
       return
     # Specifying a single unit test looks like "unittests/Foo.Bar", test262
     # tests have names like "S15.4.4.7_A4_T1", don't split these.
-    if argstring.startswith("unittests/") or argstring.startswith("test262/"):
+    if (argstring.startswith("unittests/") or
+        argstring.startswith("test262/") or argstring.startswith("fuzzer/") or
+        argstring.startswith("wasm-api-tests/")):
       words = [argstring]
     else:
       # Assume it's a word like "x64.release" -> split at the dot.
@@ -742,6 +809,9 @@ class ArgumentParser(object):
   def parse_arguments(self, argv):
     if len(argv) == 0:
       print_help_and_exit()
+    if len(argv) >= 2 and argv[0] == "args" and os.path.exists(argv[1]):
+      code = _call(f"gn args {argv[1]}")
+      sys.exit(code)
     for argstring in argv:
       self.parse_arg(argstring)
     self.process_global_actions()
@@ -754,15 +824,10 @@ def main(argv):
   parser = ArgumentParser()
   configs = parser.parse_arguments(argv[1:])
   return_code = 0
-  # If we have Goma but it is not running, start it.
-  if (IS_GOMA_MACHINE and
-      _call("pgrep -x compiler_proxy > /dev/null", silent=True) != 0):
-    goma_ctl = GOMADIR / "goma_ctl.py"
-    _call(f"{goma_ctl} ensure_start")
   # If we have Reclient with the Google configuration, check for current
   # certificate.
   if (RECLIENT_MODE == Reclient.GOOGLE and not detect_reclient_cert()):
-    print("Found Reclient/Google setup without cert, running 'gcert' for you:")
+    print("# gcert")
     subprocess.check_call("gcert", shell=True)
   for c in configs:
     return_code += configs[c].build()

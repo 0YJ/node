@@ -1,3 +1,31 @@
+## 8.3.5 (2026-02-19)
+
+### Bug fixes
+
+Emit a more informative error message when trying to walk a node type that has no walker function.
+
+Specify callbacks in types to receive `AnyNode` type, so that they can be narrowed more easily.
+
+Support import attributes.
+
+## 8.3.4 (2024-09-09)
+
+### Bug fixes
+
+Walk SwitchCase nodes as separate nodes.
+
+## 8.3.3 (2024-01-11)
+
+### Bug fixes
+
+Make acorn a dependency because acorn-walk uses the types from that package.
+
+## 8.3.2 (2024-01-11)
+
+### Bug fixes
+
+Add missing type for `findNodeBefore`.
+
 ## 8.3.1 (2023-12-06)
 
 ### Bug fixes
