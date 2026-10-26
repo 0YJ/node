@@ -6,9 +6,7 @@
 
 #include <vector>
 
-#include "include/libplatform/libplatform.h"
 #include "src/base/virtual-address-space.h"
-#include "src/init/v8.h"
 #include "test/unittests/test-utils.h"
 
 #ifdef V8_OS_LINUX
@@ -20,9 +18,7 @@
 namespace v8 {
 namespace internal {
 
-class SandboxTest : public v8::TestWithPlatform {};
-
-TEST_F(SandboxTest, Initialization) {
+TEST(SandboxTest, Initialization) {
   base::VirtualAddressSpace vas;
 
   Sandbox sandbox;
@@ -31,7 +27,7 @@ TEST_F(SandboxTest, Initialization) {
   EXPECT_FALSE(sandbox.is_partially_reserved());
   EXPECT_EQ(sandbox.size(), 0UL);
 
-  sandbox.Initialize(platform(), &vas);
+  sandbox.Initialize(&vas);
 
   EXPECT_TRUE(sandbox.is_initialized());
   EXPECT_NE(sandbox.base(), 0UL);
@@ -42,7 +38,7 @@ TEST_F(SandboxTest, Initialization) {
   EXPECT_FALSE(sandbox.is_initialized());
 }
 
-TEST_F(SandboxTest, InitializationWithSize) {
+TEST(SandboxTest, InitializationWithSize) {
   base::VirtualAddressSpace vas;
   // This test only works if virtual memory subspaces can be allocated.
   if (!vas.CanAllocateSubspaces()) return;
@@ -50,7 +46,7 @@ TEST_F(SandboxTest, InitializationWithSize) {
   Sandbox sandbox;
   size_t size = 8ULL * GB;
   const bool use_guard_regions = false;
-  sandbox.Initialize(platform(), &vas, size, use_guard_regions);
+  sandbox.Initialize(&vas, size, use_guard_regions);
 
   EXPECT_TRUE(sandbox.is_initialized());
   EXPECT_FALSE(sandbox.is_partially_reserved());
@@ -59,7 +55,7 @@ TEST_F(SandboxTest, InitializationWithSize) {
   sandbox.TearDown();
 }
 
-TEST_F(SandboxTest, PartiallyReservedSandbox) {
+TEST(SandboxTest, PartiallyReservedSandbox) {
   base::VirtualAddressSpace vas;
   Sandbox sandbox;
   // Total size of the sandbox.
@@ -67,8 +63,8 @@ TEST_F(SandboxTest, PartiallyReservedSandbox) {
   // Size of the virtual memory that is actually reserved at the start of the
   // sandbox.
   size_t reserved_size = 2 * vas.allocation_granularity();
-  EXPECT_TRUE(sandbox.InitializeAsPartiallyReservedSandbox(
-      platform(), &vas, size, reserved_size));
+  EXPECT_TRUE(
+      sandbox.InitializeAsPartiallyReservedSandbox(&vas, size, reserved_size));
 
   EXPECT_TRUE(sandbox.is_initialized());
   EXPECT_TRUE(sandbox.is_partially_reserved());
@@ -86,10 +82,10 @@ TEST_F(SandboxTest, PartiallyReservedSandbox) {
   EXPECT_FALSE(sandbox.is_initialized());
 }
 
-TEST_F(SandboxTest, Contains) {
+TEST(SandboxTest, Contains) {
   base::VirtualAddressSpace vas;
   Sandbox sandbox;
-  sandbox.Initialize(platform(), &vas);
+  sandbox.Initialize(&vas);
 
   if (sandbox.is_partially_reserved()) {
     // If we couldn't create a "full" sandbox, this test will fail, so skip it.
@@ -139,10 +135,10 @@ TEST_F(SandboxTest, Contains) {
   sandbox.TearDown();
 }
 
-TEST_F(SandboxTest, PageAllocation) {
+TEST(SandboxTest, PageAllocation) {
   base::VirtualAddressSpace root_vas;
   Sandbox sandbox;
-  sandbox.Initialize(platform(), &root_vas);
+  sandbox.Initialize(&root_vas);
 
   const size_t kAllocatinSizesInPages[] = {1, 1, 2, 3, 5, 8, 13, 21, 34};
   constexpr int kNumAllocations = arraysize(kAllocatinSizesInPages);
@@ -169,13 +165,13 @@ TEST_F(SandboxTest, PageAllocation) {
 }
 
 #ifdef V8_OS_LINUX
-TEST_F(SandboxTest, SandboxName) {
+TEST(SandboxTest, SandboxName) {
   base::VirtualAddressSpace vas;
   // This test only works if virtual memory subspaces can be allocated.
   if (!vas.CanAllocateSubspaces()) GTEST_SKIP();
 
   Sandbox sandbox;
-  sandbox.Initialize(platform(), &vas);
+  sandbox.Initialize(&vas);
 
   base::SignalSafeMapsParser parser;
   ASSERT_TRUE(parser.IsValid());

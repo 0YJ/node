@@ -30,10 +30,6 @@
 #include <typeinfo>
 #include <utility>
 
-#if __has_include(<version>)
-#include <version>  // For __cpp_lib_bit_cast.
-#endif
-
 #if defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
 #include <bit>  // For std::bit_cast.
 #endif  // defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
@@ -174,15 +170,16 @@ using std::bit_cast;
 
 #else  // defined(__cpp_lib_bit_cast) && __cpp_lib_bit_cast >= 201806L
 
-template <typename Dest, typename Source,
-          std::enable_if_t<sizeof(Dest) == sizeof(Source) &&
-                               std::is_trivially_copyable_v<Source> &&
-                               std::is_trivially_copyable_v<Dest>
+template <
+    typename Dest, typename Source,
+    typename std::enable_if<sizeof(Dest) == sizeof(Source) &&
+                                std::is_trivially_copyable<Source>::value &&
+                                std::is_trivially_copyable<Dest>::value
 #if !ABSL_HAVE_BUILTIN(__builtin_bit_cast)
-                               && std::is_default_constructible_v<Dest>
+                                && std::is_default_constructible<Dest>::value
 #endif  // !ABSL_HAVE_BUILTIN(__builtin_bit_cast)
-                           ,
-                           int> = 0>
+                            ,
+                            int>::type = 0>
 #if ABSL_HAVE_BUILTIN(__builtin_bit_cast)
 inline constexpr Dest bit_cast(const Source& source) {
   return __builtin_bit_cast(Dest, source);
@@ -204,11 +201,11 @@ namespace base_internal {
     const char* source_type, const char* target_type);
 
 template <typename To, typename From>
-inline void ValidateDownCast(From* f) {
+inline void ValidateDownCast(From* f ABSL_ATTRIBUTE_UNUSED) {
   // Assert only if RTTI is enabled and in debug mode or hardened asserts are
   // enabled.
-#if defined(ABSL_INTERNAL_HAS_RTTI) && \
-    (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1))
+#ifdef ABSL_INTERNAL_HAS_RTTI
+#if !defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2)
   // Suppress erroneous nonnull comparison warning on older GCC.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
@@ -221,8 +218,7 @@ inline void ValidateDownCast(From* f) {
     absl::base_internal::BadDownCastCrash(
         typeid(*f).name(), typeid(std::remove_pointer_t<To>).name());
   }
-#else
-  (void)f;  // Denote this as "used" to avoid warning
+#endif
 #endif
 }
 
@@ -252,19 +248,19 @@ inline void ValidateDownCast(From* f) {
 template <typename To, typename From>  // use like this: down_cast<T*>(foo);
 [[nodiscard]]
 inline To down_cast(From* f) {  // so we only accept pointers
-  static_assert(std::is_pointer_v<To>, "target type not a pointer");
+  static_assert(std::is_pointer<To>::value, "target type not a pointer");
   // dynamic_cast allows casting to the same type or a more cv-qualified
   // version of the same type without them being polymorphic.
-  if constexpr (!std::is_same_v<std::remove_cv_t<std::remove_pointer_t<To>>,
-                                std::remove_cv_t<From>>) {
-    static_assert(std::is_polymorphic_v<From>,
+  if constexpr (!std::is_same<std::remove_cv_t<std::remove_pointer_t<To>>,
+                              std::remove_cv_t<From>>::value) {
+    static_assert(std::is_polymorphic<From>::value,
                   "source type must be polymorphic");
-    static_assert(std::is_polymorphic_v<std::remove_pointer_t<To>>,
+    static_assert(std::is_polymorphic<std::remove_pointer_t<To>>::value,
                   "target type must be polymorphic");
   }
   static_assert(
-      std::is_convertible_v<std::remove_cv_t<std::remove_pointer_t<To>>*,
-                            std::remove_cv_t<From>*>,
+      std::is_convertible<std::remove_cv_t<std::remove_pointer_t<To>>*,
+                          std::remove_cv_t<From>*>::value,
       "target type not derived from source type");
 
   absl::base_internal::ValidateDownCast<To>(f);
@@ -283,19 +279,20 @@ inline To down_cast(From* f) {  // so we only accept pointers
 template <typename To, typename From>
 [[nodiscard]]
 inline To down_cast(From& f) {
-  static_assert(std::is_lvalue_reference_v<To>, "target type not a reference");
+  static_assert(std::is_lvalue_reference<To>::value,
+                "target type not a reference");
   // dynamic_cast allows casting to the same type or a more cv-qualified
   // version of the same type without them being polymorphic.
-  if constexpr (!std::is_same_v<std::remove_cv_t<std::remove_reference_t<To>>,
-                                std::remove_cv_t<From>>) {
-    static_assert(std::is_polymorphic_v<From>,
+  if constexpr (!std::is_same<std::remove_cv_t<std::remove_reference_t<To>>,
+                              std::remove_cv_t<From>>::value) {
+    static_assert(std::is_polymorphic<From>::value,
                   "source type must be polymorphic");
-    static_assert(std::is_polymorphic_v<std::remove_reference_t<To>>,
+    static_assert(std::is_polymorphic<std::remove_reference_t<To>>::value,
                   "target type must be polymorphic");
   }
   static_assert(
-      std::is_convertible_v<std::remove_cv_t<std::remove_reference_t<To>>*,
-                            std::remove_cv_t<From>*>,
+      std::is_convertible<std::remove_cv_t<std::remove_reference_t<To>>*,
+                          std::remove_cv_t<From>*>::value,
       "target type not derived from source type");
 
   absl::base_internal::ValidateDownCast<std::remove_reference_t<To>*>(

@@ -70,7 +70,6 @@ export class LogReader {
     this.useBigIntAddresses = useBigIntAddresses;
     this.parseFrame = useBigIntAddresses ? BigInt : parseInt;
     this.hasSeenUnsafeIntegers = false;
-    this.verbose = false;
   }
 
 /**
@@ -128,10 +127,6 @@ export class LogReader {
    */
   printError(str) {
     // Do nothing.
-  }
-
-  warn(...args) {
-    if (this.verbose) console.warn(...args);
   }
 
   /**
@@ -239,7 +234,7 @@ export class LogReader {
     }
     if (!this.useBigIntAddresses) {
       if (!this.hasSeenUnsafeIntegers && containsUnsafeInts(parsedFields)) {
-        this.warn(`Log line contains unsafe integers: ${fields}`);
+        console.warn(`Log line contains unsafe integers: ${fields}`);
         this.hasSeenUnsafeIntegers = true;
       }
     }

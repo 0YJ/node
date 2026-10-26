@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -21,18 +21,15 @@
 #include <openssl/crypto.h>
 #include <openssl/params.h>
 #include <openssl/err.h>
-#include <openssl/proverr.h>
 #include <openssl/pem.h> /* For public PVK functions */
 #include <openssl/x509.h>
-#include "internal/cryptlib.h"
 #include "internal/passphrase.h"
 #include "internal/sizes.h"
 #include "crypto/pem.h" /* For internal PVK and "blob" headers */
 #include "crypto/rsa.h"
 #include "prov/bio.h"
 #include "prov/implementations.h"
-#include "prov/endecoder_local.h"
-#include "providers/implementations/encode_decode/decode_pvk2key.inc"
+#include "endecoder_local.h"
 
 struct pvk2key_ctx_st; /* Forward declaration */
 typedef int check_key_fn(void *, struct pvk2key_ctx_st *ctx);
@@ -88,21 +85,21 @@ static void pvk2key_freectx(void *vctx)
 
 static const OSSL_PARAM *pvk2key_settable_ctx_params(ossl_unused void *provctx)
 {
-    return pvk2key_set_ctx_params_list;
+    static const OSSL_PARAM settables[] = {
+        OSSL_PARAM_utf8_string(OSSL_DECODER_PARAM_PROPERTIES, NULL, 0),
+        OSSL_PARAM_END,
+    };
+    return settables;
 }
 
 static int pvk2key_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     struct pvk2key_ctx_st *ctx = vctx;
-    struct pvk2key_set_ctx_params_st p;
-    char *str;
+    const OSSL_PARAM *p;
+    char *str = ctx->propq;
 
-    if (ctx == NULL || !pvk2key_set_ctx_params_decoder(params, &p))
-        return 0;
-
-    str = ctx->propq;
-    if (p.propq != NULL
-        && !OSSL_PARAM_get_utf8_string(p.propq, &str, sizeof(ctx->propq)))
+    p = OSSL_PARAM_locate_const(params, OSSL_DECODER_PARAM_PROPERTIES);
+    if (p != NULL && !OSSL_PARAM_get_utf8_string(p, &str, sizeof(ctx->propq)))
         return 0;
 
     return 1;

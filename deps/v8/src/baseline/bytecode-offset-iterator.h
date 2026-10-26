@@ -44,12 +44,7 @@ class V8_EXPORT_PRIVATE BytecodeOffsetIterator {
   }
 
   inline void AdvanceToPCOffset(Address pc_offset) {
-    // The caller bounds pc_offset to instruction_size, which is rounded up to
-    // kMetadataAlignment past the last table-mapped PC. Advance() only guards
-    // against walking past done() under DCHECK, so check done() here in release
-    // builds too -- otherwise an offset in the alignment padding over-reads the
-    // table.
-    while (!done() && current_pc_end_offset() < pc_offset) {
+    while (current_pc_end_offset() < pc_offset) {
       Advance();
     }
     DCHECK_GT(pc_offset, current_pc_start_offset());
@@ -80,15 +75,14 @@ class V8_EXPORT_PRIVATE BytecodeOffsetIterator {
 
  private:
   void Initialize();
-  inline uint32_t ReadPosition() {
-    return base::VLQDecodeUnsigned(data_start_address_,
-                                   reinterpret_cast<int*>(&current_index_));
+  inline int ReadPosition() {
+    return base::VLQDecodeUnsigned(data_start_address_, &current_index_);
   }
 
   Handle<TrustedByteArray> mapping_table_;
   uint8_t* data_start_address_;
-  uint32_t data_length_;
-  uint32_t current_index_;
+  int data_length_;
+  int current_index_;
   Address current_pc_start_offset_;
   Address current_pc_end_offset_;
   int current_bytecode_offset_;

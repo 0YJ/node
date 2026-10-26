@@ -8,7 +8,6 @@
 #include "src/base/platform/condition-variable.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/semaphore.h"
-#include "src/base/strong-alias.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/assembler.h"
 #include "src/codegen/macro-assembler-inl.h"
@@ -35,25 +34,24 @@ namespace v8 {
 namespace internal {
 
 namespace {
-void CreateFixedArray(Heap* heap, Address start, uint32_t size) {
+void CreateFixedArray(Heap* heap, Address start, int size) {
   Tagged<HeapObject> object = HeapObject::FromAddress(start);
   object->set_map_after_allocation(heap->isolate(),
                                    ReadOnlyRoots(heap).fixed_array_map(),
                                    SKIP_WRITE_BARRIER);
   Tagged<FixedArray> array = Cast<FixedArray>(object);
-  const uint32_t length =
-      (size - OFFSET_OF_DATA_START(FixedArray)) / kTaggedSize;
+  int length = (size - OFFSET_OF_DATA_START(FixedArray)) / kTaggedSize;
   array->set_length(length);
   MemsetTagged(array->RawFieldOfFirstElement(),
                ReadOnlyRoots(heap).undefined_value(), length);
 }
 
-const uint32_t kNumIterations = 2000;
-const uint32_t kSmallObjectSize = 10 * kTaggedSize;
-const uint32_t kMediumObjectSize = 8 * KB;
+const int kNumIterations = 2000;
+const int kSmallObjectSize = 10 * kTaggedSize;
+const int kMediumObjectSize = 8 * KB;
 
 void AllocateSomeObjects(LocalHeap* local_heap) {
-  for (uint32_t i = 0; i < kNumIterations; i++) {
+  for (int i = 0; i < kNumIterations; i++) {
     AllocationResult result = local_heap->AllocateRaw(
         kSmallObjectSize, AllocationType::kOld, AllocationOrigin::kRuntime,
         AllocationAlignment::kTaggedAligned);
@@ -273,7 +271,7 @@ class LargeObjectConcurrentAllocationThread final : public v8::base::Thread {
     UnparkedScope unparked_scope(&local_heap);
     const size_t kLargeObjectSize = kMaxRegularHeapObjectSize * 2;
 
-    for (uint32_t i = 0; i < kNumIterations; i++) {
+    for (int i = 0; i < kNumIterations; i++) {
       AllocationResult result = local_heap.AllocateRaw(
           kLargeObjectSize, AllocationType::kOld, AllocationOrigin::kRuntime,
           AllocationAlignment::kTaggedAligned);
@@ -328,7 +326,7 @@ UNINITIALIZED_TEST(ConcurrentAllocationInLargeSpace) {
   isolate->Dispose();
 }
 
-const uint32_t kWhiteIterations = 1000;
+const int kWhiteIterations = 1000;
 
 class ConcurrentBlackAllocationThread final : public v8::base::Thread {
  public:
@@ -345,7 +343,7 @@ class ConcurrentBlackAllocationThread final : public v8::base::Thread {
     LocalHeap local_heap(heap_, ThreadKind::kBackground);
     UnparkedScope unparked_scope(&local_heap);
 
-    for (uint32_t i = 0; i < kNumIterations; i++) {
+    for (int i = 0; i < kNumIterations; i++) {
       if (i == kWhiteIterations) {
         local_heap.ExecuteWhileParked([this]() {
           sema_white_->Signal();
@@ -397,10 +395,9 @@ UNINITIALIZED_TEST(ConcurrentBlackAllocation) {
 
     thread->Join();
 
-    const uint32_t kObjectsAllocatedPerIteration = 2;
+    const int kObjectsAllocatedPerIteration = 2;
 
-    for (uint32_t i = 0; i < kNumIterations * kObjectsAllocatedPerIteration;
-         i++) {
+    for (int i = 0; i < kNumIterations * kObjectsAllocatedPerIteration; i++) {
       Address address = objects[i];
       Tagged<HeapObject> object = HeapObject::FromAddress(address);
       if (v8_flags.black_allocated_pages) {
@@ -542,7 +539,7 @@ UNINITIALIZED_TEST(ConcurrentRecordRelocSlot) {
     {
       HandleScope handle_scope(i_isolate);
       uint8_t buffer[i::Assembler::kDefaultBufferSize];
-      MacroAssembler masm(i_isolate, v8::internal::CodeObjectRequired{true},
+      MacroAssembler masm(i_isolate, v8::internal::CodeObjectRequired::kYes,
                           ExternalAssemblerBuffer(buffer, sizeof(buffer)));
 #if V8_TARGET_ARCH_ARM64
       // Arm64 requires stack alignment.

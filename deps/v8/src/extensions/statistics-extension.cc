@@ -5,15 +5,12 @@
 #include "src/extensions/statistics-extension.h"
 
 #include "include/v8-template.h"
-#include "src/api/api.h"
 #include "src/common/assert-scope.h"
 #include "src/execution/isolate.h"
 #include "src/heap/heap-inl.h"  // crbug.com/v8/8499
-#include "src/heap/heap-layout-inl.h"
 #include "src/logging/counters.h"
 #include "src/objects/tagged.h"
 #include "src/roots/roots.h"
-#include "src/sandbox/check.h"
 
 namespace v8 {
 namespace internal {
@@ -34,24 +31,21 @@ static void AddCounter(v8::Isolate* isolate,
                        StatsCounter* counter,
                        const char* name) {
   if (counter->Enabled()) {
-    v8::Local<v8::Context> context = isolate->GetCurrentContext();
-    v8::Local<v8::String> key =
-        v8::String::NewFromUtf8(isolate, name).ToLocalChecked();
-    v8::Local<v8::Number> value =
-        v8::Number::New(isolate, *counter->GetInternalPointer());
-    // Ignore failure due to throwing setters.
-    std::ignore = object->CreateDataProperty(context, key, value);
+    object
+        ->Set(isolate->GetCurrentContext(),
+              v8::String::NewFromUtf8(isolate, name).ToLocalChecked(),
+              v8::Number::New(isolate, *counter->GetInternalPointer()))
+        .FromJust();
   }
 }
 
 static void AddNumber(v8::Isolate* isolate, v8::Local<v8::Object> object,
                       double value, const char* name) {
-  v8::Local<v8::Context> context = isolate->GetCurrentContext();
-  v8::Local<v8::String> key =
-      v8::String::NewFromUtf8(isolate, name).ToLocalChecked();
-  v8::Local<v8::Number> val = v8::Number::New(isolate, value);
-  // Ignore failure due to throwing setters.
-  std::ignore = object->CreateDataProperty(context, key, val);
+  object
+      ->Set(isolate->GetCurrentContext(),
+            v8::String::NewFromUtf8(isolate, name).ToLocalChecked(),
+            v8::Number::New(isolate, value))
+      .FromJust();
 }
 
 
@@ -59,13 +53,11 @@ static void AddNumber64(v8::Isolate* isolate,
                         v8::Local<v8::Object> object,
                         int64_t value,
                         const char* name) {
-  v8::Local<v8::Context> context = isolate->GetCurrentContext();
-  v8::Local<v8::String> key =
-      v8::String::NewFromUtf8(isolate, name).ToLocalChecked();
-  v8::Local<v8::Number> val =
-      v8::Number::New(isolate, static_cast<double>(value));
-  // Ignore failure due to throwing setters.
-  std::ignore = object->CreateDataProperty(context, key, val);
+  object
+      ->Set(isolate->GetCurrentContext(),
+            v8::String::NewFromUtf8(isolate, name).ToLocalChecked(),
+            v8::Number::New(isolate, static_cast<double>(value)))
+      .FromJust();
 }
 
 void StatisticsExtension::GetCounters(
@@ -164,24 +156,20 @@ void StatisticsExtension::GetCounters(
     for (Tagged<HeapObject> obj = iterator.Next(); !obj.is_null();
          obj = iterator.Next()) {
       Tagged<Object> maybe_source_positions;
-      if (Is<Code>(obj)) {
-        SBXCHECK(TrustedHeapLayout::InTrustedSpace(obj));
-        Tagged<Code> code = TrustedCast<Code>(obj);
+      if (Tagged<Code> code; TryCast(obj, &code)) {
         reloc_info_total += code->relocation_size();
         if (!code->has_source_position_table()) continue;
         maybe_source_positions = code->source_position_table();
-      } else if (Is<BytecodeArray>(obj)) {
-        SBXCHECK(TrustedHeapLayout::InTrustedSpace(obj));
-        Tagged<BytecodeArray> bytecode_array = TrustedCast<BytecodeArray>(obj);
+      } else if (Tagged<BytecodeArray> bytecode_array;
+                 TryCast(obj, &bytecode_array)) {
         maybe_source_positions =
             bytecode_array->raw_source_position_table(kAcquireLoad);
       } else {
         continue;
       }
-      if (!Is<TrustedByteArray>(maybe_source_positions)) continue;
-      Tagged<TrustedByteArray> source_positions =
-          TrustedCast<TrustedByteArray>(maybe_source_positions);
-      if (source_positions->ulength().value() == 0) continue;
+      Tagged<TrustedByteArray> source_positions;
+      if (!TryCast(maybe_source_positions, &source_positions)) continue;
+      if (source_positions->length() == 0) continue;
       source_position_table_total += source_positions->AllocatedSize();
     }
   }

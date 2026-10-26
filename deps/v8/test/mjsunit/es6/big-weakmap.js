@@ -6,9 +6,9 @@
 
 // Overwrite the value for --noverify-heap which the test runner already set to
 // true before. Due to flag contradiction checking, this requires
-// --flag-processing-mode=ignore-contradictions to avoid an error.
+// --allow-overwriting-for-next-flag to avoid an error.
 
-// Flags: --flag-processing-mode=ignore-contradictions --noverify-heap
+// Flags: --allow-overwriting-for-next-flag --noverify-heap
 // Flags: --no-stress-incremental-marking --no-stress-concurrent-allocation
 // Flags: --no-stress-compaction
 

@@ -23,7 +23,6 @@ namespace v8::internal::wasm {
   V(WasmTriggerTierUp)                                                         \
   V(WasmLiftoffFrameSetup)                                                     \
   V(WasmDebugBreak)                                                            \
-  V(WasmDebugTrap)                                                             \
   V(WasmInt32ToHeapNumber)                                                     \
   V(WasmInt32ToSharedHeapNumber)                                               \
   V(WasmFloat64ToString)                                                       \
@@ -94,14 +93,6 @@ namespace v8::internal::wasm {
   IF_TSAN(V, TSANSeqCstStore32SaveFP)                                          \
   IF_TSAN(V, TSANSeqCstStore64IgnoreFP)                                        \
   IF_TSAN(V, TSANSeqCstStore64SaveFP)                                          \
-  IF_TSAN(V, TSANReleaseStore8IgnoreFP)                                        \
-  IF_TSAN(V, TSANReleaseStore8SaveFP)                                          \
-  IF_TSAN(V, TSANReleaseStore16IgnoreFP)                                       \
-  IF_TSAN(V, TSANReleaseStore16SaveFP)                                         \
-  IF_TSAN(V, TSANReleaseStore32IgnoreFP)                                       \
-  IF_TSAN(V, TSANReleaseStore32SaveFP)                                         \
-  IF_TSAN(V, TSANReleaseStore64IgnoreFP)                                       \
-  IF_TSAN(V, TSANReleaseStore64SaveFP)                                         \
   IF_TSAN(V, TSANRelaxedLoad32IgnoreFP)                                        \
   IF_TSAN(V, TSANRelaxedLoad32SaveFP)                                          \
   IF_TSAN(V, TSANRelaxedLoad64IgnoreFP)                                        \
@@ -114,10 +105,6 @@ namespace v8::internal::wasm {
   V(WasmAllocateStructWithRtt)                                                 \
   V(WasmAllocateDescriptorStruct)                                              \
   V(WasmAllocateSharedStructWithRtt)                                           \
-  V(WasmWaitqueueNew)                                                          \
-  V(WasmManagedObjectWait32)                                                   \
-  V(WasmManagedObjectWait64)                                                   \
-  V(WasmManagedObjectWaitRef)                                                  \
   V(WasmConfigureAllPrototypesOpt)                                             \
   V(WasmOnStackReplace)                                                        \
   V(WasmReject)                                                                \
@@ -136,7 +123,6 @@ namespace v8::internal::wasm {
   V(WasmStringCodePointAt)                                                     \
   V(WasmStringViewWtf16Encode)                                                 \
   V(WasmStringViewWtf16Slice)                                                  \
-  V(WasmStringSliceShared)                                                     \
   V(WasmStringNewWtf8Array)                                                    \
   V(WasmStringNewWtf16Array)                                                   \
   V(WasmStringEncodeWtf8Array)                                                 \
@@ -158,8 +144,7 @@ namespace v8::internal::wasm {
   V(WasmAnyConvertExtern)                                                      \
   V(WasmAnyConvertExternShared)                                                \
   V(WasmStringFromDataSegment)                                                 \
-  V(WasmStringAdd_NoMapCheck)                                                  \
-  V(WasmStringAdd_NoMapCheck_Shared)                                           \
+  V(WasmStringAdd_CheckNone)                                                   \
   V(DebugPrintWord32)                                                          \
   V(DebugPrintWord64)                                                          \
   V(DebugPrintFloat32)                                                         \
@@ -168,9 +153,7 @@ namespace v8::internal::wasm {
   V(WasmFastApiCallTypeCheckAndUpdateIC)                                       \
   V(WasmFXResume)                                                              \
   V(WasmFXResumeThrow)                                                         \
-  V(WasmFXResumeThrowRef)                                                      \
   V(WasmFXSuspend)                                                             \
-  V(WasmFXSwitch)                                                              \
   V(DeoptimizationEntry_Eager)                                                 \
   V(WasmLiftoffDeoptFinish)                                                    \
   V(WasmPropagateException)                                                    \

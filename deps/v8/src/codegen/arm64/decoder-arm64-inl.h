@@ -15,12 +15,7 @@ namespace internal {
 template <typename V>
 void Decoder<V>::Decode(Instruction* instr) {
   if (instr->Bits(28, 27) == 0) {
-    if (instr->Bits(31, 24) == 0x45 && instr->Bit(21) == 0 &&
-        instr->Bits(15, 12) == 0xB && instr->Bits(11, 10) != 3) {
-      V::VisitSVEBitPerm(instr);
-    } else {
-      V::VisitUnallocated(instr);
-    }
+    V::VisitUnallocated(instr);
   } else {
     switch (instr->Bits(27, 24)) {
       // 0:   PC relative addressing.

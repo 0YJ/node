@@ -157,18 +157,13 @@ MemOperand MacroAssembler::ExternalReferenceAsOperand(
 }
 
 void MacroAssembler::GetLabelAddress(Register dest, Label* target) {
-  // It's important that we don't emit the constant pool in between the
-  // `mov_label_offset` and the following `add`.
-  BlockConstPoolScope block_const_pool_scope(this);
-
   // This should be just a
   //    add(dest, pc, branch_offset(target));
   // but current implementation of Assembler::bind_to()/target_at_put() add
   // (InstructionStream::kHeaderSize - kHeapObjectTag) to a position of a label
   // in a "linked" state and thus making it usable only for mov_label_offset().
   // TODO(ishell): fix branch_offset() and re-implement
-  // regexp::RegExpMacroAssemblerARM::PushBacktrack() without
-  // mov_label_offset().
+  // RegExpMacroAssemblerARM::PushBacktrack() without mov_label_offset().
   mov_label_offset(dest, target);
   // mov_label_offset computes offset of the |target| relative to the "current
   // InstructionStream object pointer" which is essentially pc_offset() of the
@@ -415,7 +410,7 @@ void MacroAssembler::CallJSFunction(Register function_object,
   Register dispatch_handle = r8;
   Register scratch = r9;
   ldr(dispatch_handle,
-      FieldMemOperand(function_object, offsetof(JSFunction, dispatch_handle_)));
+      FieldMemOperand(function_object, JSFunction::kDispatchHandleOffset));
   LoadEntrypointFromJSDispatchTable(code, dispatch_handle, scratch);
   Call(code);
 }
@@ -446,7 +441,7 @@ void MacroAssembler::JumpJSFunction(Register function_object,
   Register dispatch_handle = r8;
   Register scratch = r9;
   ldr(dispatch_handle,
-      FieldMemOperand(function_object, offsetof(JSFunction, dispatch_handle_)));
+      FieldMemOperand(function_object, JSFunction::kDispatchHandleOffset));
   LoadEntrypointFromJSDispatchTable(code, dispatch_handle, scratch);
   Jump(code);
 }
@@ -1843,12 +1838,11 @@ void MacroAssembler::InvokeFunctionWithNewTarget(
   Register expected_reg = r2;
   Register temp_reg = r4;
 
-  ldr(temp_reg,
-      FieldMemOperand(r1, offsetof(JSFunction, shared_function_info_)));
-  ldr(cp, FieldMemOperand(r1, offsetof(JSFunction, context_)));
+  ldr(temp_reg, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
+  ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
   ldrh(expected_reg,
        FieldMemOperand(temp_reg,
-                       offsetof(SharedFunctionInfo, formal_parameter_count_)));
+                       SharedFunctionInfo::kFormalParameterCountOffset));
 
   InvokeFunctionCode(fun, new_target, expected_reg, actual_parameter_count,
                      type);
@@ -1866,7 +1860,7 @@ void MacroAssembler::InvokeFunction(Register function,
   DCHECK_EQ(function, r1);
 
   // Get the function and setup the context.
-  ldr(cp, FieldMemOperand(r1, offsetof(JSFunction, context_)));
+  ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
 
   InvokeFunctionCode(r1, no_reg, expected_parameter_count,
                      actual_parameter_count, type);
@@ -1915,7 +1909,7 @@ void MacroAssembler::CompareObjectTypeRange(Register object, Register map,
 
 void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
                                          InstanceType type) {
-  ldrh(type_reg, FieldMemOperand(map, offsetof(Map, instance_type_)));
+  ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
   cmp(type_reg, Operand(type));
 }
 
@@ -1936,7 +1930,7 @@ void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
                                               InstanceType higher_limit) {
   ASM_CODE_COMMENT(this);
   DCHECK_LT(lower_limit, higher_limit);
-  ldrh(type_reg, FieldMemOperand(map, offsetof(Map, instance_type_)));
+  ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
   CompareRange(type_reg, scratch, lower_limit, higher_limit);
 }
 
@@ -2185,7 +2179,7 @@ void MacroAssembler::AssertConstructor(Register object) {
   Check(ne, AbortReason::kOperandIsASmiAndNotAConstructor);
   push(object);
   LoadMap(object, object);
-  ldrb(object, FieldMemOperand(object, offsetof(Map, bit_field_)));
+  ldrb(object, FieldMemOperand(object, Map::kBitFieldOffset));
   tst(object, Operand(Map::Bits1::IsConstructorBit::kMask));
   pop(object);
   Check(ne, AbortReason::kOperandIsNotAConstructor);
@@ -2363,23 +2357,20 @@ void MacroAssembler::Abort(AbortReason reason) {
 }
 
 void MacroAssembler::LoadMap(Register destination, Register object) {
-  ldr(destination, FieldMemOperand(object, offsetof(HeapObject, map_)));
+  ldr(destination, FieldMemOperand(object, HeapObject::kMapOffset));
 }
 
-void MacroAssembler::LoadFeedbackCell(Register dst, Register closure) {
-  ldr(dst, FieldMemOperand(closure, offsetof(JSFunction, feedback_cell_)));
-}
-
-void MacroAssembler::LoadFeedbackVectorFromCell(Register dst,
-                                                Register feedback_cell,
-                                                Register scratch,
-                                                Label* fbv_undef) {
+void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
+                                        Register scratch, Label* fbv_undef) {
   Label done;
-  ldr(dst, FieldMemOperand(feedback_cell, offsetof(FeedbackCell, value_)));
+
+  // Load the feedback vector from the closure.
+  ldr(dst, FieldMemOperand(closure, JSFunction::kFeedbackCellOffset));
+  ldr(dst, FieldMemOperand(dst, FeedbackCell::kValueOffset));
 
   // Check if feedback vector is valid.
-  ldr(scratch, FieldMemOperand(dst, offsetof(HeapObject, map_)));
-  ldrh(scratch, FieldMemOperand(scratch, offsetof(Map, instance_type_)));
+  ldr(scratch, FieldMemOperand(dst, HeapObject::kMapOffset));
+  ldrh(scratch, FieldMemOperand(scratch, Map::kInstanceTypeOffset));
   cmp(scratch, Operand(FEEDBACK_VECTOR_TYPE));
   b(eq, &done);
 
@@ -2388,12 +2379,6 @@ void MacroAssembler::LoadFeedbackVectorFromCell(Register dst,
   b(fbv_undef);
 
   bind(&done);
-}
-
-void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
-                                        Register scratch, Label* fbv_undef) {
-  LoadFeedbackCell(dst, closure);
-  LoadFeedbackVectorFromCell(dst, dst, scratch, fbv_undef);
 }
 
 void MacroAssembler::LoadInterpreterDataBytecodeArray(
@@ -2417,9 +2402,8 @@ void MacroAssembler::LoadGlobalProxy(Register dst) {
 void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
   ASM_CODE_COMMENT(this);
   LoadMap(dst, cp);
-  ldr(dst,
-      FieldMemOperand(
-          dst, offsetof(Map, constructor_or_back_pointer_or_native_context_)));
+  ldr(dst, FieldMemOperand(
+               dst, Map::kConstructorOrBackPointerOrNativeContextOffset));
   ldr(dst, MemOperand(dst, Context::SlotOffset(index)));
 }
 
@@ -3107,7 +3091,7 @@ void MacroAssembler::TryLoadOptimizedOsrCode(Register scratch_and_result,
 
     // The entry references a CodeWrapper object. Unwrap it now.
     ldr(scratch_and_result,
-        FieldMemOperand(scratch_and_result, offsetof(CodeWrapper, code_)));
+        FieldMemOperand(scratch_and_result, CodeWrapper::kCodeOffset));
 
     Register temp = temps.Acquire();
     JumpIfCodeIsMarkedForDeoptimization(scratch_and_result, temp, &clear_slot);

@@ -33,6 +33,7 @@ function waitUntilDebugged() {
 
 // This function is called by the inspector client (session)
 function setupTimeoutWithBreak() {
+  clearInterval(waiting);
   process._rawDebug('Debugger ready, setting up timeout with a break');
   setTimeout(() => { debugger; }, 50);
 }
@@ -45,20 +46,16 @@ async function waitForInitialSetup(session) {
 
 async function setupTimeoutForStackTrace(session) {
   console.error('[test]', 'Setting up timeout for async stack trace');
-  // Async hook setup is deferred when requested from a V8 interrupt. Let the
-  // event loop finish that setup before creating the timeout whose stack we test.
   await session.send([
     { 'method': 'Runtime.evaluate',
-      'params': {
-        expression: 'clearInterval(waiting); setImmediate(setupTimeoutWithBreak)',
-      } },
+      'params': { expression: 'setupTimeoutWithBreak()' } },
     { 'method': 'Debugger.resume' },
   ]);
 }
 
 async function checkAsyncStackTrace(session) {
   console.error('[test]', 'Verify basic properties of asyncStackTrace');
-  const paused = await session.waitForBreakOnLine(22, '[eval]');
+  const paused = await session.waitForBreakOnLine(23, '[eval]');
   assert(paused.params.asyncStackTrace,
          `${Object.keys(paused.params)} contains "asyncStackTrace" property`);
   assert(paused.params.asyncStackTrace.description, 'Timeout');

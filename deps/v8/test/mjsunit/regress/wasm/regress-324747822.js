@@ -31,6 +31,6 @@ kExprLoop, externExternSig,
 kExprEnd,
 kExprDrop,
 ]).exportFunc();
-let kBuiltins = { builtins: ['js-string'] };
+let kBuiltins = { builtins: ['js-string', 'text-decoder', 'text-encoder'] };
 const instance = builder.instantiate({}, kBuiltins);
 instance.exports.main();

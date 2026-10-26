@@ -21,7 +21,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <variant>
 
 #include "absl/base/config.h"
 #include "absl/log/internal/proto.h"
@@ -36,11 +35,11 @@ namespace log_internal {
 struct StructuredProtoField final {
   // Numeric type encoded with varint encoding:
   // https://protobuf.dev/programming-guides/encoding/#varints
-  using Varint = std::variant<uint64_t, int64_t, uint32_t, int32_t, bool>;
+  using Varint = absl::variant<uint64_t, int64_t, uint32_t, int32_t, bool>;
 
   // Fixed-length 64-bit integer encoding:
   // https://protobuf.dev/programming-guides/encoding/#non-varints
-  using I64 = std::variant<uint64_t, int64_t, double>;
+  using I64 = absl::variant<uint64_t, int64_t, double>;
 
   // Length-delimited record type (string, sub-message):
   // https://protobuf.dev/programming-guides/encoding/#length-types
@@ -48,11 +47,11 @@ struct StructuredProtoField final {
 
   // Fixed-length 32-bit integer encoding:
   // https://protobuf.dev/programming-guides/encoding/#non-varints
-  using I32 = std::variant<uint32_t, int32_t, float>;
+  using I32 = absl::variant<uint32_t, int32_t, float>;
 
   // Valid record type:
   // https://protobuf.dev/programming-guides/encoding/#structure
-  using Value = std::variant<Varint, I64, LengthDelimited, I32>;
+  using Value = absl::variant<Varint, I64, LengthDelimited, I32>;
 
   // Field number for the protobuf value.
   uint64_t field_number;
@@ -89,7 +88,7 @@ inline size_t BufferSizeForStructuredProtoField(StructuredProtoField field) {
     uint64_t field_number;
   };
 
-  return std::visit(BufferSizeVisitor{field.field_number}, field.value);
+  return absl::visit(BufferSizeVisitor{field.field_number}, field.value);
 }
 
 // Encodes `field` into `buf` using protobuf encoding.

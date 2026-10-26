@@ -92,9 +92,7 @@ class V8_EXPORT_PRIVATE JSCallReducer final : public AdvancedReducer {
  private:
   Reduction ReduceBooleanConstructor(Node* node);
   Reduction ReduceCallApiFunction(Node* node, SharedFunctionInfoRef shared);
-  Reduction ReduceCallWasmFunction(
-      Node* node, SharedFunctionInfoRef shared,
-      Tagged<WasmExportedFunctionData> function_data);
+  Reduction ReduceCallWasmFunction(Node* node, SharedFunctionInfoRef shared);
   Reduction ReduceFunctionPrototypeApply(Node* node);
   Reduction ReduceFunctionPrototypeBind(Node* node);
   Reduction ReduceFunctionPrototypeCall(Node* node);
@@ -130,14 +128,12 @@ class V8_EXPORT_PRIVATE JSCallReducer final : public AdvancedReducer {
   Reduction ReduceArrayPrototypeSlice(Node* node);
   Reduction ReduceArrayReduce(Node* node, SharedFunctionInfoRef shared);
   Reduction ReduceArrayReduceRight(Node* node, SharedFunctionInfoRef shared);
-  Reduction ReduceArraySort(Node* node, SharedFunctionInfoRef shared);
   Reduction ReduceArraySome(Node* node, SharedFunctionInfoRef shared);
 
   enum class ArrayIteratorKind { kArrayLike, kTypedArray };
   Reduction ReduceArrayIterator(Node* node, ArrayIteratorKind array_kind,
                                 IterationKind iteration_kind);
   Reduction ReduceArrayIteratorPrototypeNext(Node* node);
-  Reduction ReduceGeneratorPrototypeNext(Node* node);
   Reduction ReduceFastArrayIteratorNext(InstanceType type, Node* node,
                                         IterationKind kind);
 
@@ -224,7 +220,6 @@ class V8_EXPORT_PRIVATE JSCallReducer final : public AdvancedReducer {
 
   Reduction ReduceMapPrototypeHas(Node* node);
   Reduction ReduceMapPrototypeGet(Node* node);
-  Reduction ReduceWeakMapPrototypeGet(Node* node);
   Reduction ReduceSetPrototypeHas(Node* node);
   Reduction ReduceCollectionPrototypeHas(Node* node,
                                          CollectionKind collection_kind);

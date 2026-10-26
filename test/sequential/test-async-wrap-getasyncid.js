@@ -47,6 +47,7 @@ const { getSystemErrorName } = require('util');
     delete providers.WORKER;
     // TODO(danbev): Test for these
     delete providers.ARGON2REQUEST;
+    delete providers.JSUDPWRAP;
     delete providers.KEYPAIRGENREQUEST;
     delete providers.KEYGENREQUEST;
     delete providers.KEYEXPORTREQUEST;
@@ -77,9 +78,6 @@ const { getSystemErrorName } = require('util');
     delete providers.LOCKS;
     delete providers.DTLS_ENDPOINT;
     delete providers.DTLS_SESSION;
-
-    // TODO(avivkeller): Test for these
-    delete providers.GLOBREQUEST;
 
     const objKeys = Object.keys(providers);
     if (objKeys.length > 0)
@@ -183,7 +181,7 @@ if (common.hasCrypto) { // eslint-disable-line node-core/crypto-check
 
 
 {
-  const { HTTPParser } = require('internal/http/common');
+  const { HTTPParser } = require('_http_common');
   const parser = new HTTPParser();
   testUninitialized(parser, 'HTTPParser');
   parser.initialize(HTTPParser.REQUEST, {});

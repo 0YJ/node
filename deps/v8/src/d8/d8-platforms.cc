@@ -16,10 +16,6 @@
 #include "src/base/platform/time.h"
 #include "src/base/utils/random-number-generator.h"
 
-#if defined(V8_ENABLE_PARTITION_ALLOC)
-#include "third_party/partition_alloc/src/partition_alloc/partition_address_space.h"
-#endif
-
 namespace v8 {
 
 class PredictablePlatform final : public Platform {
@@ -111,15 +107,6 @@ class PredictablePlatform final : public Platform {
   }
 
   Platform* platform() const { return platform_.get(); }
-
-  size_t GetZeroSegmentSize() override {
-#if defined(V8_ENABLE_PARTITION_ALLOC)
-    return partition_alloc::internal::PartitionAddressSpace::
-        GetZeroSegmentSize();
-#else
-    return 0;
-#endif
-  }
 
  private:
   std::atomic<uint64_t> synthetic_time_{0};
@@ -224,15 +211,6 @@ class DelayedTasksPlatform final : public Platform {
 
   v8::ThreadIsolatedAllocator* GetThreadIsolatedAllocator() override {
     return platform_->GetThreadIsolatedAllocator();
-  }
-
-  size_t GetZeroSegmentSize() override {
-#if defined(V8_ENABLE_PARTITION_ALLOC)
-    return partition_alloc::internal::PartitionAddressSpace::
-        GetZeroSegmentSize();
-#else
-    return 0;
-#endif
   }
 
  private:

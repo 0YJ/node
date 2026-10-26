@@ -9,7 +9,7 @@
 /// # Examples
 ///
 /// ```
-/// use icu::locale::{LanguageIdentifier, langid};
+/// use icu::locale::{langid, LanguageIdentifier};
 ///
 /// const DE_AT: LanguageIdentifier = langid!("de-at");
 ///
@@ -47,7 +47,7 @@ macro_rules! langid {
                     None => $crate::subtags::Variants::new(),
                 }
             },
-            _ => panic!(concat!("Invalid language identifier: ", $langid, " . Note langid! macro can only support up to a single variant tag. Use runtime parsing instead.")),
+            _ => panic!(concat!("Invalid language code: ", $langid, " . Note langid! macro can only support up to a single variant tag. Use runtime parsing instead.")),
         }
     }};
 }
@@ -59,7 +59,7 @@ macro_rules! langid {
 /// # Examples
 ///
 /// ```
-/// use icu::locale::{Locale, locale};
+/// use icu::locale::{locale, Locale};
 ///
 /// const DE_AT: Locale = locale!("de-at");
 ///
@@ -133,11 +133,11 @@ macro_rules! locale {
                     },
                 },
                 extensions: match keyword {
-                    Some((key, value)) => $crate::extensions::Extensions::from_unicode(
+                    Some(k) => $crate::extensions::Extensions::from_unicode(
                         $crate::extensions::unicode::Unicode {
                             keywords: $crate::extensions::unicode::Keywords::new_single(
-                                key,
-                                $crate::extensions::unicode::Value::from_subtag(value),
+                                k.0,
+                                $crate::extensions::unicode::Value::from_subtag(k.1),
                             ),
 
                             attributes: $crate::extensions::unicode::Attributes::new(),
@@ -147,7 +147,7 @@ macro_rules! locale {
                 },
             },
             _ => panic!(concat!(
-                "Invalid locale: ",
+                "Invalid language code: ",
                 $locale,
                 " . Note the locale! macro only supports up to one variant tag; \
                                     and one unicode keyword, other extension are \
@@ -155,33 +155,6 @@ macro_rules! locale {
             )),
         }
     }};
-}
-
-/// A macro allowing for compile-time construction of valid [`DataLocale`](crate::DataLocale)s.
-///
-/// The macro will perform syntax normalization of the tag.
-///
-/// # Examples
-///
-/// ```
-/// use icu::locale::{DataLocale, data_locale};
-///
-/// const DE_AT: DataLocale = data_locale!("de-at");
-///
-/// let de_at: DataLocale = "de-at".parse().unwrap();
-///
-/// assert_eq!(DE_AT, de_at);
-/// ```
-#[macro_export]
-macro_rules! data_locale {
-    ($locale:literal) => {
-        const {
-            let Ok(d) = $crate::DataLocale::try_from_str($locale) else {
-                panic!(concat!("Invalid data locale: ", $locale));
-            };
-            d
-        }
-    };
 }
 
 #[cfg(test)]

@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "src/base/fpu.h"
-#include "src/base/numerics/checked_math.h"
 #include "src/baseline/baseline-compiler.h"
 #include "src/codegen/compiler.h"
 #include "src/execution/isolate.h"
@@ -303,7 +302,7 @@ void BaselineBatchCompiler::EnsureQueueCapacity() {
                                                 AllocationType::kOld));
     return;
   }
-  if (last_index_ >= compilation_queue_->ulength().value()) {
+  if (last_index_ >= compilation_queue_->length()) {
     DirectHandle<WeakFixedArray> new_queue =
         isolate_->factory()->CopyWeakFixedArrayAndGrow(compilation_queue_,
                                                        last_index_);
@@ -319,7 +318,7 @@ void BaselineBatchCompiler::CompileBatch(DirectHandle<JSFunction> function) {
     Compiler::CompileBaseline(isolate_, function, Compiler::CLEAR_EXCEPTION,
                               &is_compiled_scope);
   }
-  for (uint32_t i = 0; i < last_index_; i++) {
+  for (int i = 0; i < last_index_; i++) {
     Tagged<MaybeObject> maybe_sfi = compilation_queue_->get(i);
     MaybeCompileFunction(maybe_sfi);
     compilation_queue_->set(i, kClearedWeakValue);
@@ -343,23 +342,20 @@ bool BaselineBatchCompiler::ShouldCompileBatch(
   if (shared->is_sparkplug_compiling()) return false;
   if (!CanCompileWithBaseline(isolate_, shared)) return false;
 
-  base::CheckedNumeric<int> estimated_size;
+  int estimated_size;
   {
     DisallowHeapAllocation no_gc;
     estimated_size = BaselineCompiler::EstimateInstructionSize(
         shared->GetBytecodeArray(isolate_));
   }
-  int raw_estimated_size = estimated_size.ValueOrDefault(kMaxInt);
-  base::CheckedNumeric<int> new_size = estimated_instruction_size_;
-  new_size += raw_estimated_size;
-  estimated_instruction_size_ = new_size.ValueOrDefault(kMaxInt);
+  estimated_instruction_size_ += estimated_size;
   if (v8_flags.trace_baseline_batch_compilation) {
     CodeTracer::Scope trace_scope(isolate_->GetCodeTracer());
     PrintF(trace_scope.file(), "[Baseline batch compilation] Enqueued SFI %s",
            shared->DebugNameCStr().get());
     PrintF(trace_scope.file(),
-           " with estimated size %d (current budget: %d/%d)\n",
-           raw_estimated_size, estimated_instruction_size_,
+           " with estimated size %d (current budget: %d/%d)\n", estimated_size,
+           estimated_instruction_size_,
            v8_flags.baseline_batch_compilation_threshold.value());
   }
   if (estimated_instruction_size_ >=

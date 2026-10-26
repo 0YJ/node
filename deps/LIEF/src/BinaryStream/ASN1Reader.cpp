@@ -1,4 +1,4 @@
-/* Copyright 2021 - 2026 R. Thomas
+/* Copyright 2021 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,32 +17,30 @@
 #include "logging.hpp"
 
 #include <array>
-#include <memory>
-
-#include "mbedtls_wraps.h"
-
 #include <mbedtls/platform.h>
 #include <mbedtls/asn1.h>
 #include <mbedtls/error.h>
+#include <mbedtls/oid.h>
 #include <mbedtls/x509_crt.h>
+#include <mbedtls/bignum.h>
 
 extern "C" {
-int mbedtls_x509_get_name(unsigned char** p, const unsigned char* end,
-                          mbedtls_x509_name* cur);
-int mbedtls_x509_get_time(unsigned char** p, const unsigned char* end,
-                          mbedtls_x509_time* t);
+int mbedtls_x509_get_name(unsigned char **p, const unsigned char *end,
+                          mbedtls_x509_name *cur);
+int mbedtls_x509_get_time(unsigned char **p, const unsigned char *end,
+                          mbedtls_x509_time *t);
 
-int mbedtls_x509_get_serial(unsigned char** p, const unsigned char* end,
-                            mbedtls_x509_buf* serial);
+int mbedtls_x509_get_serial(unsigned char **p, const unsigned char *end,
+                            mbedtls_x509_buf *serial);
 }
 
 namespace LIEF {
 
 inline void free_names(mbedtls_x509_name& names) {
-  mbedtls_x509_name* name_cur = nullptr;
+  mbedtls_x509_name *name_cur;
   name_cur = names.next;
   while (name_cur != nullptr) {
-    mbedtls_x509_name* name_prv = name_cur;
+    mbedtls_x509_name *name_prv = name_cur;
     name_cur = name_cur->next;
     mbedtls_free(name_prv);
   }
@@ -50,8 +48,8 @@ inline void free_names(mbedtls_x509_name& names) {
 
 result<bool> ASN1Reader::is_tag(int tag) {
   size_t out = 0;
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_tag(&p, end, &out, tag);
 
@@ -74,8 +72,8 @@ result<size_t> ASN1Reader::read_tag(int tag) {
   size_t out = 0;
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_tag(&p, end, &out, tag);
 
@@ -90,12 +88,11 @@ result<size_t> ASN1Reader::read_tag(int tag) {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_tag: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_tag: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return out;
 }
 
@@ -104,8 +101,8 @@ result<size_t> ASN1Reader::read_len() {
   size_t len = 0;
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_len(&p, end, &len);
 
@@ -117,8 +114,7 @@ result<size_t> ASN1Reader::read_len() {
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return len;
 }
 
@@ -127,8 +123,8 @@ result<std::string> ASN1Reader::read_alg() {
   std::array<char, 256> oid_str = {0};
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_alg_null(&p, end, &alg_oid);
 
@@ -145,8 +141,7 @@ result<std::string> ASN1Reader::read_alg() {
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return std::string(oid_str.data());
 }
 
@@ -160,13 +155,12 @@ result<std::string> ASN1Reader::read_oid() {
   }
 
   buf.len = len.value();
-  buf.p = stream_.p();
+  buf.p   = stream_.p();
   buf.tag = MBEDTLS_ASN1_OID;
 
   int ret = mbedtls_oid_get_numeric_string(oid_str.data(), oid_str.size(), &buf);
-  if (ret == MBEDTLS_ERR_ASN1_BUF_TOO_SMALL) {
-    LIEF_DEBUG("asn1_read_oid: mbedtls_oid_get_numeric_string returned "
-               "MBEDTLS_ERR_OID_BUF_TOO_SMALL");
+  if (ret == MBEDTLS_ERR_OID_BUF_TOO_SMALL) {
+    LIEF_DEBUG("asn1_read_oid: mbedtls_oid_get_numeric_string return MBEDTLS_ERR_OID_BUF_TOO_SMALL");
     return make_error_code(lief_errors::read_error);
   }
 
@@ -176,11 +170,11 @@ result<std::string> ASN1Reader::read_oid() {
 
 
 result<bool> ASN1Reader::read_bool() {
-  int value = 0;
+  int value;
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_bool(&p, end, &value);
 
@@ -191,12 +185,11 @@ result<bool> ASN1Reader::read_bool() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_bool: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_bool: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return static_cast<bool>(value);
 }
 
@@ -207,8 +200,8 @@ result<std::vector<uint8_t>> ASN1Reader::read_large_int() {
   mbedtls_mpi_init(&mpi);
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_mpi(&p, end, &mpi);
 
@@ -219,7 +212,7 @@ result<std::vector<uint8_t>> ASN1Reader::read_large_int() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_mpi: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_mpi: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
@@ -232,14 +225,14 @@ result<std::vector<uint8_t>> ASN1Reader::read_large_int() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_mpi: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_mpi: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return value;
 }
+
 
 
 result<int64_t> ASN1Reader::read_int64() {
@@ -249,8 +242,8 @@ result<int64_t> ASN1Reader::read_int64() {
   mbedtls_mpi_init(&mpi);
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_mpi(&p, end, &mpi);
 
@@ -261,13 +254,13 @@ result<int64_t> ASN1Reader::read_int64() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_mpi: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_mpi: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
   if (mbedtls_mpi_size(&mpi) > sizeof(uint64_t)) {
     mbedtls_mpi_free(&mpi);
-    LIEF_INFO("MPI value does not fit in a 64-bit integer");
+    LIEF_INFO("MPI value can be stored on a 64-bit integer");
     return make_error_code(lief_errors::read_error);
   }
 
@@ -279,12 +272,11 @@ result<int64_t> ASN1Reader::read_int64() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_mpi: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_mpi: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return value;
 }
 
@@ -293,8 +285,8 @@ result<int32_t> ASN1Reader::read_int() {
   int32_t value = 0;
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_int(&p, end, &value);
 
@@ -305,12 +297,11 @@ result<int32_t> ASN1Reader::read_int() {
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_DEBUG("Failed in mbedtls_asn1_get_int: {}", strerr.c_str());
+    LIEF_DEBUG("mbedtls_asn1_get_int: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return value;
 }
 
@@ -318,8 +309,8 @@ result<std::vector<uint8_t>> ASN1Reader::read_bitstring() {
   mbedtls_asn1_bitstring bs = {0, 0, nullptr};
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_asn1_get_bitstring(&p, end, &bs);
 
@@ -328,8 +319,7 @@ result<std::vector<uint8_t>> ASN1Reader::read_bitstring() {
   }
 
   if (ret == MBEDTLS_ERR_ASN1_LENGTH_MISMATCH) {
-    stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                          reinterpret_cast<uintptr_t>(cur_p));
+    stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
     return std::vector<uint8_t>{bs.p, bs.p + bs.len};
   }
 
@@ -337,8 +327,7 @@ result<std::vector<uint8_t>> ASN1Reader::read_bitstring() {
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return std::vector<uint8_t>{bs.p, bs.p + bs.len};
 }
 
@@ -354,13 +343,12 @@ result<std::vector<uint8_t>> ASN1Reader::read_octet_string() {
 }
 
 result<std::unique_ptr<mbedtls_x509_crt>> ASN1Reader::read_cert() {
-  auto ca = std::make_unique<mbedtls_x509_crt>(mbedtls_x509_crt{});
+  std::unique_ptr<mbedtls_x509_crt> ca{new mbedtls_x509_crt{}};
   mbedtls_x509_crt_init(ca.get());
 
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
-  const uintptr_t buff_len =
-      reinterpret_cast<uintptr_t>(end) - reinterpret_cast<uintptr_t>(p);
+  uint8_t* p               = stream_.p();
+  const uint8_t* end       = stream_.end();
+  const uintptr_t buff_len = reinterpret_cast<uintptr_t>(end) - reinterpret_cast<uintptr_t>(p);
 
   int ret = mbedtls_x509_crt_parse_der(ca.get(), p, /* buff len */ buff_len);
   if (ret != 0) {
@@ -381,21 +369,20 @@ result<std::string> ASN1Reader::x509_read_names() {
   std::memset(&name, 0, sizeof(name));
 
   auto tag = read_tag(/* Name */
-                      MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE
-  );
+                      MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE);
   if (!tag) {
-    LIEF_INFO("Unexpected tag {:#x} for x509_read_names (pos: {:d})",
+    LIEF_INFO("Wrong tag: 0x{:x} for x509_read_names (pos: {:d})",
               *stream_.peek<uint8_t>(), stream_.pos());
     return make_error_code(tag.error());
   }
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = p + tag.value();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = p + tag.value();
   int ret = mbedtls_x509_get_name(&p, end, &name);
   if (ret != 0) {
     free_names(name);
-    LIEF_DEBUG("Call to mbedtls_x509_get_name failed with {:d}", ret);
+    LIEF_DEBUG("mbedtls_x509_get_name failed with {:d}", ret);
     return make_error_code(lief_errors::read_error);
   }
   std::array<char, 1024> buffer = {0};
@@ -406,8 +393,7 @@ result<std::string> ASN1Reader::x509_read_names() {
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return std::string(buffer.data());
 }
 
@@ -415,8 +401,8 @@ result<std::vector<uint8_t>> ASN1Reader::x509_read_serial() {
   mbedtls_x509_buf serial;
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_x509_get_serial(&p, end, &serial);
 
@@ -424,29 +410,27 @@ result<std::vector<uint8_t>> ASN1Reader::x509_read_serial() {
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return std::vector<uint8_t>{serial.p, serial.p + serial.len};
 }
 
 result<std::unique_ptr<mbedtls_x509_time>> ASN1Reader::x509_read_time() {
-  auto tm = std::make_unique<mbedtls_x509_time>(mbedtls_x509_time{});
+  std::unique_ptr<mbedtls_x509_time> tm{new mbedtls_x509_time{}};
 
   const uint8_t* cur_p = stream_.p();
-  uint8_t* p = stream_.p();
-  const uint8_t* end = stream_.end();
+  uint8_t* p           = stream_.p();
+  const uint8_t* end   = stream_.end();
 
   int ret = mbedtls_x509_get_time(&p, end, tm.get());
 
   if (ret != 0) {
     std::string strerr(1024, 0);
     mbedtls_strerror(ret, const_cast<char*>(strerr.data()), strerr.size());
-    LIEF_INFO("Failed in mbedtls_x509_get_time: {}", strerr.c_str());
+    LIEF_INFO("mbedtls_x509_get_time: {}", strerr.c_str());
     return make_error_code(lief_errors::read_error);
   }
 
-  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) -
-                        reinterpret_cast<uintptr_t>(cur_p));
+  stream_.increment_pos(reinterpret_cast<uintptr_t>(p) - reinterpret_cast<uintptr_t>(cur_p));
   return tm;
 }
 
@@ -470,12 +454,11 @@ std::string ASN1Reader::get_str_tag() {
 
 
 std::string ASN1Reader::tag2str(int tag) {
-#define HANDLE(X)                                                                 \
-  do {                                                                            \
-    if (tag & MBEDTLS_##X) {                                                      \
-      tag_str += " | " #X;                                                        \
-    }                                                                             \
-  } while (0)
+#define HANDLE(X) do {     \
+  if (tag & MBEDTLS_##X) { \
+    tag_str += " | " #X;    \
+  }                        \
+} while(0)
 
   std::string tag_str;
 

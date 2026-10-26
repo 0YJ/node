@@ -1,5 +1,4 @@
 #include "node_task_runner.h"
-#include "simdjson.h"
 #include "util-inl.h"
 
 #include <regex>  // NOLINT(build/c++11)

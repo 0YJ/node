@@ -52,8 +52,8 @@ TNode<JSObject> ShadowRealmBuiltinsAssembler::AllocateJSWrappedFunction(
       native_context, Context::WRAPPED_FUNCTION_MAP_INDEX));
   TNode<JSObject> wrapped = AllocateJSObjectFromMap(map);
   StoreObjectFieldNoWriteBarrier(
-      wrapped, offsetof(JSWrappedFunction, wrapped_target_function_), target);
-  StoreObjectFieldNoWriteBarrier(wrapped, offsetof(JSWrappedFunction, context_),
+      wrapped, JSWrappedFunction::kWrappedTargetFunctionOffset, target);
+  StoreObjectFieldNoWriteBarrier(wrapped, JSWrappedFunction::kContextOffset,
                                  context);
   return wrapped;
 }
@@ -140,9 +140,8 @@ TF_BUILTIN(ShadowRealmGetWrappedValue, ShadowRealmBuiltinsAssembler) {
   // wrapped function won't cause a side effect in the creation realm.
   // Unwrap here to avoid nested unwrapping at the call site.
   TNode<JSWrappedFunction> target_wrapped_function = CAST(value);
-  target =
-      LoadObjectField(target_wrapped_function,
-                      offsetof(JSWrappedFunction, wrapped_target_function_));
+  target = LoadObjectField(target_wrapped_function,
+                           JSWrappedFunction::kWrappedTargetFunctionOffset);
   Goto(&wrap);
 
   BIND(&wrap);
@@ -230,13 +229,13 @@ TF_BUILTIN(CallWrappedFunction, ShadowRealmBuiltinsAssembler) {
 
   // 1. Let target be F.[[WrappedTargetFunction]].
   TNode<JSReceiver> target = CAST(LoadObjectField(
-      wrapped_function, offsetof(JSWrappedFunction, wrapped_target_function_)));
+      wrapped_function, JSWrappedFunction::kWrappedTargetFunctionOffset));
   // 2. Assert: IsCallable(target) is true.
   CSA_DCHECK(this, IsCallable(target));
 
   // 4. Let callerRealm be ? GetFunctionRealm(F).
   TNode<Context> caller_context = LoadObjectField<Context>(
-      wrapped_function, offsetof(JSWrappedFunction, context_));
+      wrapped_function, JSWrappedFunction::kContextOffset);
   // 3. Let targetRealm be ? GetFunctionRealm(target).
   TNode<Context> target_context =
       GetFunctionRealm(caller_context, target, &target_not_callable);
@@ -273,7 +272,7 @@ TF_BUILTIN(CallWrappedFunction, ShadowRealmBuiltinsAssembler) {
         StoreFixedArrayElement(
             wrapped_args, IntPtrAdd(index, IntPtrConstant(1)), wrapped_value);
       },
-      1, kNoLoopUnrolling, IndexAdvanceMode::kPost);
+      1, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
 
   TVARIABLE(Object, var_exception);
   TNode<Object> result;
@@ -326,7 +325,7 @@ TF_BUILTIN(ShadowRealmPrototypeImportValue, ShadowRealmBuiltinsAssembler) {
   // 6. Let evalRealm be O.[[ShadowRealm]].
   // 7. Let evalContext be O.[[ExecutionContext]].
   TNode<NativeContext> eval_context =
-      CAST(LoadObjectField(CAST(O), offsetof(JSShadowRealm, native_context_)));
+      CAST(LoadObjectField(CAST(O), JSShadowRealm::kNativeContextOffset));
   // 8. Return ? ShadowRealmImportValue(specifierString, exportNameString,
   // callerRealm, evalRealm, evalContext).
   TNode<Object> result = ImportValue(caller_context, eval_context,
@@ -389,11 +388,9 @@ TF_BUILTIN(ShadowRealmImportValueFulfilled, ShadowRealmBuiltinsAssembler) {
   TNode<String> export_name_string = CAST(LoadContextElementNoCell(
       context, ImportValueFulfilledFunctionContextSlot::kExportNameSlot));
 
-  TNode<JSAny> exports_arg = Parameter<JSAny>(Descriptor::kExports);
   // 1. Assert: exports is a module namespace exotic object.
-  // Spec issue: https://github.com/tc39/proposal-shadowrealm/issues/424
-  CSA_CHECK(this, IsJSModuleNamespace(exports_arg));
-  TNode<JSModuleNamespace> exports = CAST(exports_arg);
+  TNode<JSModuleNamespace> exports =
+      Parameter<JSModuleNamespace>(Descriptor::kExports);
 
   // 5. Let hasOwn be ? HasOwnProperty(exports, string).
   // 6. If hasOwn is false, throw a TypeError exception.

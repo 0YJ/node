@@ -426,16 +426,16 @@ class Expectations {
 
     DirectHandle<String> name = CcTest::MakeName("prop", property_index);
 
-    CHECK(!IsNull(*getter) || !IsNull(*setter));
+    CHECK(!IsNull(*getter, isolate_) || !IsNull(*setter, isolate_));
     Factory* factory = isolate_->factory();
 
-    if (!IsNull(*getter)) {
+    if (!IsNull(*getter, isolate_)) {
       DirectHandle<AccessorPair> pair = factory->NewAccessorPair();
       pair->SetComponents(*getter, *factory->null_value());
       Descriptor d = Descriptor::AccessorConstant(name, pair, attributes);
       map = Map::CopyInsertDescriptor(isolate_, map, &d, INSERT_TRANSITION);
     }
-    if (!IsNull(*setter)) {
+    if (!IsNull(*setter, isolate_)) {
       DirectHandle<AccessorPair> pair = factory->NewAccessorPair();
       pair->SetComponents(*getter, *setter);
       Descriptor d = Descriptor::AccessorConstant(name, pair, attributes);
@@ -458,7 +458,8 @@ class Expectations {
     DirectHandle<Object> setter(pair->setter(), isolate);
 
     InternalIndex descriptor =
-        map->instance_descriptors()->SearchWithCache(isolate, *name, *map);
+        map->instance_descriptors(isolate)->SearchWithCache(isolate, *name,
+                                                            *map);
     map = Map::TransitionToAccessorProperty(isolate, map, name, descriptor,
                                             getter, setter, attributes);
     CHECK(!map->is_deprecated());
@@ -549,7 +550,7 @@ TEST(ReconfigureAccessorToNonExistingDataField) {
   DirectHandle<JSObject> obj = factory->NewJSObjectFromMap(map);
   JSObject::MigrateToMap(isolate, obj, prepared_map);
   FieldIndex index = FieldIndex::ForDescriptor(*prepared_map, first);
-  CHECK(IsUninitializedHole(obj->RawFastPropertyAt(index)));
+  CHECK(IsUninitializedHole(obj->RawFastPropertyAt(index), isolate));
 #ifdef VERIFY_HEAP
   Object::ObjectVerify(*obj, isolate);
 #endif
@@ -585,7 +586,7 @@ TEST(ReconfigureAccessorToNonExistingDataFieldHeavy) {
   CHECK_EQ(1, obj->map()->NumberOfOwnDescriptors());
   InternalIndex first(0);
   CHECK(IsAccessorPair(
-      obj->map()->instance_descriptors()->GetStrongValue(first)));
+      obj->map()->instance_descriptors(isolate)->GetStrongValue(first)));
 
   DirectHandle<Object> value(Smi::FromInt(42), isolate);
   JSObject::SetOwnPropertyIgnoreAttributes(obj, foo_str, value, NONE).Check();
@@ -717,8 +718,8 @@ void TestGeneralizeField(int detach_property_at_index, int property_index,
   Handle<Code> code_field_type = CreateDummyOptimizedCode(isolate);
   Handle<Code> code_field_repr = CreateDummyOptimizedCode(isolate);
   Handle<Code> code_field_const = CreateDummyOptimizedCode(isolate);
-  Handle<Map> field_owner(map->FindFieldOwner(InternalIndex(property_index)),
-                          isolate);
+  Handle<Map> field_owner(
+      map->FindFieldOwner(isolate, InternalIndex(property_index)), isolate);
   DependentCode::InstallDependency(isolate, code_field_type, field_owner,
                                    DependentCode::kFieldTypeGroup);
   DependentCode::InstallDependency(isolate, code_field_repr, field_owner,
@@ -767,7 +768,7 @@ void TestGeneralizeField(int detach_property_at_index, int property_index,
     Tagged<Map> tmp = *new_map;
     while (true) {
       Tagged<Object> back = tmp->GetBackPointer();
-      if (IsUndefined(back)) break;
+      if (IsUndefined(back, isolate)) break;
       tmp = Cast<Map>(back);
       CHECK(!tmp->is_stable());
     }
@@ -1097,8 +1098,8 @@ void TestReconfigureDataFieldAttribute_GeneralizeField(
   Handle<Code> code_field_const = CreateDummyOptimizedCode(isolate);
   Handle<Code> code_src_field_const = CreateDummyOptimizedCode(isolate);
   {
-    Handle<Map> field_owner(map->FindFieldOwner(InternalIndex(kSplitProp)),
-                            isolate);
+    Handle<Map> field_owner(
+        map->FindFieldOwner(isolate, InternalIndex(kSplitProp)), isolate);
     DependentCode::InstallDependency(isolate, code_field_type, field_owner,
                                      DependentCode::kFieldTypeGroup);
     DependentCode::InstallDependency(isolate, code_field_repr, field_owner,
@@ -1107,8 +1108,8 @@ void TestReconfigureDataFieldAttribute_GeneralizeField(
                                      DependentCode::kFieldConstGroup);
   }
   {
-    Handle<Map> field_owner(map2->FindFieldOwner(InternalIndex(kSplitProp)),
-                            isolate);
+    Handle<Map> field_owner(
+        map2->FindFieldOwner(isolate, InternalIndex(kSplitProp)), isolate);
     DependentCode::InstallDependency(isolate, code_src_field_const, field_owner,
                                      DependentCode::kFieldConstGroup);
   }
@@ -1425,7 +1426,7 @@ struct CheckNormalize {
     CHECK(!map->is_deprecated());
     CHECK_NE(*map, *new_map);
 
-    CHECK(IsUndefined(new_map->GetBackPointer()));
+    CHECK(IsUndefined(new_map->GetBackPointer(), isolate));
     CHECK(!new_map->is_deprecated());
     CHECK(expectations.CheckNormalized(*new_map));
   }
@@ -1803,8 +1804,8 @@ static void TestReconfigureElementsKind_GeneralizeFieldInPlace(
   Handle<Code> code_field_type = CreateDummyOptimizedCode(isolate);
   Handle<Code> code_field_repr = CreateDummyOptimizedCode(isolate);
   Handle<Code> code_field_const = CreateDummyOptimizedCode(isolate);
-  Handle<Map> field_owner(map->FindFieldOwner(InternalIndex(kDiffProp)),
-                          isolate);
+  Handle<Map> field_owner(
+      map->FindFieldOwner(isolate, InternalIndex(kDiffProp)), isolate);
   DependentCode::InstallDependency(isolate, code_field_type, field_owner,
                                    DependentCode::kFieldTypeGroup);
   DependentCode::InstallDependency(isolate, code_field_repr, field_owner,
@@ -2180,7 +2181,7 @@ static void TestGeneralizeFieldWithSpecialTransition(
   Handle<Code> code_field_const = CreateDummyOptimizedCode(isolate);
   Handle<Map> field_owner(
       (direction == UpdateDirectionCheck::kFwd ? map_b : map_a)
-          ->FindFieldOwner(InternalIndex(0)),
+          ->FindFieldOwner(isolate, InternalIndex(0)),
       isolate);
   DependentCode::InstallDependency(isolate, code_field_type, field_owner,
                                    DependentCode::kFieldTypeGroup);
@@ -2258,7 +2259,7 @@ static void TestGeneralizeFieldWithSpecialTransition(
 
         CHECK(expectations_a.Check(*new_map_a));
         CHECK(expectations_b.Check(*new_map_b));
-        CHECK(!IsUndefined(new_map_b->GetBackPointer()));
+        CHECK(!IsUndefined(new_map_b->GetBackPointer(), isolate));
         break;
       }
       case kFieldOwnerDependency: {
@@ -2974,10 +2975,12 @@ void TestStoreToConstantField(const char* store_func_source,
   CHECK(!map->is_deprecated());
   CHECK_EQ(1, map->NumberOfOwnDescriptors());
   InternalIndex first(0);
-  CHECK(map->instance_descriptors()->GetDetails(first).representation().Equals(
-      expected_rep));
+  CHECK(map->instance_descriptors(isolate)
+            ->GetDetails(first)
+            .representation()
+            .Equals(expected_rep));
   CHECK_EQ(PropertyConstness::kConst,
-           map->instance_descriptors()->GetDetails(first).constness());
+           map->instance_descriptors(isolate)->GetDetails(first).constness());
 
   // Store value2 to obj2 and check that it got same map and property details
   // did not change.
@@ -2989,10 +2992,12 @@ void TestStoreToConstantField(const char* store_func_source,
   CHECK(!map->is_deprecated());
   CHECK_EQ(1, map->NumberOfOwnDescriptors());
 
-  CHECK(map->instance_descriptors()->GetDetails(first).representation().Equals(
-      expected_rep));
+  CHECK(map->instance_descriptors(isolate)
+            ->GetDetails(first)
+            .representation()
+            .Equals(expected_rep));
   CHECK_EQ(PropertyConstness::kConst,
-           map->instance_descriptors()->GetDetails(first).constness());
+           map->instance_descriptors(isolate)->GetDetails(first).constness());
 
   // Store value2 to obj1 and check that property became mutable.
   Call(isolate, store_func, obj1, value2).Check();
@@ -3002,10 +3007,12 @@ void TestStoreToConstantField(const char* store_func_source,
   CHECK(!map->is_deprecated());
   CHECK_EQ(1, map->NumberOfOwnDescriptors());
 
-  CHECK(map->instance_descriptors()->GetDetails(first).representation().Equals(
-      expected_rep));
+  CHECK(map->instance_descriptors(isolate)
+            ->GetDetails(first)
+            .representation()
+            .Equals(expected_rep));
   CHECK_EQ(expected_constness,
-           map->instance_descriptors()->GetDetails(first).constness());
+           map->instance_descriptors(isolate)->GetDetails(first).constness());
 }
 
 void TestStoreToConstantField_PlusMinusZero(const char* store_func_source,

@@ -5,14 +5,12 @@ const { pipeline } = require('node:stream')
 const util = require('../core/util.js')
 const {
   RequestContentLengthMismatchError,
-  ResponseContentLengthMismatchError,
   RequestAbortedError,
   SocketError,
   InformationalError,
   InvalidArgumentError,
   HeadersTimeoutError,
-  BodyTimeoutError,
-  ResponseExceededMaxSizeError
+  BodyTimeoutError
 } = require('../core/errors.js')
 const {
   kUrl,
@@ -41,8 +39,7 @@ const {
   kRemoteSettings,
   kHTTP2Stream,
   kHTTP2SessionState,
-  kHTTP2Options,
-  kMaxResponseSize
+  kHTTP2Options
 } = require('../core/symbols.js')
 const { channels } = require('../core/diagnostics.js')
 
@@ -192,11 +189,6 @@ function canReplayRequest (request) {
   const { body } = request
 
   return body == null || util.isBuffer(body) || util.isBlobLike(body)
-}
-
-function hasResponseStarted (request) {
-  const state = request[kRequestStream]?.[kRequestStreamState]
-  return state?.responseReceived === true
 }
 
 // Count a GOAWAY refusal against the request's replay budget. A peer that
@@ -412,8 +404,7 @@ function resumeH2 (client) {
   const session = client[kHTTP2Session]
 
   if (socket?.destroyed === false) {
-    // After an upgrade the queue is empty but its stream is still in use, so never unref while a stream is open.
-    if (session[kOpenStreams] === 0 && client[kSize] === 0) {
+    if (client[kSize] === 0 || client[kMaxConcurrentStreams] === 0) {
       unrefH2Session(session)
     } else {
       refH2Session(session)
@@ -548,14 +539,8 @@ function applyConnectionWindowSize (connectionWindowSize) {
 }
 
 function onHttp2RemoteSettings (settings) {
-  const client = this[kClient]
-
-  // The configured maxConcurrentStreams (default 100) is the client's own
-  // ceiling. The server's SETTINGS_MAX_CONCURRENT_STREAMS can lower it, but
-  // must not raise it: a default Node.js server advertises 2^32-1.
-  const localMaxConcurrentStreams = client[kHTTP2Options].maxConcurrentStreams
-  const remoteMaxConcurrentStreams = settings.maxConcurrentStreams ?? client[kMaxConcurrentStreams] ?? localMaxConcurrentStreams
-  client[kMaxConcurrentStreams] = Math.min(remoteMaxConcurrentStreams, localMaxConcurrentStreams)
+  // Fallbacks are a safe bet, remote setting will always override
+  this[kClient][kMaxConcurrentStreams] = settings.maxConcurrentStreams ?? this[kClient][kMaxConcurrentStreams]
   /**
    * From RFC-8441
    * A sender MUST NOT send a SETTINGS_ENABLE_CONNECT_PROTOCOL parameter
@@ -600,6 +585,8 @@ function onHttp2SendPing (session) {
 }
 
 function onHttp2SessionError (err) {
+  assert(err.code !== 'ERR_TLS_CERT_ALTNAME_INVALID')
+
   this[kSocket][kError] = err
 
   if (this[kReceivedGoAway]) {
@@ -651,12 +638,9 @@ function onHttp2SessionGoAway (errorCode, lastStreamID) {
     const request = client[kQueue][i]
 
     if (request != null) {
-      // Read before detaching, which drops the stream state.
-      const responseStarted = hasResponseStarted(request)
-
       streamsToClose.push(detachRequestStreamForClose(request))
 
-      if (!responseStarted && canReplayRequest(request) && registerGoAwayRefusal(request)) {
+      if (canReplayRequest(request) && registerGoAwayRefusal(request)) {
         retriableRequests.push(request)
       } else {
         util.errorRequest(client, request, err)
@@ -678,10 +662,6 @@ function onHttp2SessionGoAway (errorCode, lastStreamID) {
     client[kSocket] = null
     client[kHTTPContext] = null
     client[kHTTP2Session] = null
-  }
-
-  if (this[kOpenStreams] === 0) {
-    unrefH2Session(this)
   }
 
   clearHttp2IdleTimeout(this)
@@ -765,6 +745,8 @@ function onHttp2SocketClose () {
 }
 
 function onHttp2SocketError (err) {
+  assert(err.code !== 'ERR_TLS_CERT_ALTNAME_INVALID')
+
   this[kError] = err
 
   if (this[kHTTP2Session]?.[kReceivedGoAway]) {
@@ -786,12 +768,10 @@ function noop () {}
 
 function closeStreamSession (stream) {
   const session = stream[kHTTP2Session]
-  const client = session[kClient]
 
   stream[kHTTP2Session] = null
   session[kOpenStreams] -= 1
-  // A session that received GOAWAY does not need to stay ref'd for queued requests.
-  if (session[kOpenStreams] === 0 && (client[kSize] === 0 || session[kReceivedGoAway])) {
+  if (session[kOpenStreams] === 0) {
     unrefH2Session(session)
     setHttp2IdleTimeout(session)
   }
@@ -850,27 +830,25 @@ function buildRequestHeaders (reqHeaders) {
   for (let n = 0; n < reqHeaders.length; n += 2) {
     const key = reqHeaders[n + 0]
     const val = reqHeaders[n + 1]
-    // Reading headers[key] directly resolves `__proto__` through the prototype
-    // chain instead of reporting the header as absent.
-    const current = Object.hasOwn(headers, key) ? headers[key] : undefined
+    const current = headers[key]
 
     if (key === 'cookie') {
       if (current != null) {
-        util.setHeader(headers, key, Array.isArray(current) ? (current.push(val), current) : [current, val])
+        headers[key] = Array.isArray(current) ? (current.push(val), current) : [current, val]
       } else {
-        util.setHeader(headers, key, val)
+        headers[key] = val
       }
 
       continue
     }
 
     if (typeof val === 'string') {
-      util.setHeader(headers, key, current ? `${current}, ${val}` : val)
+      headers[key] = current ? `${current}, ${val}` : val
       continue
     }
 
     for (let i = 0; i < val.length; i++) {
-      util.setHeader(headers, key, Object.hasOwn(headers, key) ? `${headers[key]}, ${val[i]}` : val[i])
+      headers[key] = headers[key] ? `${headers[key]}, ${val[i]}` : val[i]
     }
   }
 
@@ -951,14 +929,9 @@ function onUpgradeResponse (headers, _flags) {
   const statusCode = headers[HTTP2_HEADER_STATUS]
   delete headers[HTTP2_HEADER_STATUS]
 
-  try {
-    request.onRequestUpgrade(statusCode, headers, stream)
-  } catch (err) {
-    state.abort(err)
-    return
-  }
+  request.onRequestUpgrade(statusCode, headers, stream)
 
-  if (request.aborted) {
+  if (request.aborted || request.completed) {
     return
   }
 
@@ -1049,16 +1022,13 @@ function writeH2 (client, request) {
   const state = {
     abort: null,
     body: request.body,
-    bytesRead: 0,
     client,
     contentLength: null,
     expectsPayload: false,
-    maxResponseSize: client[kMaxResponseSize],
     request,
     headersTimeout,
     bodyTimeout,
     requestFinalized: false,
-    responseContentLength: null,
     responseReceived: false,
     bodySent: false,
     pendingEnd: false,
@@ -1290,7 +1260,6 @@ function writeH2 (client, request) {
   // become unreachable once the stream closes, so plain `on` avoids the
   // per-listener `once` wrapper allocation.
   stream.on('response', onResponse)
-  stream.on('headers', onInterimResponse)
   stream.on('end', onEnd)
   stream.on('error', onError)
   stream.on('frameError', onFrameError)
@@ -1311,7 +1280,6 @@ function removeRequestStreamListeners (stream) {
   stream.off('error', noop)
   stream.off('continue', writeBodyH2)
   stream.off('response', onResponse)
-  stream.off('headers', onInterimResponse)
   stream.off('end', onEnd)
   stream.off('error', onError)
   stream.off('frameError', onFrameError)
@@ -1354,78 +1322,15 @@ function onData (chunk) {
     return
   }
 
-  const { request, maxResponseSize, responseContentLength } = state
-
-  if (request.aborted || request.completed) {
-    return
-  }
-
-  if (responseContentLength != null && state.bytesRead + chunk.length > responseContentLength) {
-    state.abort(new ResponseContentLengthMismatchError())
-    return
-  }
-
-  if (maxResponseSize > -1 && state.bytesRead + chunk.length > maxResponseSize) {
-    // Unlike HTTP/1.1, which destroys the socket because it cannot abandon one
-    // response without losing framing, resetting the offending stream leaves
-    // the session usable for its siblings.
-    state.abort(new ResponseExceededMaxSizeError())
-    return
-  }
-
-  state.bytesRead += chunk.length
-
-  if (request.onResponseData(chunk) === false) {
-    pauseResponseStream(stream, state)
-  }
-}
-
-// The body timeout measures how long the peer takes to send data. While the
-// consumer applies backpressure the peer can't send (it's out of flow-control
-// window), and Http2Stream's timer, which counts stream activity, would fire.
-// Stop it while paused and start a fresh one on resume, like HTTP/1.1, which
-// ignores the body timeout while its parser is paused.
-function pauseResponseStream (stream, state) {
-  stream.pause()
-  if (state.bodyTimeout) {
-    stream.setTimeout(0)
-  }
-}
-
-// Passed to the handler as its resume callback, bound to the stream.
-function resumeResponseStream () {
-  const stream = this
-  const state = stream[kRequestStreamState]
-
-  if (state != null && state.bodyTimeout && stream.isPaused()) {
-    stream.setTimeout(state.bodyTimeout)
-  }
-
-  stream.resume()
-}
-
-function onInterimResponse (headers) {
-  const stream = this
-  const state = stream[kRequestStreamState]
-
-  if (state == null) {
-    return
-  }
-
   const { request } = state
 
   if (request.aborted || request.completed) {
     return
   }
 
-  // node http2 emits 'headers' for interim (1xx) informational responses,
-  // while the final response arrives via 'response'. Forward these to the
-  // handler so that onInfo is invoked, matching the HTTP/1 behaviour and the
-  // documented onInfo contract.
-  const statusCode = headers[HTTP2_HEADER_STATUS]
-  delete headers[HTTP2_HEADER_STATUS]
-
-  request.onResponseStart(Number(statusCode), headers, noop, '')
+  if (request.onResponseData(chunk) === false) {
+    stream.pause()
+  }
 }
 
 function onResponse (headers) {
@@ -1447,19 +1352,10 @@ function onResponse (headers) {
     stream.end()
   }
 
-  const statusCode = Number(headers[HTTP2_HEADER_STATUS])
+  const statusCode = headers[HTTP2_HEADER_STATUS]
   delete headers[HTTP2_HEADER_STATUS]
   request.onResponseStarted()
   state.responseReceived = true
-
-  // A Content-Length in HEAD and 304 responses describes the selected
-  // representation rather than DATA on this stream. Successful CONNECT uses
-  // the upgrade path above; all other final responses use Content-Length as
-  // their DATA payload length.
-  if (request.method !== 'HEAD' && statusCode !== 304) {
-    const contentLength = headers[HTTP2_HEADER_CONTENT_LENGTH]
-    state.responseContentLength = contentLength == null ? null : Number(contentLength)
-  }
 
   if (state.headersTimeout || state.bodyTimeout) {
     stream.setTimeout(state.bodyTimeout)
@@ -1478,8 +1374,8 @@ function onResponse (headers) {
     return
   }
 
-  if (request.onResponseStart(statusCode, headers, resumeResponseStream.bind(stream), '') === false) {
-    pauseResponseStream(stream, state)
+  if (request.onResponseStart(Number(statusCode), headers, stream.resume.bind(stream), '') === false) {
+    stream.pause()
   }
 
   stream.on('data', onData)
@@ -1501,11 +1397,6 @@ function onEnd () {
   // trailers on the state by now, so completing here still delivers them.
   if (state.responseReceived) {
     if (!request.aborted && !request.completed) {
-      if (state.responseContentLength != null && state.bytesRead !== state.responseContentLength) {
-        state.abort(new ResponseContentLengthMismatchError())
-        return
-      }
-
       state.pendingEnd = true
 
       // Complete on 'end': a blocked event loop can keep the stream's 'close'
@@ -1561,13 +1452,6 @@ function onError (err) {
   }
 
   stream.off('error', onError)
-
-  // Node's HTTP/2 implementation can turn an incomplete Content-Length body
-  // into a protocol stream error instead of emitting 'end'. Prefer the
-  // content-length mismatch error when the received byte count proves it.
-  if (state.responseContentLength != null && state.bytesRead !== state.responseContentLength) {
-    err = new ResponseContentLengthMismatchError()
-  }
 
   if (typeof stream.rstCode === 'number' && stream.rstCode !== NGHTTP2_NO_ERROR) {
     err.http2ErrorCode = stream.rstCode

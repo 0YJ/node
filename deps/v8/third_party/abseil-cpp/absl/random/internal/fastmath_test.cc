@@ -14,9 +14,6 @@
 
 #include "absl/random/internal/fastmath.h"
 
-#include <cmath>
-#include <cstdint>
-
 #include "gtest/gtest.h"
 
 #if defined(__EMSCRIPTEN__)

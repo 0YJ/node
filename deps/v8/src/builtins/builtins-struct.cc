@@ -5,8 +5,7 @@
 #include <unordered_set>
 
 #include "src/builtins/builtins-utils-inl.h"
-#include "src/objects/js-struct.h"
-#include "src/objects/object-conversions-inl.h"
+#include "src/objects/js-struct-inl.h"
 #include "src/objects/property-details.h"
 
 namespace v8 {
@@ -58,8 +57,7 @@ Maybe<bool> CollectFieldsAndElements(Isolate* isolate,
                                      DirectHandle<JSReceiver> property_names,
                                      int num_properties,
                                      DirectHandleVector<Name>& field_names,
-                                     std::set<uint32_t>& element_names,
-                                     bool& has_interesting_properties) {
+                                     std::set<uint32_t>& element_names) {
   Handle<Object> raw_property_name;
   Handle<Name> property_name;
   UniqueNameHandleSet field_names_set;
@@ -75,9 +73,6 @@ Maybe<bool> CollectFieldsAndElements(Isolate* isolate,
     if (!property_name->AsIntegerIndex(&index) ||
         index > JSObject::kMaxElementIndex) {
       property_name = isolate->factory()->InternalizeName(property_name);
-      if (property_name->IsInteresting(isolate)) {
-        has_interesting_properties = true;
-      }
 
       // TODO(v8:12547): Support Symbols?
       if (IsSymbol(*property_name)) {
@@ -138,19 +133,17 @@ BUILTIN(SharedStructTypeConstructor) {
 
     DirectHandleVector<Name> field_names(isolate);
     std::set<uint32_t> element_names;
-    bool has_interesting_properties = false;
     if (num_properties != 0) {
-      MAYBE_RETURN(CollectFieldsAndElements(
-                       isolate, property_names_arg, num_properties, field_names,
-                       element_names, has_interesting_properties),
-                   ReadOnlyRoots(isolate).exception());
+      MAYBE_RETURN(
+          CollectFieldsAndElements(isolate, property_names_arg, num_properties,
+                                   field_names, element_names),
+          ReadOnlyRoots(isolate).exception());
     }
 
-    if (IsUndefined(*args.atOrUndefined(isolate, 2))) {
+    if (IsUndefined(*args.atOrUndefined(isolate, 2), isolate)) {
       // Create a new instance map if this type isn't registered.
       instance_map = JSSharedStruct::CreateInstanceMap(
-          isolate, base::VectorOf(field_names), element_names, {},
-          has_interesting_properties);
+          isolate, base::VectorOf(field_names), element_names, {});
     } else {
       // Otherwise, get the canonical map.
       if (!IsString(*args.atOrUndefined(isolate, 2))) {
@@ -163,7 +156,7 @@ BUILTIN(SharedStructTypeConstructor) {
           isolate, instance_map,
           isolate->shared_struct_type_registry()->Register(
               isolate, args.at<String>(2), base::VectorOf(field_names),
-              element_names, has_interesting_properties));
+              element_names));
     }
   }
 

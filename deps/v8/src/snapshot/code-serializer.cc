@@ -4,7 +4,6 @@
 
 #include "src/snapshot/code-serializer.h"
 
-#include <algorithm>
 #include <memory>
 
 #include "src/base/fpu.h"
@@ -28,7 +27,6 @@
 #include "src/snapshot/object-deserializer.h"
 #include "src/snapshot/snapshot-utils.h"
 #include "src/snapshot/snapshot.h"
-#include "src/utils/memcopy.h"
 #include "src/utils/version.h"
 
 namespace v8 {
@@ -66,6 +64,11 @@ ScriptCompiler::CachedData* CodeSerializer::Serialize(
     ShortPrint(script->name());
     PrintF("]\n");
   }
+#if V8_ENABLE_WEBASSEMBLY
+  // TODO(7110): Enable serialization of Asm modules once the AsmWasmData is
+  // context independent.
+  if (script->ContainsAsmModule()) return nullptr;
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   // Serialize code object.
   DirectHandle<String> source(Cast<String>(script->source()), isolate);
@@ -137,7 +140,7 @@ void CodeSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
     {
       DisallowGarbageCollection no_gc;
       Tagged<Script> script_obj = Cast<Script>(*obj);
-      DCHECK(!script_obj->has_eval_origin());
+      DCHECK_NE(script_obj->compilation_type(), Script::CompilationType::kEval);
       // We want to differentiate between undefined and uninitialized_symbol for
       // context_data for now. It is hack to allow debugging for scripts that
       // are included as a part of custom snapshot. (see
@@ -171,6 +174,11 @@ void CodeSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
       DisallowGarbageCollection no_gc;
       Tagged<SharedFunctionInfo> sfi = Cast<SharedFunctionInfo>(*obj);
       DCHECK(!sfi->IsApiFunction());
+#if V8_ENABLE_WEBASSEMBLY
+      // TODO(7110): Enable serializing of Asm modules once the AsmWasmData
+      // is context independent.
+      DCHECK(!sfi->HasAsmWasmData());
+#endif  // V8_ENABLE_WEBASSEMBLY
 
       if (auto maybe_debug_info = sfi->TryGetDebugInfo(isolate())) {
         debug_info = direct_handle(maybe_debug_info.value(), isolate());
@@ -193,7 +201,7 @@ void CodeSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
     DisallowGarbageCollection no_gc;
     Tagged<SharedFunctionInfo> sfi = Cast<SharedFunctionInfo>(*obj);
     if (restore_bytecode) {
-      sfi->SetActiveBytecodeArray(debug_info->debug_bytecode_array(),
+      sfi->SetActiveBytecodeArray(debug_info->DebugBytecodeArray(isolate()),
                                   isolate());
     }
     if (v8_flags.profile_guided_optimization &&
@@ -263,7 +271,8 @@ void CodeSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
   CHECK(!InstanceTypeChecker::IsJSGlobalProxy(instance_type) &&
         !InstanceTypeChecker::IsJSGlobalObject(instance_type));
   // Embedded FixedArrays that need rehashing must support rehashing.
-  CHECK_IMPLIES(obj->NeedsRehashing(), obj->CanBeRehashed());
+  CHECK_IMPLIES(obj->NeedsRehashing(cage_base()),
+                obj->CanBeRehashed(cage_base()));
   // We expect no instantiated function objects or contexts.
   CHECK(!InstanceTypeChecker::IsJSFunction(instance_type) &&
         !InstanceTypeChecker::IsContext(instance_type));
@@ -469,7 +478,6 @@ const char* ToString(SerializedCodeSanityCheckResult result) {
     case SerializedCodeSanityCheckResult::kReadOnlySnapshotChecksumMismatch:
       return "read-only snapshot checksum mismatch";
   }
-  UNREACHABLE();
 }
 }  // namespace
 
@@ -685,7 +693,6 @@ CodeSerializer::FinishOffThreadDeserialize(
 #ifdef DEBUG
     if (!Cast<String>(result_script->source())->Equals(*source)) {
       isolate->PushStackTraceAndDie(
-          "deserialized script source mismatch",
           reinterpret_cast<void*>(result_script->source().ptr()),
           reinterpret_cast<void*>(source->ptr()));
     }
@@ -735,7 +742,7 @@ SerializedCodeData::SerializedCodeData(const std::vector<uint8_t>* payload,
   AllocateData(size);
 
   // Zero out pre-payload data. Part of that is only used for padding.
-  std::fill_n(data_, kHeaderSize, 0);
+  memset(data_, 0, kHeaderSize);
 
   // Set header values.
   SetMagicNumber();
@@ -748,8 +755,7 @@ SerializedCodeData::SerializedCodeData(const std::vector<uint8_t>* payload,
   SetHeaderValue(kPayloadLengthOffset, static_cast<uint32_t>(payload->size()));
 
   // Zero out any padding in the header.
-  std::fill_n(data_ + kUnalignedHeaderSize, kHeaderSize - kUnalignedHeaderSize,
-              0);
+  memset(data_ + kUnalignedHeaderSize, 0, kHeaderSize - kUnalignedHeaderSize);
 
   // Copy serialized data.
   CopyBytes(data_ + kHeaderSize, payload->data(),

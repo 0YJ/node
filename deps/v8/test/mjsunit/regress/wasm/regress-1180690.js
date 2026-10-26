@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --wasm-test-streaming --wasm-lazy-compilation
+// Flags: --wasm-test-streaming --wasm-lazy-compilation --wasm-lazy-validation
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -21,5 +21,9 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 (function f2() {
   const builder = new WasmModuleBuilder();
   builder.addFunction('id', kSig_i_i).addBody([]).exportFunc();
-  assertThrows(() => builder.instantiate(), WebAssembly.CompileError);
+  const buffer = builder.toBuffer();
+  const instance = builder.instantiate();
+  try {
+    instance.exports.id();
+  } catch {}
 })();

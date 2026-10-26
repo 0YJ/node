@@ -22,7 +22,6 @@
 
 #include <atomic>
 
-#include "absl/base/config.h"
 #include "absl/base/internal/tracing.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/synchronization/mutex.h"
@@ -92,7 +91,7 @@ class BlockingCounter {
 
  private:
   // Convenience helper to reduce verbosity at call sites.
-  static constexpr base_internal::ObjectKind TraceObjectKind() {
+  static inline constexpr base_internal::ObjectKind TraceObjectKind() {
     return base_internal::ObjectKind::kBlockingCounter;
   }
 

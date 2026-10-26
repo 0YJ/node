@@ -8,7 +8,6 @@
 #include <atomic>
 
 #include "src/api/api-inl.h"
-#include "src/objects/managed.h"
 #include "src/objects/objects-inl.h"
 #include "src/snapshot/code-serializer.h"
 #include "src/utils/version.h"
@@ -354,7 +353,7 @@ TEST(TestInterruptLoop) {
                                         base::VectorOf(buffer))
             .ToHandleChecked();
 
-    CppGCManaged<BackingStore>::Ptr backing_store =
+    std::shared_ptr<BackingStore> backing_store =
         instance->trusted_data(isolate)->memory_object(0)->backing_store();
     std::atomic<int32_t>* memory_array =
         reinterpret_cast<std::atomic<int32_t>*>(backing_store->buffer_start());

@@ -35,9 +35,8 @@ Type::Type(TypeBase::Kind kind, const Type* parent,
       constexpr_version_(nullptr) {}
 
 std::string Type::ToString() const {
-  if (aliases_.empty()) {
+  if (aliases_.empty())
     return ComputeName(ToExplicitString(), GetSpecializedFrom());
-  }
   if (aliases_.size() == 1) return *aliases_.begin();
   std::stringstream result;
   int i = 0;
@@ -77,7 +76,6 @@ std::string Type::GetHandleTypeName(HandleKind kind,
     case HandleKind::kDirect:
       return "DirectHandle<" + type_name + ">";
   }
-  UNREACHABLE();
 }
 
 // TODO(danno): HandlifiedCppTypeName should be used universally in Torque
@@ -661,7 +659,7 @@ std::vector<Field> ClassType::ComputeAllFields() const {
 std::vector<Field> ClassType::ComputeHeaderFields() const {
   std::vector<Field> result;
   for (Field& field : ComputeAllFields()) {
-    if (field.index && !field.index_is_constant) break;
+    if (field.index) break;
     // The header is allowed to end with an optional padding field of size 0.
     DCHECK(std::get<0>(field.GetFieldSizeInformation()) == 0 ||
            *field.offset < header_size());
@@ -673,7 +671,7 @@ std::vector<Field> ClassType::ComputeHeaderFields() const {
 std::vector<Field> ClassType::ComputeArrayFields() const {
   std::vector<Field> result;
   for (Field& field : ComputeAllFields()) {
-    if (!field.index || field.index_is_constant) {
+    if (!field.index) {
       // The header is allowed to end with an optional padding field of size 0.
       DCHECK(std::get<0>(field.GetFieldSizeInformation()) == 0 ||
              *field.offset < header_size());
@@ -784,12 +782,12 @@ bool ClassType::HasNoPointerSlotsExceptMap() const {
   return true;
 }
 
-bool ClassType::HasDynamicIndexedFieldsIncludingInParents() const {
+bool ClassType::HasIndexedFieldsIncludingInParents() const {
   for (const auto& field : fields_) {
-    if (field.index.has_value() && !field.index_is_constant) return true;
+    if (field.index.has_value()) return true;
   }
   if (const ClassType* parent = GetSuperClass()) {
-    return parent->HasDynamicIndexedFieldsIncludingInParents();
+    return parent->HasIndexedFieldsIncludingInParents();
   }
   return false;
 }
@@ -818,10 +816,9 @@ std::string ClassType::GetSliceMacroName(const Field& field) const {
 }
 
 void ClassType::GenerateAccessors() {
-  bool at_or_after_dynamic_indexed_field = false;
+  bool at_or_after_indexed_field = false;
   if (const ClassType* parent = GetSuperClass()) {
-    at_or_after_dynamic_indexed_field =
-        parent->HasDynamicIndexedFieldsIncludingInParents();
+    at_or_after_indexed_field = parent->HasIndexedFieldsIncludingInParents();
   }
   // For each field, construct AST snippets that implement a CSA accessor
   // function. The implementation iterator will turn the snippets into code.
@@ -830,9 +827,8 @@ void ClassType::GenerateAccessors() {
     if (field.name_and_type.type == TypeOracle::GetVoidType()) {
       continue;
     }
-    at_or_after_dynamic_indexed_field =
-        at_or_after_dynamic_indexed_field ||
-        (field.index.has_value() && !field.index_is_constant);
+    at_or_after_indexed_field =
+        at_or_after_indexed_field || field.index.has_value();
     CurrentSourcePosition::Scope position_activator(field.pos);
 
     IdentifierExpression* parameter = MakeIdentifierExpression("o");
@@ -840,7 +836,7 @@ void ClassType::GenerateAccessors() {
 
     std::string camel_field_name = CamelifyString(field.name_and_type.name);
 
-    if (at_or_after_dynamic_indexed_field || field.index.has_value()) {
+    if (at_or_after_indexed_field) {
       if (!field.index.has_value()) {
         // There's no fundamental reason we couldn't generate functions to get
         // references instead of slices, but it's not yet implemented.
@@ -1042,6 +1038,9 @@ void ClassType::GenerateSliceAccessor(size_t field_index) {
   if (this->ShouldGenerateCppObjectLayoutDefinitionAsserts()) {
     GlobalContext::EnsureInCCDebugOutputList(TorqueMacro::cast(macro),
                                              macro->Position().source);
+  } else {
+    GlobalContext::EnsureInCCOutputList(TorqueMacro::cast(macro),
+                                        macro->Position().source);
   }
 }
 
@@ -1292,10 +1291,6 @@ size_t AbstractType::AlignmentLog2() const {
     alignment = kInt32Size;
   } else if (this == TypeOracle::GetFloat64Type()) {
     alignment = kDoubleSize;
-  } else if (this == TypeOracle::GetInt64Type()) {
-    alignment = kInt64Size;
-  } else if (this == TypeOracle::GetUint64Type()) {
-    alignment = kUInt64Size;
   } else if (this == TypeOracle::GetIntPtrType()) {
     alignment = TargetArchitecture::RawPtrSize();
   } else if (this == TypeOracle::GetUIntPtrType()) {
@@ -1384,12 +1379,6 @@ std::optional<std::tuple<size_t, std::string>> SizeOf(const Type* type) {
   } else if (type->IsSubtypeOf(TypeOracle::GetFloat64Type())) {
     size = kDoubleSize;
     size_string = "kDoubleSize";
-  } else if (type->IsSubtypeOf(TypeOracle::GetInt64Type())) {
-    size = kInt64Size;
-    size_string = "kInt64Size";
-  } else if (type->IsSubtypeOf(TypeOracle::GetUint64Type())) {
-    size = kUInt64Size;
-    size_string = "kUInt64Size";
   } else if (type->IsSubtypeOf(TypeOracle::GetIntPtrType())) {
     size = TargetArchitecture::RawPtrSize();
     size_string = "kIntptrSize";
@@ -1446,9 +1435,8 @@ std::optional<NameAndType> ExtractSimpleFieldArraySize(
   IdentifierExpression* identifier =
       IdentifierExpression::DynamicCast(array_size);
   if (!identifier || !identifier->generic_arguments.empty() ||
-      !identifier->namespace_qualification.empty()) {
+      !identifier->namespace_qualification.empty())
     return {};
-  }
   if (!class_type.HasField(identifier->name->value)) return {};
   return class_type.LookupField(identifier->name->value).name_and_type;
 }

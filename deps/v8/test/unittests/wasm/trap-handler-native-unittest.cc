@@ -81,25 +81,15 @@ std::string PrintTrapHandlerTestParam(
   UNREACHABLE();
 }
 
-class TrapHandlerTest : public TestWithPlatform,
+class TrapHandlerTest : public TestWithIsolate,
                         public ::testing::WithParamInterface<TrapHandlerStyle> {
  protected:
   void SetUp() override {
     InstallFallbackHandler();
-    // Set up the trap handler before allocating an isolate. Isolate allocation
-    // registers the `WasmNull` unaccessible range with the trap handler *only*
-    // if the trap handler is enabled at this point.
     SetupTrapHandler(GetParam());
-
-    array_buffer_allocator_ = v8::ArrayBuffer::Allocator::NewDefaultAllocator();
-    v8::Isolate::CreateParams create_params;
-    create_params.array_buffer_allocator = array_buffer_allocator_;
-
-    isolate_ = v8::Isolate::New(create_params);
-    CHECK_NOT_NULL(isolate_);
-
     backing_store_ = BackingStore::AllocateWasmMemory(
-        i_isolate(), 1, 1, WasmMemoryFlag::kWasmMemory32, SharedFlag{false});
+        i_isolate(), 1, 1, WasmMemoryFlag::kWasmMemory32,
+        SharedFlag::kNotShared);
     CHECK(backing_store_);
     EXPECT_TRUE(backing_store_->has_guard_regions());
     // The allocated backing store ends with a guard page.
@@ -146,8 +136,6 @@ class TrapHandlerTest : public TestWithPlatform,
     buffer_.reset();
     recovery_buffer_.reset();
     backing_store_.reset();
-    isolate_->Dispose();
-    delete array_buffer_allocator_;
 
     // Clean up the trap handler
     trap_handler::RemoveTrapHandler();
@@ -254,8 +242,6 @@ class TrapHandlerTest : public TestWithPlatform,
   }
 
  public:
-  Isolate* i_isolate() const { return reinterpret_cast<Isolate*>(isolate_); }
-
   // Execute the code in buffer.
   void ExecuteBuffer() {
     buffer_->MakeExecutable();
@@ -279,10 +265,6 @@ class TrapHandlerTest : public TestWithPlatform,
   }
 
   bool test_handler_executed() { return g_test_handler_executed; }
-
-  // The array buffer allocator and the isolate used in the tests.
-  v8::ArrayBuffer::Allocator* array_buffer_allocator_;
-  v8::Isolate* isolate_;
 
   // The backing store used for testing the trap handler.
   std::unique_ptr<BackingStore> backing_store_;
@@ -312,8 +294,8 @@ DISABLE_CFI_ICALL void LandingPadTrampoline() { landing_pad(); }
 TEST_P(TrapHandlerTest, TestTrapHandlerRecovery) {
   // Test that the wasm trap handler can recover a memory access violation in
   // wasm code (we fake the wasm code and the access violation).
-  MacroAssembler masm(i_isolate(), AssemblerOptions{},
-                      CodeObjectRequired{false}, buffer_->CreateView());
+  MacroAssembler masm(i_isolate(), AssemblerOptions{}, CodeObjectRequired::kNo,
+                      buffer_->CreateView());
 #if V8_HOST_ARCH_X64
   __ Move(scratch, crash_address_, RelocInfo::NO_INFO);
   uint32_t crash_offset = __ pc_offset();
@@ -347,7 +329,7 @@ TEST_P(TrapHandlerTest, TestTrapHandlerRecovery) {
   CodeDesc desc;
   masm.GetCode(static_cast<LocalIsolate*>(nullptr), &desc);
 
-  trap_handler::TrappingInstructionData protected_instruction{crash_offset};
+  trap_handler::ProtectedInstructionData protected_instruction{crash_offset};
   trap_handler::RegisterHandlerData(reinterpret_cast<Address>(desc.buffer),
                                     desc.instr_size, 1, &protected_instruction);
 
@@ -362,8 +344,8 @@ TEST_P(TrapHandlerTest, TestTrapHandlerRecovery) {
 TEST_P(TrapHandlerTest, TestReleaseHandlerData) {
   // Test that after we release handler data in the trap handler, it cannot
   // recover from the specific memory access violation anymore.
-  MacroAssembler masm(i_isolate(), AssemblerOptions{},
-                      CodeObjectRequired{false}, buffer_->CreateView());
+  MacroAssembler masm(i_isolate(), AssemblerOptions{}, CodeObjectRequired::kNo,
+                      buffer_->CreateView());
 #if V8_HOST_ARCH_X64
   __ Move(scratch, crash_address_, RelocInfo::NO_INFO);
   uint32_t crash_offset = __ pc_offset();
@@ -397,7 +379,7 @@ TEST_P(TrapHandlerTest, TestReleaseHandlerData) {
   CodeDesc desc;
   masm.GetCode(static_cast<LocalIsolate*>(nullptr), &desc);
 
-  trap_handler::TrappingInstructionData protected_instruction{crash_offset};
+  trap_handler::ProtectedInstructionData protected_instruction{crash_offset};
   int handler_id = trap_handler::RegisterHandlerData(
       reinterpret_cast<Address>(desc.buffer), desc.instr_size, 1,
       &protected_instruction);
@@ -418,8 +400,8 @@ TEST_P(TrapHandlerTest, TestReleaseHandlerData) {
 TEST_P(TrapHandlerTest, TestCrashInWasmNoProtectedInstruction) {
   // Test that if the crash in wasm happened at an instruction which is not
   // protected, then the trap handler does not handle it.
-  MacroAssembler masm(i_isolate(), AssemblerOptions{},
-                      CodeObjectRequired{false}, buffer_->CreateView());
+  MacroAssembler masm(i_isolate(), AssemblerOptions{}, CodeObjectRequired::kNo,
+                      buffer_->CreateView());
 #if V8_HOST_ARCH_X64
   uint32_t no_crash_offset = __ pc_offset();
   __ Move(scratch, crash_address_, RelocInfo::NO_INFO);
@@ -449,7 +431,7 @@ TEST_P(TrapHandlerTest, TestCrashInWasmNoProtectedInstruction) {
   CodeDesc desc;
   masm.GetCode(static_cast<LocalIsolate*>(nullptr), &desc);
 
-  trap_handler::TrappingInstructionData protected_instruction{no_crash_offset};
+  trap_handler::ProtectedInstructionData protected_instruction{no_crash_offset};
   trap_handler::RegisterHandlerData(reinterpret_cast<Address>(desc.buffer),
                                     desc.instr_size, 1, &protected_instruction);
 
@@ -459,8 +441,8 @@ TEST_P(TrapHandlerTest, TestCrashInWasmNoProtectedInstruction) {
 TEST_P(TrapHandlerTest, TestCrashInWasmWrongCrashType) {
   // Test that if the crash reason is not a memory access violation, then the
   // wasm trap handler does not handle it.
-  MacroAssembler masm(i_isolate(), AssemblerOptions{},
-                      CodeObjectRequired{false}, buffer_->CreateView());
+  MacroAssembler masm(i_isolate(), AssemblerOptions{}, CodeObjectRequired::kNo,
+                      buffer_->CreateView());
 #if V8_HOST_ARCH_X64
   __ xorq(scratch, scratch);
   uint32_t crash_offset = __ pc_offset();
@@ -484,7 +466,7 @@ TEST_P(TrapHandlerTest, TestCrashInWasmWrongCrashType) {
   CodeDesc desc;
   masm.GetCode(static_cast<LocalIsolate*>(nullptr), &desc);
 
-  trap_handler::TrappingInstructionData protected_instruction{crash_offset};
+  trap_handler::ProtectedInstructionData protected_instruction{crash_offset};
   trap_handler::RegisterHandlerData(reinterpret_cast<Address>(desc.buffer),
                                     desc.instr_size, 1, &protected_instruction);
 

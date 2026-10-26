@@ -109,7 +109,10 @@ tls.createServer({
     rejectUnauthorized: false
   }, common.mustCall(() => {
     const cipher = client.getCipher();
-    assert.strictEqual(cipher.name, 'TLS_AES_256_GCM_SHA384');
+    const expectedCipher = isBoringSSL ?
+      'TLS_AES_128_GCM_SHA256' :
+      'TLS_AES_256_GCM_SHA384';
+    assert.strictEqual(cipher.name, expectedCipher);
     assert.strictEqual(cipher.standardName, cipher.name);
     assert.strictEqual(cipher.version, isBoringSSL ?
       'TLSv1/SSLv3' :

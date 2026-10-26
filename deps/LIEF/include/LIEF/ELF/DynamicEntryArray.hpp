@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +40,8 @@ class LIEF_API DynamicEntryArray : public DynamicEntry {
   DynamicEntryArray() = delete;
   DynamicEntryArray(DynamicEntry::TAG tag, array_t array) :
     DynamicEntry(tag, 0),
-    array_(std::move(array)) {}
+    array_(std::move(array))
+  {}
 
   DynamicEntryArray& operator=(const DynamicEntryArray&) = default;
   DynamicEntryArray(const DynamicEntryArray&) = default;
@@ -50,11 +51,11 @@ class LIEF_API DynamicEntryArray : public DynamicEntry {
   }
 
   /// Return the array values (list of pointers)
-  array_t& array() LIEF_LIFETIMEBOUND {
+  array_t& array() {
     return array_;
   }
 
-  const array_t& array() const LIEF_LIFETIMEBOUND {
+  const array_t& array() const {
     return array_;
   }
   void array(const array_t& array) {
@@ -62,18 +63,18 @@ class LIEF_API DynamicEntryArray : public DynamicEntry {
   }
 
   /// Insert the given function at ``pos``
-  DynamicEntryArray& insert(size_t pos, uint64_t function) LIEF_LIFETIMEBOUND;
+  DynamicEntryArray& insert(size_t pos, uint64_t function);
 
   /// Append the given function
-  DynamicEntryArray& append(uint64_t function) LIEF_LIFETIMEBOUND {
+  DynamicEntryArray& append(uint64_t function) {
     array_.push_back(function);
     return *this;
   }
 
   /// Remove the given function
-  DynamicEntryArray& remove(uint64_t function) LIEF_LIFETIMEBOUND;
+  DynamicEntryArray& remove(uint64_t function);
 
-  /// Number of functions registered in this array
+  /// Number of function registred in this array
   size_t size() const {
     return array_.size();
   }
@@ -87,7 +88,7 @@ class LIEF_API DynamicEntryArray : public DynamicEntry {
   }
 
   const uint64_t& operator[](size_t idx) const;
-  uint64_t& operator[](size_t idx);
+  uint64_t&       operator[](size_t idx);
 
   void accept(Visitor& visitor) const override;
 

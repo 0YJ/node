@@ -13,7 +13,6 @@
 #include "src/wasm/constant-expression.h"
 #include "src/wasm/module-instantiate.h"
 #include "src/wasm/wasm-debug.h"
-#include "src/wasm/wasm-objects-inl.h"
 #include "src/wasm/wasm-opcodes.h"
 #include "src/wasm/wasm-value.h"
 #include "src/zone/zone.h"
@@ -47,7 +46,7 @@ Handle<WasmInstanceObject> WasmModuleDebug::GetFirstWasmInstance() {
 
   Handle<WeakArrayList> weak_instance_list(script->wasm_weak_instance_list(),
                                            GetIsolate());
-  if (weak_instance_list->length().value() > 0) {
+  if (weak_instance_list->length() > 0) {
     Tagged<MaybeObject> maybe_instance = weak_instance_list->Get(0);
     if (maybe_instance.IsWeak()) {
       Handle<WasmInstanceObject> instance(
@@ -114,23 +113,18 @@ std::vector<wasm_addr_t> WasmModuleDebug::GetCallStack(
           if (summary.IsJavaScript()) {
             FrameSummary::JavaScriptFrameSummary const& javascript =
                 summary.AsJavaScript();
-            // Some JS frames (builtins, API callbacks, ...) are not backed by
-            // a real Script; skip them instead of casting an arbitrary Object.
-            Handle<Object> script_obj = javascript.script();
-            if (!IsScript(*script_obj)) continue;
             offset = javascript.code_offset();
-            script = Cast<Script>(script_obj);
+            script = Cast<Script>(javascript.script());
           } else if (summary.IsWasm()) {
             FrameSummary::WasmFrameSummary const& wasm = summary.AsWasm();
-            offset = GetWasmFunctionOffset(
-                         wasm.wasm_trusted_instance_data()->module(),
-                         wasm.function_index()) +
+            offset = GetWasmFunctionOffset(wasm.wasm_instance()->module(),
+                                           wasm.function_index()) +
                      wasm.code_offset();
             script = wasm.script();
             bool zeroth_frame = call_stack.empty();
             if (!zeroth_frame) {
-              NativeModule* native_module =
-                  wasm.wasm_trusted_instance_data()->native_module();
+              const NativeModule* native_module =
+                  wasm.wasm_instance()->module_object()->native_module();
               offset = ReturnPc(native_module, offset);
             }
           }
@@ -174,13 +168,12 @@ std::vector<FrameSummary> WasmModuleDebug::FindWasmFrame(
 
         if (frame_count > *frame_index) {
 #if V8_ENABLE_DRUMBRAKE
-          if (frame_it->is_wasm() && !frame_it->is_wasm_interpreter_entry()) {
+          if (frame_it->is_wasm() && !frame_it->is_wasm_interpreter_entry())
 #else   // V8_ENABLE_DRUMBRAKE
-          if (frame_it->is_wasm()) {
+          if (frame_it->is_wasm())
 #endif  // V8_ENABLE_DRUMBRAKE
-            return std::vector<FrameSummary>(summaries.frames.begin(),
-                                             summaries.frames.end());
-          } else
+            return summaries.frames;
+          else
             return {};
         } else {
           *frame_index -= frame_count;
@@ -223,8 +216,7 @@ bool WasmModuleDebug::GetWasmGlobal(Isolate* isolate, uint32_t frame_index,
       GetWasmInstance(isolate, frame_index);
   if (!instance.is_null()) {
     Handle<WasmModuleObject> module_object(instance->module_object(), isolate);
-    auto native_module = module_object->native_module();
-    const wasm::WasmModule* module = native_module->module();
+    const wasm::WasmModule* module = module_object->native_module()->module();
     if (index < module->globals.size()) {
       DirectHandle<WasmTrustedInstanceData> trusted_data(
           instance->trusted_data(isolate), isolate);
@@ -256,8 +248,7 @@ bool WasmModuleDebug::GetWasmLocal(Isolate* isolate, uint32_t frame_index,
     if (!instance.is_null()) {
       Handle<WasmModuleObject> module_object(instance->module_object(),
                                              isolate);
-      CppGCManaged<NativeModule>::Ptr native_module =
-          module_object->native_module();
+      wasm::NativeModule* native_module = module_object->native_module();
       DebugInfo* debug_info = native_module->GetDebugInfo();
       if (static_cast<uint32_t>(debug_info->GetNumLocals(frame_it.frame()->pc(),
                                                          isolate)) > index) {
@@ -291,8 +282,7 @@ bool WasmModuleDebug::GetWasmStackValue(Isolate* isolate, uint32_t frame_index,
     if (!instance.is_null()) {
       Handle<WasmModuleObject> module_object(instance->module_object(),
                                              isolate);
-      CppGCManaged<NativeModule>::Ptr native_module =
-          module_object->native_module();
+      wasm::NativeModule* native_module = module_object->native_module();
       DebugInfo* debug_info = native_module->GetDebugInfo();
       if (static_cast<uint32_t>(debug_info->GetStackDepth(
               frame_it.frame()->pc(), isolate)) > index) {
@@ -336,14 +326,15 @@ uint32_t WasmModuleDebug::GetWasmData(Zone* zone, Isolate* isolate,
   if (!instance.is_null()) {
     DirectHandle<WasmTrustedInstanceData> trusted_data(
         instance->trusted_data(isolate), isolate);
+    DirectHandle<WasmTrustedInstanceData> shared_data(
+        trusted_data->shared_part(), isolate);
     Handle<WasmModuleObject> module_object(instance->module_object(), isolate);
-    auto native_module = module_object->native_module();
-    const wasm::WasmModule* module = native_module->module();
+    const wasm::WasmModule* module = module_object->native_module()->module();
     if (!module->data_segments.empty()) {
       const WasmDataSegment& segment = module->data_segments[0];
       wasm::ValueOrError result = wasm::EvaluateConstantExpression(
           zone, segment.dest_addr, wasm::kWasmI32, module, isolate,
-          trusted_data);
+          trusted_data, shared_data);
 
       if (!wasm::is_error(result)) {
         uint32_t data_offset = wasm::to_value(result).to_u32();
@@ -372,8 +363,7 @@ uint32_t WasmModuleDebug::GetWasmModuleBytes(wasm_addr_t wasm_addr,
   if (!instance.is_null()) {
     Handle<WasmModuleObject> module_object(instance->module_object(),
                                            GetIsolate());
-    CppGCManaged<NativeModule>::Ptr native_module =
-        module_object->native_module();
+    wasm::NativeModule* native_module = module_object->native_module();
     const wasm::ModuleWireBytes wire_bytes(native_module->wire_bytes());
     uint32_t offset = wasm_addr.Offset();
     if (offset < wire_bytes.length()) {

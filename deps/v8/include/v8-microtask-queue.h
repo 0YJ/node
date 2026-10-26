@@ -9,9 +9,6 @@
 
 #include <memory>
 
-#include "cppgc/garbage-collected.h"
-#include "cppgc/macros.h"
-#include "cppgc/name-provider.h"
 #include "v8-local-handle.h"  // NOLINT(build/include_directory)
 #include "v8-microtask.h"     // NOLINT(build/include_directory)
 #include "v8config.h"         // NOLINT(build/include_directory)
@@ -40,15 +37,13 @@ class MicrotaskQueue;
  * other synchronously. E.g. for Web embedding, use the same instance for all
  * origins that share the same URL scheme and eTLD+1.
  */
-class V8_EXPORT MicrotaskQueue : public cppgc::GarbageCollected<MicrotaskQueue>,
-                                 public cppgc::NameProvider {
+class V8_EXPORT MicrotaskQueue {
  public:
   /**
    * Creates an empty MicrotaskQueue instance.
    */
-  static MicrotaskQueue* New(Isolate* isolate,
-                             MicrotasksPolicy policy = MicrotasksPolicy::kAuto);
-  virtual void Trace(cppgc::Visitor* visitor) const {}
+  static std::unique_ptr<MicrotaskQueue> New(
+      Isolate* isolate, MicrotasksPolicy policy = MicrotasksPolicy::kAuto);
 
   virtual ~MicrotaskQueue() = default;
 
@@ -58,16 +53,12 @@ class V8_EXPORT MicrotaskQueue : public cppgc::GarbageCollected<MicrotaskQueue>,
   virtual void EnqueueMicrotask(Isolate* isolate,
                                 Local<Function> microtask) = 0;
 
-  V8_DEPRECATE_SOON("Use the MicrotaskCallbackWithData overload instead")
-  virtual void EnqueueMicrotask(v8::Isolate* isolate,
-                                MicrotaskCallback callback,
-                                void* data = nullptr) = 0;
   /**
    * Enqueues the callback to the queue.
    */
   virtual void EnqueueMicrotask(v8::Isolate* isolate,
-                                MicrotaskCallbackWithData callback,
-                                v8::Local<v8::Data> data) = 0;
+                                MicrotaskCallback callback,
+                                void* data = nullptr) = 0;
 
   /**
    * Adds a callback to notify the embedder after microtasks were run. The
@@ -106,18 +97,6 @@ class V8_EXPORT MicrotaskQueue : public cppgc::GarbageCollected<MicrotaskQueue>,
    */
   virtual int GetMicrotasksScopeDepth() const = 0;
 
-  /**
-   * Controls how microtasks in this queue are invoked. This is the per-queue
-   * counterpart of Isolate::SetMicrotasksPolicy(), which only affects the
-   * isolate's default queue; the initial value is the policy passed to New().
-   */
-  virtual void SetMicrotasksPolicy(MicrotasksPolicy policy) = 0;
-
-  /**
-   * Returns the policy controlling how microtasks in this queue are invoked.
-   */
-  virtual MicrotasksPolicy GetMicrotasksPolicy() const = 0;
-
   MicrotaskQueue(const MicrotaskQueue&) = delete;
   MicrotaskQueue& operator=(const MicrotaskQueue&) = delete;
 
@@ -136,8 +115,6 @@ class V8_EXPORT MicrotaskQueue : public cppgc::GarbageCollected<MicrotaskQueue>,
  * microtasks.
  */
 class V8_EXPORT V8_NODISCARD MicrotasksScope {
-  CPPGC_STACK_ALLOCATED();
-
  public:
   enum Type { kRunMicrotasks, kDoNotRunMicrotasks };
 

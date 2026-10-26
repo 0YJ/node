@@ -19,9 +19,8 @@
 #undef BIND
 #undef BIND_LOOP
 #undef BREAK
-#undef CASE_
+#undef CASE
 #undef CONTINUE
-#undef DEFAULT
 #undef ELSE
 #undef FIELD
 #undef FOREACH
@@ -39,9 +38,6 @@
 #undef TYPESWITCH
 #undef UNLIKELY
 #undef WHILE
-
-#undef EMIT_OP
-#undef TRACE
 
 #undef FORCE_UNROLL_LOOP
 #undef NO_SHADOW

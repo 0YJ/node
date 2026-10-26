@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,8 +27,8 @@
 
 namespace LIEF {
 class BinaryStream;
-
-namespace ELF::DataHandler {
+namespace ELF {
+namespace DataHandler {
 
 class LIEF_API Handler {
   public:
@@ -37,7 +37,8 @@ class LIEF_API Handler {
 
   static constexpr size_t MAX_SIZE = 4_GB;
   Handler(std::vector<uint8_t> content) :
-    data_(std::move(content)) {}
+    data_(std::move(content))
+  {}
 
   ~Handler() = default;
 
@@ -71,8 +72,7 @@ class LIEF_API Handler {
 
   ok_error_t reserve(uint64_t offset, uint64_t size);
 
-  static std::unique_ptr<Handler>
-      from_stream(std::unique_ptr<BinaryStream>& stream);
+  static result<std::unique_ptr<Handler>> from_stream(std::unique_ptr<BinaryStream>& stream);
 
   private:
   Handler() = default;
@@ -80,8 +80,8 @@ class LIEF_API Handler {
   std::vector<uint8_t> data_;
   std::vector<std::unique_ptr<Node>> nodes_;
 };
-} // namespace ELF::DataHandler
-
+} // namespace DataHandler
+} // namespace ELF
 } // namespace LIEF
 
 #endif

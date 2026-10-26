@@ -6,7 +6,7 @@ const { redirectStatusSet, referrerPolicyTokens, badPortsSet } = require('./cons
 const { getGlobalOrigin } = require('./global')
 const { collectAnHTTPQuotedString, parseMIMEType } = require('./data-url')
 const { performance } = require('node:perf_hooks')
-const { isValidHTTPToken, normalizedMethodRecordsBase } = require('../../core/util')
+const { ReadableStreamFrom, isValidHTTPToken, normalizedMethodRecordsBase } = require('../../core/util')
 const assert = require('node:assert')
 const { isUint8Array } = require('node:util/types')
 const { webidl } = require('../webidl')
@@ -227,19 +227,14 @@ function TAOCheck () {
   return 'success'
 }
 
-// https://w3c.github.io/webappsec-fetch-metadata/#abstract-opdef-append-the-fetch-metadata-headers-for-a-request
 function appendFetchMetadata (httpRequest) {
-  //  1. If r’s url is not a potentially trustworthy URL, return.
-  if (!isURLPotentiallyTrustworthy(requestCurrentURL(httpRequest))) {
-    return
-  }
-
   //  https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-dest-header
   //  TODO
 
   //  https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-mode-header
 
   //  1. Assert: r’s url is a potentially trustworthy URL.
+  //  TODO
 
   //  2. Let header be a Structured Header whose value is a token.
   let header = null
@@ -872,9 +867,8 @@ function createIterator (name, kInternalIterator, keyIndex = 0, valueIndex = 1) 
  * @param {(target: any) => any} kInternalIterator
  * @param {string | number} [keyIndex]
  * @param {string | number} [valueIndex]
- * @param {import('../../../types/webidl').WebidlIsFunction} brandCheck
  */
-function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueIndex = 1, brandCheck) {
+function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueIndex = 1) {
   const makeIterator = createIterator(name, kInternalIterator, keyIndex, valueIndex)
 
   const properties = {
@@ -883,7 +877,7 @@ function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueInde
       enumerable: true,
       configurable: true,
       value: function keys () {
-        webidl.brandCheck(this, brandCheck)
+        webidl.brandCheck(this, object)
         return makeIterator(this, 'key')
       }
     },
@@ -892,7 +886,7 @@ function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueInde
       enumerable: true,
       configurable: true,
       value: function values () {
-        webidl.brandCheck(this, brandCheck)
+        webidl.brandCheck(this, object)
         return makeIterator(this, 'value')
       }
     },
@@ -901,7 +895,7 @@ function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueInde
       enumerable: true,
       configurable: true,
       value: function entries () {
-        webidl.brandCheck(this, brandCheck)
+        webidl.brandCheck(this, object)
         return makeIterator(this, 'key+value')
       }
     },
@@ -910,7 +904,7 @@ function iteratorMixin (name, object, kInternalIterator, keyIndex = 0, valueInde
       enumerable: true,
       configurable: true,
       value: function forEach (callbackfn, thisArg = globalThis) {
-        webidl.brandCheck(this, brandCheck)
+        webidl.brandCheck(this, object)
         webidl.argumentLengthCheck(arguments, 1, `${name}.forEach`)
         if (typeof callbackfn !== 'function') {
           throw new TypeError(
@@ -1484,6 +1478,7 @@ module.exports = {
   isAborted,
   isCancelled,
   isValidEncodedURL,
+  ReadableStreamFrom,
   tryUpgradeRequestToAPotentiallyTrustworthyURL,
   clampAndCoarsenConnectionTimingInfo,
   coarsenedSharedCurrentTime,

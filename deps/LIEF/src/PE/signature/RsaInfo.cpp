@@ -1,5 +1,5 @@
-/* Copyright 2021 - 2026 R. Thomas
- * Copyright 2021 - 2026 Quarkslab
+/* Copyright 2021 - 2025 R. Thomas
+ * Copyright 2021 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,17 +16,13 @@
 
 #include "LIEF/PE/signature/RsaInfo.hpp"
 
-#ifndef MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
-  #define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
-#endif
-
-#include <mbedtls/private/bignum.h>
+#include <mbedtls/bignum.h>
 #include <mbedtls/md.h>
-#include <mbedtls/private/rsa.h>
+#include <mbedtls/rsa.h>
 #include <utility>
 
-
-namespace LIEF::PE {
+namespace LIEF {
+namespace PE {
 
 RsaInfo::RsaInfo() = default;
 
@@ -41,7 +37,8 @@ RsaInfo::RsaInfo(const RsaInfo::rsa_ctx_handle ctx) {
   ctx_ = reinterpret_cast<RsaInfo::rsa_ctx_handle>(local_ctx);
 }
 
-RsaInfo::RsaInfo(const RsaInfo& other) {
+RsaInfo::RsaInfo(const RsaInfo& other)
+{
   if (other.ctx_ != nullptr) {
     const auto* octx = reinterpret_cast<const mbedtls_rsa_context*>(other.ctx_);
     auto* local_ctx = new mbedtls_rsa_context{};
@@ -56,7 +53,8 @@ RsaInfo::RsaInfo(const RsaInfo& other) {
 
 
 RsaInfo::RsaInfo(RsaInfo&& other) :
-  ctx_{other.ctx_} {}
+  ctx_{other.ctx_}
+{}
 
 RsaInfo& RsaInfo::operator=(RsaInfo other) {
   swap(other);
@@ -142,4 +140,5 @@ std::ostream& operator<<(std::ostream& os, const RsaInfo& info) {
   return os;
 }
 
+}
 }

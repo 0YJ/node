@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 @abstract
-@cppObjectLayoutDefinition
 extern class Struct extends HeapObject {}
 
 extern class Tuple2 extends Struct;

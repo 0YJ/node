@@ -13,7 +13,6 @@
 #include "src/base/logging.h"
 #include "src/base/numerics/safe_conversions.h"
 #include "src/base/small-vector.h"
-#include "src/base/strong-alias.h"
 #include "src/base/vector.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/codegen/machine-type.h"
@@ -21,7 +20,6 @@
 #include "src/compiler/common-operator.h"
 #include "src/compiler/compiler-source-position-table.h"
 #include "src/compiler/fast-api-calls.h"
-#include "src/compiler/feedback-source.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/compiler/machine-operator.h"
 #include "src/compiler/node-aux-data.h"
@@ -30,7 +28,6 @@
 #include "src/compiler/node-properties.h"
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator.h"
-#include "src/compiler/pipeline-data-inl.h"
 #include "src/compiler/schedule.h"
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/state-values-utils.h"
@@ -43,7 +40,6 @@
 #include "src/compiler/turboshaft/phase.h"
 #include "src/compiler/turboshaft/representations.h"
 #include "src/compiler/turboshaft/simplified-optimization-reducer.h"
-#include "src/compiler/turboshaft/value-numbering-reducer.h"
 #include "src/compiler/turboshaft/variable-reducer.h"
 #include "src/flags/flags.h"
 #include "src/heap/factory-inl.h"
@@ -52,6 +48,7 @@
 #include "src/zone/zone-containers.h"
 
 namespace v8::internal::compiler::turboshaft {
+
 #include "src/compiler/turboshaft/define-assembler-macros.inc"
 
 namespace {
@@ -71,16 +68,16 @@ struct GraphBuilder {
   Isolate* isolate;
   JSHeapBroker* broker;
   Zone* graph_zone;
-  using AssemblerT =
-      Assembler<ExplicitTruncationReducer, SimplifiedOptimizationReducer,
-                VariableReducer, ValueNumberingReducer>;
+  using AssemblerT = Assembler<ExplicitTruncationReducer,
+                               SimplifiedOptimizationReducer, VariableReducer>;
   AssemblerT assembler;
   SourcePositionTable* source_positions;
   NodeOriginTable* origins;
+  JsWasmCallsSidetable* js_wasm_calls_sidetable;
   TurboshaftPipelineKind pipeline_kind;
 
   GraphBuilder(PipelineData* data, Zone* phase_zone, Schedule& schedule,
-               Linkage* linkage)
+               Linkage* linkage, JsWasmCallsSidetable* js_wasm_calls_sidetable)
       : phase_zone(phase_zone),
         schedule(schedule),
         linkage(linkage),
@@ -90,11 +87,12 @@ struct GraphBuilder {
         assembler(data, data->graph(), data->graph(), phase_zone),
         source_positions(data->source_positions()),
         origins(data->node_origins()),
+        js_wasm_calls_sidetable(js_wasm_calls_sidetable),
         pipeline_kind(data->pipeline_kind()) {}
 
   struct BlockData {
     Block* block;
-    V<EagerFrameState> final_frame_state;
+    OpIndex final_frame_state;
   };
   NodeAuxData<OpIndex> op_mapping{phase_zone};
   ZoneVector<BlockData> block_mapping{schedule.RpoBlockCount(), phase_zone};
@@ -104,28 +102,6 @@ struct GraphBuilder {
   AssemblerT& Asm() { return assembler; }
 
  private:
-  struct ThrowingScope {
-    GraphBuilder* builder;
-    BasicBlock* block;
-    bool is_final_control;
-    std::optional<AssemblerT::CatchScope> catch_scope;
-
-    ThrowingScope(GraphBuilder* builder, BasicBlock* block,
-                  bool is_final_control)
-        : builder(builder), block(block), is_final_control(is_final_control) {
-      if (is_final_control) {
-        Block* catch_block = builder->Map(block->SuccessorAt(1));
-        catch_scope.emplace(builder->assembler, catch_block);
-      }
-    }
-
-    ~ThrowingScope() {
-      if (is_final_control) {
-        builder->assembler.Goto(builder->Map(block->SuccessorAt(0)));
-      }
-    }
-  };
-
   template <typename T>
   V<T> Map(Node* old_node) {
     V<T> result = V<T>::Cast(op_mapping.Get(old_node));
@@ -232,20 +208,9 @@ struct GraphBuilder {
         UNIMPLEMENTED();
     }
   }
-
-  FeedbackSource GetLoopFeedback(BasicBlock* loop_header_block) {
-    Node* loop_node = loop_header_block->front();
-    DCHECK_EQ(loop_node->opcode(), IrOpcode::kLoop);
-    return OpParameter<FeedbackSource>(loop_node->op());
-  }
-
-  std::tuple<OpIndex, MemoryRepresentation, WriteBarrierKind>
-  TurnTaggedSignedInputIntoSmi(OpIndex value, MemoryRepresentation rep,
-                               WriteBarrierKind write_barrier);
-
   OpIndex Process(Node* node, BasicBlock* block,
                   const base::SmallVector<int, 16>& predecessor_permutation,
-                  V<EagerFrameState>& dominating_frame_state,
+                  OpIndex& dominating_frame_state,
                   std::optional<BailoutReason>* bailout,
                   bool is_final_control = false);
 };
@@ -286,24 +251,16 @@ std::optional<BailoutReason> GraphBuilder::Run() {
                        predecessors[j]->rpo_number();
               });
 
-    // Skip loop back-edge predecessors: their final_frame_state hasn't been
-    // computed yet at header-visit time.
-    V<EagerFrameState> dominating_frame_state = V<EagerFrameState>::Invalid();
-    bool first_fs = true;
-    for (BasicBlock* pred : predecessors) {
-      if (pred->rpo_number() >= block->rpo_number()) {
-        // Skipping loop backedge.
-        DCHECK(block->IsLoopHeader());
-        continue;
-      }
-      V<EagerFrameState> pred_fs =
-          block_mapping[pred->rpo_number()].final_frame_state;
-      if (first_fs) {
-        dominating_frame_state = pred_fs;
-        first_fs = false;
-      } else if (pred_fs != dominating_frame_state) {
-        dominating_frame_state = V<EagerFrameState>::Invalid();
-        break;
+    OpIndex dominating_frame_state = OpIndex::Invalid();
+    if (!predecessors.empty()) {
+      dominating_frame_state =
+          block_mapping[predecessors[0]->rpo_number()].final_frame_state;
+      for (size_t i = 1; i < predecessors.size(); ++i) {
+        if (block_mapping[predecessors[i]->rpo_number()].final_frame_state !=
+            dominating_frame_state) {
+          dominating_frame_state = OpIndex::Invalid();
+          break;
+        }
       }
     }
 
@@ -347,16 +304,7 @@ std::optional<BailoutReason> GraphBuilder::Run() {
     switch (block->control()) {
       case BasicBlock::kGoto: {
         DCHECK_EQ(block->SuccessorCount(), 1);
-        BasicBlock* successor_block = block->SuccessorAt(0);
-        Block* destination = Map(successor_block);
-        if (destination->IsLoop() &&
-            destination->index() > target_block->index() &&
-            dominating_frame_state.valid()) {
-          FeedbackSource feedback = GetLoopFeedback(successor_block);
-          if (feedback.IsValid()) {
-            __ PrepareForLoop(dominating_frame_state, feedback);
-          }
-        }
+        Block* destination = Map(block->SuccessorAt(0));
         __ Goto(destination);
         if (destination->IsBound()) {
           DCHECK(destination->IsLoop());
@@ -384,7 +332,7 @@ std::optional<BailoutReason> GraphBuilder::Run() {
   if (source_positions && source_positions->IsEnabled()) {
     for (OpIndex index : __ output_graph().AllOperationIndices()) {
       compiler::NodeId origin =
-          __ output_graph().operation_origins()[index].DecodeExternalId();
+          __ output_graph().operation_origins()[index].DecodeTurbofanNodeId();
       __ output_graph().source_positions()[index] =
           source_positions->GetSourcePosition(origin);
     }
@@ -393,54 +341,22 @@ std::optional<BailoutReason> GraphBuilder::Run() {
   if (origins) {
     for (OpIndex index : __ output_graph().AllOperationIndices()) {
       OpIndex origin = __ output_graph().operation_origins()[index];
-      origins->SetNodeOrigin(index.id(), origin.DecodeExternalId(),
-                             origins->previous_phase_name());
+      origins->SetNodeOrigin(index.id(), origin.DecodeTurbofanNodeId());
     }
   }
 
   return std::nullopt;
 }
 
-std::tuple<OpIndex, MemoryRepresentation, WriteBarrierKind>
-GraphBuilder::TurnTaggedSignedInputIntoSmi(OpIndex value,
-                                           MemoryRepresentation rep,
-                                           WriteBarrierKind write_barrier) {
-  if (rep.value() == any_of(MemoryRepresentation::Enum::kAnyTagged,
-                            MemoryRepresentation::Enum::kTaggedSigned)) {
-    if constexpr (Is64()) {
-      if (const ConstantOp* value_cst =
-              __ Get(value).TryCast<Opmask::kWord64Constant>()) {
-        // This is storing a Smi as a raw Word64. Instead, we'll convert the
-        // raw Word64 to a proper Smi.
-        if (IsValidSmi(value_cst->signed_integral())) {
-          value = __ SmiConstant(Tagged<Smi>(value_cst->signed_integral()));
-          rep = MemoryRepresentation::TaggedSigned();
-          write_barrier = WriteBarrierKind::kNoWriteBarrier;
-        }
-      }
-    } else if (const ConstantOp* value_cst =
-                   __ Get(value).TryCast<Opmask::kWord32Constant>()) {
-      // This is storing a Smi as a raw Word32. Instead, we'll convert the
-      // raw Word32 to a proper Smi.
-      if (IsValidSmi(value_cst->signed_integral())) {
-        value = __ SmiConstant(Tagged<Smi>(value_cst->signed_integral()));
-        rep = MemoryRepresentation::TaggedSigned();
-        write_barrier = WriteBarrierKind::kNoWriteBarrier;
-      }
-    }
-  }
-  return {value, rep, write_barrier};
-}
-
 OpIndex GraphBuilder::Process(
     Node* node, BasicBlock* block,
     const base::SmallVector<int, 16>& predecessor_permutation,
-    V<EagerFrameState>& dominating_frame_state,
-    std::optional<BailoutReason>* bailout, bool is_final_control) {
+    OpIndex& dominating_frame_state, std::optional<BailoutReason>* bailout,
+    bool is_final_control) {
   if (Asm().current_block() == nullptr) {
     return OpIndex::Invalid();
   }
-  __ SetCurrentOrigin(OpIndex::EncodeExternalId(node->id()));
+  __ SetCurrentOrigin(OpIndex::EncodeTurbofanNodeId(node->id()));
   const Operator* op = node->op();
   Operator::Opcode opcode = op->opcode();
   switch (opcode) {
@@ -463,8 +379,7 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kCheckpoint: {
       // Preserve the frame state from this checkpoint for following nodes.
-      dominating_frame_state =
-          Map<EagerFrameState>(NodeProperties::GetFrameStateInput(node));
+      dominating_frame_state = Map(NodeProperties::GetFrameStateInput(node));
       return OpIndex::Invalid();
     }
 
@@ -669,16 +584,14 @@ OpIndex GraphBuilder::Process(
                                   V<Object>::Cast(right));
           } else if (left_is_tagged) {
             DCHECK((std::is_same_v<WordPtr, Word64>));
-            return __ Word64Equal(
-                V<Word64>::CastIfNeeded(
-                    __ BitcastTaggedToWordPtr(V<Object>::Cast(left))),
-                V<Word64>::Cast(right));
+            return __ Word64Equal(V<Word64>::Cast(__ BitcastTaggedToWordPtr(
+                                      V<Object>::Cast(left))),
+                                  V<Word64>::Cast(right));
           } else if (right_is_tagged) {
             DCHECK((std::is_same_v<WordPtr, Word64>));
-            return __ Word64Equal(
-                V<Word64>::Cast(left),
-                V<Word64>::CastIfNeeded(
-                    __ BitcastTaggedToWordPtr(V<Object>::Cast(right))));
+            return __ Word64Equal(V<Word64>::Cast(left),
+                                  V<Word64>::Cast(__ BitcastTaggedToWordPtr(
+                                      V<Object>::Cast(right))));
           }
         }
       }
@@ -1143,10 +1056,6 @@ OpIndex GraphBuilder::Process(
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedSignedToInt32, Int32, Smi)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedSignedToInt64, Int64, Smi)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToBit, Bit, Boolean)
-      CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeSmiOrHoleToFloat64, Float64,
-                                       SmiOrHole)
-      CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeNumberOrHoleToFloat64, Float64,
-                                       NumberOrHole)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToInt32, Int32,
                                        NumberOrOddball)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToUint32, Uint32,
@@ -1155,9 +1064,10 @@ OpIndex GraphBuilder::Process(
                                        NumberOrOddball)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeTaggedToFloat64, Float64,
                                        NumberOrOddball)
+      CONVERT_OBJECT_TO_PRIMITIVE_CASE(ChangeNumberOrHoleToFloat64, Float64,
+                                       NumberOrHole)
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(TruncateTaggedToFloat64, Float64,
                                        NumberOrOddball)
-
 #ifdef V8_ENABLE_UNDEFINED_DOUBLE
       CONVERT_OBJECT_TO_PRIMITIVE_CASE(TruncateTaggedToFloat64PreserveUndefined,
                                        HoleyFloat64, NumberOrOddball)
@@ -1173,19 +1083,17 @@ OpIndex GraphBuilder::Process(
             k##input_assumptions);
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateNumberOrOddballToWord32, Int32,
                                         NumberOrOddball)
+      TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateNumberOrOddballOrHoleToWord32,
+                                        Int32, NumberOrOddballOrHole)
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateBigIntToWord64, Int64, BigInt)
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateTaggedToBit, Bit, Object)
       TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateTaggedPointerToBit, Bit,
                                         HeapObject)
-      TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateSmiOrHoleToWord32, Int32,
-                                        SmiOrHole)
-      TRUNCATE_OBJECT_TO_PRIMITIVE_CASE(TruncateNumberOrOddballOrHoleToWord32,
-                                        Int32, NumberOrOddballOrHole)
 #undef TRUNCATE_OBJECT_TO_PRIMITIVE_CASE
 
     case IrOpcode::kCheckedTruncateTaggedToWord32:
       DCHECK(dominating_frame_state.valid());
-      using IR = TruncateJSPrimitiveToWord32OrDeoptOp::InputRequirement;
+      using IR = TruncateJSPrimitiveToUntaggedOrDeoptOp::InputRequirement;
       IR input_requirement;
       switch (CheckTaggedInputParametersOf(node->op()).mode()) {
         case CheckTaggedInputMode::kAdditiveSafeInteger:
@@ -1201,8 +1109,10 @@ OpIndex GraphBuilder::Process(
           input_requirement = IR::kNumberOrOddball;
           break;
       }
-      return __ TruncateJSPrimitiveToWord32OrDeopt(
-          Map(node->InputAt(0)), dominating_frame_state, input_requirement,
+      return __ TruncateJSPrimitiveToUntaggedOrDeopt(
+          Map(node->InputAt(0)), dominating_frame_state,
+          TruncateJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt32,
+          input_requirement,
           CheckTaggedInputParametersOf(node->op()).feedback());
 
 #define CHANGE_OR_DEOPT_INT_CASE(kind)                                     \
@@ -1256,30 +1166,6 @@ OpIndex GraphBuilder::Process(
                               ChangeOrDeoptOp::Kind::kFloat64ToInt64,
                               params.mode(), params.feedback());
     }
-    case IrOpcode::kCheckedFloat64ToUint64: {
-      DCHECK(dominating_frame_state.valid());
-      const CheckMinusZeroParameters& params =
-          CheckMinusZeroParametersOf(node->op());
-      return __ ChangeOrDeopt(Map(node->InputAt(0)), dominating_frame_state,
-                              ChangeOrDeoptOp::Kind::kFloat64ToUint64,
-                              params.mode(), params.feedback());
-    }
-    case IrOpcode::kCheckedInt32ToUint64: {
-      DCHECK(dominating_frame_state.valid());
-      const CheckParameters& params = CheckParametersOf(node->op());
-      return __ ChangeOrDeopt(Map(node->InputAt(0)), dominating_frame_state,
-                              ChangeOrDeoptOp::Kind::kInt32ToUint64,
-                              CheckForMinusZeroMode::kDontCheckForMinusZero,
-                              params.feedback());
-    }
-    case IrOpcode::kCheckedInt64ToUint64: {
-      DCHECK(dominating_frame_state.valid());
-      const CheckParameters& params = CheckParametersOf(node->op());
-      return __ ChangeOrDeopt(Map(node->InputAt(0)), dominating_frame_state,
-                              ChangeOrDeoptOp::Kind::kInt64ToUint64,
-                              CheckForMinusZeroMode::kDontCheckForMinusZero,
-                              params.feedback());
-    }
 
     case IrOpcode::kCheckedTaggedToInt32: {
       DCHECK(dominating_frame_state.valid());
@@ -1312,16 +1198,6 @@ OpIndex GraphBuilder::Process(
           Map(node->InputAt(0)), dominating_frame_state,
           ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber,
           ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kInt64,
-          params.mode(), params.feedback());
-    }
-    case IrOpcode::kCheckedTaggedToUint64: {
-      DCHECK(dominating_frame_state.valid());
-      const CheckMinusZeroParameters& params =
-          CheckMinusZeroParametersOf(node->op());
-      return __ ConvertJSPrimitiveToUntaggedOrDeopt(
-          Map(node->InputAt(0)), dominating_frame_state,
-          ConvertJSPrimitiveToUntaggedOrDeoptOp::JSPrimitiveKind::kNumber,
-          ConvertJSPrimitiveToUntaggedOrDeoptOp::UntaggedKind::kUint64,
           params.mode(), params.feedback());
     }
 
@@ -1428,11 +1304,11 @@ OpIndex GraphBuilder::Process(
       return __ Load(Map(base), Map(index), kind, loaded_rep, offset,
                      element_size_log2);
     }
-    case IrOpcode::kTrappingLoad: {
+    case IrOpcode::kProtectedLoad: {
       MemoryRepresentation loaded_rep =
           MemoryRepresentation::FromMachineType(LoadRepresentationOf(op));
       return __ Load(Map(node->InputAt(0)), Map(node->InputAt(1)),
-                     LoadOp::Kind::Trapping(), loaded_rep);
+                     LoadOp::Kind::Protected(), loaded_rep);
     }
 
     case IrOpcode::kStore:
@@ -1487,11 +1363,11 @@ OpIndex GraphBuilder::Process(
                initializing_transitioning);
       return OpIndex::Invalid();
     }
-    case IrOpcode::kTrappingStore:
-      // We don't mark TrappingStores as initializing even when inside regions,
+    case IrOpcode::kProtectedStore:
+      // We don't mark ProtectedStores as initialzing even when inside regions,
       // since we don't store-store eliminate them because they have a raw base.
       __ Store(Map(node->InputAt(0)), Map(node->InputAt(1)),
-               Map(node->InputAt(2)), StoreOp::Kind::Trapping(),
+               Map(node->InputAt(2)), StoreOp::Kind::Protected(),
                MemoryRepresentation::FromMachineRepresentation(
                    OpParameter<MachineRepresentation>(node->op())),
                WriteBarrierKind::kNoWriteBarrier);
@@ -1538,10 +1414,26 @@ OpIndex GraphBuilder::Process(
 
     case IrOpcode::kCall: {
       const CallDescriptor* call_descriptor = CallDescriptorOf(op);
-      CanThrow can_throw = op->HasProperty(Operator::kNoThrow) ? CanThrow{false}
-                                                               : CanThrow{true};
+      const JSWasmCallParameters* wasm_call_parameters = nullptr;
+#if V8_ENABLE_WEBASSEMBLY
+      if (call_descriptor->IsAnyWasmFunctionCall() &&
+          v8_flags.turboshaft_wasm_in_js_inlining) {
+        // A JS-to-Wasm call where the wrapper got inlined in TurboFan but the
+        // actual Wasm body inlining was either not possible or is going to
+        // happen later in Turboshaft. See https://crbug.com/353475584.
+        // Make sure that for each not-yet-body-inlined call node, there is an
+        // entry in the sidetable.
+        DCHECK_NOT_NULL(js_wasm_calls_sidetable);
+        auto it = js_wasm_calls_sidetable->find(node->id());
+        CHECK_NE(it, js_wasm_calls_sidetable->end());
+        wasm_call_parameters = it->second;
+      }
+#endif  // V8_ENABLE_WEBASSEMBLY
+      CanThrow can_throw =
+          op->HasProperty(Operator::kNoThrow) ? CanThrow::kNo : CanThrow::kYes;
       const TSCallDescriptor* ts_descriptor = TSCallDescriptor::Create(
-          call_descriptor, can_throw, LazyDeoptOnThrow{false}, graph_zone);
+          call_descriptor, can_throw, LazyDeoptOnThrow::kNo, graph_zone,
+          wasm_call_parameters);
 
       base::SmallVector<OpIndex, 16> arguments;
       // The input `0` is the callee, the following value inputs are the
@@ -1553,12 +1445,16 @@ OpIndex GraphBuilder::Process(
         arguments.emplace_back(Map(node->InputAt(i)));
       }
 
-      OptionalV<LazyFrameState> frame_state_idx =
-          OptionalV<LazyFrameState>::Nullopt();
+      OptionalV<FrameState> frame_state_idx = OptionalV<FrameState>::Nullopt();
       if (call_descriptor->NeedsFrameState()) {
         compiler::FrameState frame_state{
             node->InputAt(static_cast<int>(call_descriptor->InputCount()))};
-        frame_state_idx = Map<LazyFrameState>(frame_state);
+        frame_state_idx = Map(frame_state);
+      }
+      std::optional<decltype(assembler)::CatchScope> catch_scope;
+      if (is_final_control) {
+        Block* catch_block = Map(block->SuccessorAt(1));
+        catch_scope.emplace(assembler, catch_block);
       }
       OpEffects effects =
           OpEffects().CanDependOnChecks().CanChangeControlFlow().CanDeopt();
@@ -1571,9 +1467,16 @@ OpIndex GraphBuilder::Process(
       if (!op->HasProperty(Operator::kNoRead)) {
         effects = effects.CanReadMemory();
       }
-      ThrowingScope throwing_scope(this, block, is_final_control);
-      return __ Call(callee, frame_state_idx, base::VectorOf(arguments),
-                     ts_descriptor, effects);
+      OpIndex result =
+          __ Call(callee, frame_state_idx, base::VectorOf(arguments),
+                  ts_descriptor, effects);
+      if (is_final_control) {
+        // The `__ Call()` before has already created exceptional control flow
+        // and bound a new block for the success case. So we can just `Goto` the
+        // block that Turbofan designated as the `IfSuccess` successor.
+        __ Goto(Map(block->SuccessorAt(0)));
+      }
+      return result;
     }
 
     case IrOpcode::kTailCall: {
@@ -1588,10 +1491,10 @@ OpIndex GraphBuilder::Process(
         arguments.emplace_back(Map(node->InputAt(i)));
       }
 
-      CanThrow can_throw = op->HasProperty(Operator::kNoThrow) ? CanThrow{false}
-                                                               : CanThrow{true};
+      CanThrow can_throw =
+          op->HasProperty(Operator::kNoThrow) ? CanThrow::kNo : CanThrow::kYes;
       const TSCallDescriptor* ts_descriptor = TSCallDescriptor::Create(
-          call_descriptor, can_throw, LazyDeoptOnThrow{false}, graph_zone);
+          call_descriptor, can_throw, LazyDeoptOnThrow::kNo, graph_zone);
 
       __ TailCall(callee, base::VectorOf(arguments), ts_descriptor);
       return OpIndex::Invalid();
@@ -1606,10 +1509,9 @@ OpIndex GraphBuilder::Process(
         *bailout = BailoutReason::kTooManyArguments;
         return OpIndex::Invalid();
       }
-      return __ template FrameState<AnyFrameState>(
-          builder.Inputs(), builder.inlined(),
-          builder.AllocateFrameStateData(frame_state.frame_state_info(),
-                                         graph_zone));
+      return __ FrameState(builder.Inputs(), builder.inlined(),
+                           builder.AllocateFrameStateData(
+                               frame_state.frame_state_info(), graph_zone));
     }
 
     case IrOpcode::kDeoptimizeIf:
@@ -1638,7 +1540,7 @@ OpIndex GraphBuilder::Process(
 #endif  // V8_ENABLE_WEBASSEMBLY
 
     case IrOpcode::kDeoptimize: {
-      V<EagerFrameState> frame_state = Map<EagerFrameState>(node->InputAt(0));
+      V<FrameState> frame_state = Map(node->InputAt(0));
       __ Deoptimize(frame_state, &DeoptimizeParametersOf(op));
       return OpIndex::Invalid();
     }
@@ -1710,22 +1612,18 @@ OpIndex GraphBuilder::Process(
       return OpIndex::Invalid();
     }
     case IrOpcode::kStoreElement: {
-      OpIndex object = Map(node->InputAt(0));
-      OpIndex index = Map(node->InputAt(1));
-      OpIndex value = Map(node->InputAt(2));
+      Node* object = node->InputAt(0);
+      Node* index = node->InputAt(1);
+      Node* value = node->InputAt(2);
       ElementAccess const& access = ElementAccessOf(node->op());
       DCHECK(!access.machine_type.IsMapWord());
       StoreOp::Kind kind = StoreOp::Kind::Aligned(access.base_is_tagged);
       MemoryRepresentation rep =
           MemoryRepresentation::FromMachineType(access.machine_type);
       bool initializing_transitioning = inside_region;
-
-      auto [final_value, final_rep, final_write_barrier] =
-          TurnTaggedSignedInputIntoSmi(value, rep, access.write_barrier_kind);
-
-      __ Store(object, index, final_value, kind, final_rep, final_write_barrier,
-               access.header_size, final_rep.SizeInBytesLog2(),
-               initializing_transitioning);
+      __ Store(Map(object), Map(index), Map(value), kind, rep,
+               access.write_barrier_kind, access.header_size,
+               rep.SizeInBytesLog2(), initializing_transitioning);
       return OpIndex::Invalid();
     }
     case IrOpcode::kStoreField: {
@@ -1764,10 +1662,19 @@ OpIndex GraphBuilder::Process(
       MemoryRepresentation rep =
           MemoryRepresentation::FromMachineType(machine_type);
 
-      auto [final_value, final_rep, final_write_barrier] =
-          TurnTaggedSignedInputIntoSmi(value, rep, access.write_barrier_kind);
+      if (const ConstantOp* value_cst =
+              __ Get(value).TryCast<Opmask::kWord64Constant>()) {
+        if (rep.value() == any_of(MemoryRepresentation::Enum::kAnyTagged,
+                                  MemoryRepresentation::Enum::kTaggedSigned)) {
+          // This is storing a Smi as a raw Word64. Instead, we'll convert the
+          // raw Word64 to a proper Smi.
+          if (IsValidSmi(value_cst->signed_integral())) {
+            value = __ SmiConstant(Tagged<Smi>(value_cst->signed_integral()));
+          }
+        }
+      }
 
-      __ Store(object, final_value, kind, final_rep, final_write_barrier,
+      __ Store(object, value, kind, rep, access.write_barrier_kind,
                access.offset, initializing_transitioning,
                access.indirect_pointer_tag);
       return OpIndex::Invalid();
@@ -1873,38 +1780,29 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kLoadFieldByIndex:
       return __ LoadFieldByIndex(Map(node->InputAt(0)), Map(node->InputAt(1)));
 
-    case IrOpcode::kLoadDictionaryField: {
-      ThrowingScope throwing_scope(this, block, is_final_control);
-      auto const& p = LoadDictionaryFieldParametersOf(node->op());
-      return __ LoadDictionaryField(
-          Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)),
-          Map(node->InputAt(3)), p.dictionary_index().raw_value(), p.name(),
-          p.feedback(), p.is_super(), LazyDeoptOnThrow{false});
-    }
-
     case IrOpcode::kCheckedAdditiveSafeIntegerAdd: {
       DCHECK(Is64());
       DCHECK(dominating_frame_state.valid());
-      auto shifted_lhs = __ Word64ShiftLeft(Map(node->InputAt(0)),
-                                            kAdditiveSafeIntegerFeedbackShift);
-      auto shifted_rhs = __ Word64ShiftLeft(Map(node->InputAt(1)),
-                                            kAdditiveSafeIntegerFeedbackShift);
+      auto shifted_lhs =
+          __ Word64ShiftLeft(Map(node->InputAt(0)), kAdditiveSafeIntegerShift);
+      auto shifted_rhs =
+          __ Word64ShiftLeft(Map(node->InputAt(1)), kAdditiveSafeIntegerShift);
       auto shifted_result = __ Word64SignedAddDeoptOnOverflow(
           shifted_lhs, shifted_rhs, dominating_frame_state, FeedbackSource{});
       return __ Word64ShiftRightArithmetic(shifted_result,
-                                           kAdditiveSafeIntegerFeedbackShift);
+                                           kAdditiveSafeIntegerShift);
     }
     case IrOpcode::kCheckedAdditiveSafeIntegerSub: {
       DCHECK(Is64());
       DCHECK(dominating_frame_state.valid());
-      auto shifted_lhs = __ Word64ShiftLeft(Map(node->InputAt(0)),
-                                            kAdditiveSafeIntegerFeedbackShift);
-      auto shifted_rhs = __ Word64ShiftLeft(Map(node->InputAt(1)),
-                                            kAdditiveSafeIntegerFeedbackShift);
+      auto shifted_lhs =
+          __ Word64ShiftLeft(Map(node->InputAt(0)), kAdditiveSafeIntegerShift);
+      auto shifted_rhs =
+          __ Word64ShiftLeft(Map(node->InputAt(1)), kAdditiveSafeIntegerShift);
       auto shifted_result = __ Word64SignedSubDeoptOnOverflow(
           shifted_lhs, shifted_rhs, dominating_frame_state, FeedbackSource{});
       return __ Word64ShiftRightArithmetic(shifted_result,
-                                           kAdditiveSafeIntegerFeedbackShift);
+                                           kAdditiveSafeIntegerShift);
     }
     case IrOpcode::kCheckedInt64Add:
       DCHECK(Is64());
@@ -2025,32 +1923,15 @@ OpIndex GraphBuilder::Process(
       return __ StringCodePointAt(Map(node->InputAt(0)), Map(node->InputAt(1)));
 
 #ifdef V8_INTL_SUPPORT
-    case IrOpcode::kStringToLowerCaseIntl: {
-      ThrowingScope throwing_scope(this, block, is_final_control);
+    case IrOpcode::kStringToLowerCaseIntl:
       return __ StringToLowerCaseIntl(
           Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
-    }
-    case IrOpcode::kStringToUpperCaseIntl: {
-      ThrowingScope throwing_scope(this, block, is_final_control);
+    case IrOpcode::kStringToUpperCaseIntl:
       return __ StringToUpperCaseIntl(
           Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(2)));
-    }
-    case IrOpcode::kStringLocaleCompareIntl: {
-      V<JSFunction> locale_compare_fn = Map<JSFunction>(node->InputAt(0));
-      V<Object> left = Map<Object>(node->InputAt(1));
-      V<Object> right = Map<Object>(node->InputAt(2));
-      V<StringOrUndefined> locales = Map<StringOrUndefined>(node->InputAt(3));
-      V<Context> context = Map<Context>(node->InputAt(4));
-      V<LazyFrameState> frame_state = Map<LazyFrameState>(node->InputAt(5));
-      ThrowingScope throwing_scope(this, block, is_final_control);
-      return __ StringLocaleCompareIntl(locale_compare_fn, left, right, locales,
-                                        frame_state, context,
-                                        LazyDeoptOnThrow{false});
-    }
 #else
     case IrOpcode::kStringToLowerCaseIntl:
     case IrOpcode::kStringToUpperCaseIntl:
-    case IrOpcode::kStringLocaleCompareIntl:
       UNREACHABLE();
 #endif  // V8_INTL_SUPPORT
 
@@ -2179,15 +2060,6 @@ OpIndex GraphBuilder::Process(
       return OpIndex{};
     }
 
-    case IrOpcode::kCheckHomomorphic: {
-      DCHECK(dominating_frame_state.valid());
-      const auto& p = CheckHomomorphicParametersOf(node->op());
-      __ CheckHomomorphic(Map(node->InputAt(0)), dominating_frame_state,
-                          p.name(), p.homomorphic_array(), p.handler_value(),
-                          p.check_heap_object(), p.feedback());
-      return OpIndex{};
-    }
-
     case IrOpcode::kCheckedUint32Bounds:
     case IrOpcode::kCheckedUint64Bounds: {
       WordRepresentation rep = node->opcode() == IrOpcode::kCheckedUint32Bounds
@@ -2292,8 +2164,7 @@ OpIndex GraphBuilder::Process(
       for (int i = 1; i < n.SlowCallArgumentCount(); ++i) {
         slow_call_arguments.push_back(Map(n.SlowCallArgument(i)));
       }
-      V<LazyFrameState> frame_state =
-          V<LazyFrameState>::Cast(slow_call_arguments.back());
+      OpIndex frame_state = slow_call_arguments.back();
 
       auto convert_fallback_return = [this](Variable value,
                                             CFunctionInfo::Int64Representation
@@ -2440,11 +2311,15 @@ OpIndex GraphBuilder::Process(
           case CTypeInfo::Type::kUint8:
             UNREACHABLE();
         }
-        UNREACHABLE();
 
 #undef ELSE_UNREACHABLE
       };
 
+      std::optional<decltype(assembler)::CatchScope> catch_scope;
+      if (is_final_control) {
+        Block* catch_block = Map(block->SuccessorAt(1));
+        catch_scope.emplace(assembler, catch_block);
+      }
       // Prepare FastCallApiOp parameters.
       base::SmallVector<OpIndex, 16> arguments;
       for (int i = 0; i < c_arg_count; ++i) {
@@ -2470,7 +2345,6 @@ OpIndex GraphBuilder::Process(
       out_reps[1] = RegisterRepresentation::FromCTypeInfo(
           return_type, parameters->c_signature()->GetInt64Representation());
 
-      ThrowingScope throwing_scope(this, block, is_final_control);
       V<Tuple<Word32, Any>> fast_call_result =
           __ FastApiCall(frame_state, data_argument, context,
                          base::VectorOf(arguments), parameters, out_reps);
@@ -2491,16 +2365,21 @@ OpIndex GraphBuilder::Process(
 
         V<Object> fallback_result = V<Object>::Cast(__ Call(
             slow_call_callee, frame_state, base::VectorOf(slow_call_arguments),
-            TSCallDescriptor::Create(params.descriptor(), CanThrow{true},
-                                     LazyDeoptOnThrow{false},
-                                     __ graph_zone())));
+            TSCallDescriptor::Create(params.descriptor(), CanThrow::kYes,
+                                     LazyDeoptOnThrow::kNo, __ graph_zone())));
 
         convert_fallback_return(
             result, parameters->c_signature()->GetInt64Representation(),
             return_type.GetType(), fallback_result);
       }
       V<Any> value = __ GetVariable(result);
-
+      if (is_final_control) {
+        // The `__ FastApiCall()` before has already created exceptional control
+        // flow and bound a new block for the success case. So we can just
+        // `Goto` the block that Turbofan designated as the `IfSuccess`
+        // successor.
+        __ Goto(Map(block->SuccessorAt(0)));
+      }
       return value;
     }
 
@@ -2568,8 +2447,6 @@ OpIndex GraphBuilder::Process(
     case IrOpcode::kFindOrderedHashMapEntryForInt32Key:
       return __ FindOrderedHashMapEntryForInt32Key(Map(node->InputAt(0)),
                                                    Map(node->InputAt(1)));
-    case IrOpcode::kWeakCollectionGet:
-      return __ WeakCollectionGet(Map(node->InputAt(0)), Map(node->InputAt(1)));
 
     case IrOpcode::kBeginRegion:
       inside_region = true;
@@ -2621,8 +2498,8 @@ OpIndex GraphBuilder::Process(
           break;
         case MemoryAccessKind::kUnaligned:
           UNREACHABLE();
-        case MemoryAccessKind::kTrapping:
-          kind = LoadOp::Kind::RawAligned().Atomic().Trapping();
+        case MemoryAccessKind::kProtectedByTrapHandler:
+          kind = LoadOp::Kind::RawAligned().Atomic().Protected();
           break;
       }
       RegisterRepresentation result_rep =
@@ -2664,14 +2541,14 @@ OpIndex GraphBuilder::Process(
           break;
         case MemoryAccessKind::kUnaligned:
           UNREACHABLE();
-        case MemoryAccessKind::kTrapping:
-          kind = StoreOp::Kind::RawAligned().Atomic().Trapping();
+        case MemoryAccessKind::kProtectedByTrapHandler:
+          kind = StoreOp::Kind::RawAligned().Atomic().Protected();
           break;
       }
       __ Store(
           base, offset, value, kind,
           MemoryRepresentation::FromMachineRepresentation(p.representation()),
-          p.write_barrier_kind(), p.order(), 0, 0, true);
+          p.write_barrier_kind(), 0, 0, true);
       return OpIndex::Invalid();
     }
 
@@ -2758,8 +2635,6 @@ OpIndex GraphBuilder::Process(
           Map(node->InputAt(0)), Map(node->InputAt(1)), Map(node->InputAt(4)),
           Map(node->InputAt(5)), Map(node->InputAt(2)), Map(node->InputAt(3)),
           0);
-    case IrOpcode::kMemoryBarrier:
-      return __ MemoryBarrier(OpParameter<AtomicMemoryOrder>(node->op()));
 
 #ifdef V8_ENABLE_WEBASSEMBLY
 #define SIMD128_BINOP(name)                                              \
@@ -2867,7 +2742,7 @@ OpIndex GraphBuilder::Process(
           UNREACHABLE();
       }
       V<Context> context = Map(node->InputAt(0));
-      V<LazyFrameState> frame_state = Map<LazyFrameState>(node->InputAt(1));
+      V<FrameState> frame_state = Map(node->InputAt(1));
       __ JSStackCheck(context, frame_state, kind);
       if (NodeProperties::IsExceptionalCall(node)) {
         // JSStackCheck in Turbofan have control projections (even though they
@@ -2941,9 +2816,11 @@ OpIndex GraphBuilder::Process(
 
 }  // namespace
 
-std::optional<BailoutReason> BuildGraph(PipelineData* data, Schedule* schedule,
-                                        Zone* phase_zone, Linkage* linkage) {
-  GraphBuilder builder{data, phase_zone, *schedule, linkage};
+std::optional<BailoutReason> BuildGraph(
+    PipelineData* data, Schedule* schedule, Zone* phase_zone, Linkage* linkage,
+    JsWasmCallsSidetable* js_wasm_calls_sidetable) {
+  GraphBuilder builder{data, phase_zone, *schedule, linkage,
+                       js_wasm_calls_sidetable};
   DCHECK(data->graph().IsCreatedFromTurbofan());
 #if DEBUG
   data->graph().set_broker(data->broker());

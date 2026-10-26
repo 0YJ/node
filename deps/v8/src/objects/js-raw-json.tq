@@ -4,5 +4,4 @@
 
 #include 'src/objects/js-raw-json.h'
 
-@cppObjectLayoutDefinition
 extern class JSRawJson extends JSObject {}

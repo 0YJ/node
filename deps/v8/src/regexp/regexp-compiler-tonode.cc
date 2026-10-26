@@ -23,9 +23,8 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-using namespace compiler_constants;  // NOLINT(build/namespaces)
+using namespace regexp_compiler_constants;  // NOLINT(build/namespaces)
 
 constexpr base::uc32 kMaxCodePoint = 0x10ffff;
 constexpr int kMaxUtf16CodeUnit = 0xffff;
@@ -68,9 +67,10 @@ constexpr uint32_t kMaxUtf16CodeUnitU = 0xffff;
 // -------------------------------------------------------------------
 // Tree to graph conversion
 
-Node* Tree::ToNode(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpTree::ToNode(RegExpCompiler* compiler,
+                               RegExpNode* on_success) {
 #ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
-  TraceTreeScope trace_tree_scope(compiler->diagnostics());
+  TraceRegExpTreeScope trace_tree_scope(compiler->diagnostics());
   if (V8_UNLIKELY(v8_flags.trace_regexp_graph_building)) {
     trace_tree_scope.PrintTree(this);
   }
@@ -84,20 +84,20 @@ Node* Tree::ToNode(Compiler* compiler, Node* on_success) {
     // We can always return this even though it may not be the expected
     // subclass because all call sites already have to check for this case.
     Zone* zone = compiler->zone();
-    return zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+    return zone->New<EndNode>(EndNode::BACKTRACK, zone);
   }
   return ToNodeImpl(compiler, on_success);
 }
 
-Node* Atom::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpAtom::ToNodeImpl(RegExpCompiler* compiler,
+                                   RegExpNode* on_success) {
   Zone* zone = compiler->zone();
   ZoneList<TextElement>* elms = zone->New<ZoneList<TextElement>>(1, zone);
-  elms->Add(TextElement::FromAtom(this), zone);
-  TextNode* result = zone->New<TextNode>(elms, compiler->read_backward(),
-                                         on_success, compiler->flags());
+  elms->Add(TextElement::Atom(this), zone);
+  TextNode* result =
+      zone->New<TextNode>(elms, compiler->read_backward(), on_success);
   if (compiler->one_byte() && !result->CanMatchLatin1(compiler)) {
-    Node* backtrack =
-        zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+    RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
     REGISTER_NODE(backtrack);
     return backtrack;
   }
@@ -106,13 +106,13 @@ Node* Atom::ToNodeImpl(Compiler* compiler, Node* on_success) {
   return result;
 }
 
-Node* Text::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpText::ToNodeImpl(RegExpCompiler* compiler,
+                                   RegExpNode* on_success) {
   Zone* zone = compiler->zone();
-  TextNode* result = zone->New<TextNode>(elements(), compiler->read_backward(),
-                                         on_success, compiler->flags());
+  TextNode* result =
+      zone->New<TextNode>(elements(), compiler->read_backward(), on_success);
   if (compiler->one_byte() && !result->CanMatchLatin1(compiler)) {
-    Node* backtrack =
-        zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+    RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
     REGISTER_NODE(backtrack);
     return backtrack;
   }
@@ -169,7 +169,7 @@ bool CompareRanges(ZoneList<CharacterRange>* ranges, const int* special_class,
 
 }  // namespace
 
-bool ClassRanges::is_standard(Zone* zone) {
+bool RegExpClassRanges::is_standard(Zone* zone) {
   // TODO(lrn): Remove need for this function, by not throwing away information
   // along the way.
   if (is_negated()) {
@@ -281,15 +281,14 @@ ZoneList<CharacterRange>* ToCanonicalZoneList(
   return result;
 }
 
-void AddBmpCharacters(Compiler* compiler, ChoiceNode* result, Node* on_success,
-                      UnicodeRangeSplitter* splitter) {
+void AddBmpCharacters(RegExpCompiler* compiler, ChoiceNode* result,
+                      RegExpNode* on_success, UnicodeRangeSplitter* splitter) {
   TRACE("* Add BMP Characters");
   ZoneList<CharacterRange>* bmp =
       ToCanonicalZoneList(splitter->bmp(), compiler->zone());
   if (bmp == nullptr) return;
-  Node* node = TextNode::CreateForCharacterRanges(
-      compiler->zone(), bmp, compiler->read_backward(), on_success,
-      compiler->flags());
+  RegExpNode* node = TextNode::CreateForCharacterRanges(
+      compiler->zone(), bmp, compiler->read_backward(), on_success);
   REGISTER_NODE(node);
   result->AddAlternative(GuardedAlternative(node));
 }
@@ -305,8 +304,9 @@ constexpr base::uc16 ExtractTo(UC16Range r) {
   return static_cast<base::uc16>(r);
 }
 
-void AddNonBmpSurrogatePairs(Compiler* compiler, ChoiceNode* result,
-                             Node* on_success, UnicodeRangeSplitter* splitter) {
+void AddNonBmpSurrogatePairs(RegExpCompiler* compiler, ChoiceNode* result,
+                             RegExpNode* on_success,
+                             UnicodeRangeSplitter* splitter) {
   DCHECK(!compiler->one_byte());
   Zone* const zone = compiler->zone();
   ZoneList<CharacterRange>* non_bmp =
@@ -387,10 +387,10 @@ void AddNonBmpSurrogatePairs(Compiler* compiler, ChoiceNode* result,
   // Create the actual TextNode now that ranges are fully grouped.
   if (!leading_with_full_trailing_range->is_empty()) {
     CharacterRange::Canonicalize(leading_with_full_trailing_range);
-    Node* node = TextNode::CreateForSurrogatePair(
+    RegExpNode* node = TextNode::CreateForSurrogatePair(
         zone, leading_with_full_trailing_range,
         CharacterRange::Range(kTrailSurrogateStart, kTrailSurrogateEnd),
-        compiler->read_backward(), on_success, compiler->flags());
+        compiler->read_backward(), on_success);
     REGISTER_NODE(node);
     result->AddAlternative(GuardedAlternative(node));
   }
@@ -399,53 +399,54 @@ void AddNonBmpSurrogatePairs(Compiler* compiler, ChoiceNode* result,
         CharacterRange::Range(ExtractFrom(it.first), ExtractTo(it.first));
     ZoneList<CharacterRange>* trailing_ranges = it.second;
     CharacterRange::Canonicalize(trailing_ranges);
-    Node* node = TextNode::CreateForSurrogatePair(
-        zone, leading_range, trailing_ranges, compiler->read_backward(),
-        on_success, compiler->flags());
+    RegExpNode* node =
+        TextNode::CreateForSurrogatePair(zone, leading_range, trailing_ranges,
+                                         compiler->read_backward(), on_success);
     REGISTER_NODE(node);
     result->AddAlternative(GuardedAlternative(node));
   }
 }
 
-Node* NegativeLookaroundAgainstReadDirectionAndMatch(
-    Compiler* compiler, ZoneList<CharacterRange>* lookbehind,
-    ZoneList<CharacterRange>* match, Node* on_success, bool read_backward) {
+RegExpNode* NegativeLookaroundAgainstReadDirectionAndMatch(
+    RegExpCompiler* compiler, ZoneList<CharacterRange>* lookbehind,
+    ZoneList<CharacterRange>* match, RegExpNode* on_success,
+    bool read_backward) {
   Zone* zone = compiler->zone();
-  Node* match_node = TextNode::CreateForCharacterRanges(
-      zone, match, read_backward, on_success, compiler->flags());
+  RegExpNode* match_node = TextNode::CreateForCharacterRanges(
+      zone, match, read_backward, on_success);
   REGISTER_NODE(match_node);
   int stack_register = compiler->UnicodeLookaroundStackRegister();
   int position_register = compiler->UnicodeLookaroundPositionRegister();
-  Lookaround::Builder lookaround(false, match_node, compiler, stack_register,
-                                 position_register);
-  Node* negative_match = TextNode::CreateForCharacterRanges(
-      zone, lookbehind, !read_backward, lookaround.on_match_success(),
-      compiler->flags());
+  RegExpLookaround::Builder lookaround(false, match_node, compiler,
+                                       stack_register, position_register);
+  RegExpNode* negative_match = TextNode::CreateForCharacterRanges(
+      zone, lookbehind, !read_backward, lookaround.on_match_success());
   REGISTER_NODE(negative_match);
   return lookaround.ForMatch(compiler, negative_match);
 }
 
-Node* MatchAndNegativeLookaroundInReadDirection(
-    Compiler* compiler, ZoneList<CharacterRange>* match,
-    ZoneList<CharacterRange>* lookahead, Node* on_success, bool read_backward) {
+RegExpNode* MatchAndNegativeLookaroundInReadDirection(
+    RegExpCompiler* compiler, ZoneList<CharacterRange>* match,
+    ZoneList<CharacterRange>* lookahead, RegExpNode* on_success,
+    bool read_backward) {
   Zone* zone = compiler->zone();
   int stack_register = compiler->UnicodeLookaroundStackRegister();
   int position_register = compiler->UnicodeLookaroundPositionRegister();
-  Lookaround::Builder lookaround(false, on_success, compiler, stack_register,
-                                 position_register);
-  Node* negative_match = TextNode::CreateForCharacterRanges(
-      zone, lookahead, read_backward, lookaround.on_match_success(),
-      compiler->flags());
+  RegExpLookaround::Builder lookaround(false, on_success, compiler,
+                                       stack_register, position_register);
+  RegExpNode* negative_match = TextNode::CreateForCharacterRanges(
+      zone, lookahead, read_backward, lookaround.on_match_success());
   REGISTER_NODE(negative_match);
-  Node* node = TextNode::CreateForCharacterRanges(
-      zone, match, read_backward, lookaround.ForMatch(compiler, negative_match),
-      compiler->flags());
+  RegExpNode* node = TextNode::CreateForCharacterRanges(
+      zone, match, read_backward,
+      lookaround.ForMatch(compiler, negative_match));
   REGISTER_NODE(node);
   return node;
 }
 
-void AddLoneLeadSurrogates(Compiler* compiler, ChoiceNode* result,
-                           Node* on_success, UnicodeRangeSplitter* splitter) {
+void AddLoneLeadSurrogates(RegExpCompiler* compiler, ChoiceNode* result,
+                           RegExpNode* on_success,
+                           UnicodeRangeSplitter* splitter) {
   ZoneList<CharacterRange>* lead_surrogates =
       ToCanonicalZoneList(splitter->lead_surrogates(), compiler->zone());
   if (lead_surrogates == nullptr) return;
@@ -455,7 +456,7 @@ void AddLoneLeadSurrogates(Compiler* compiler, ChoiceNode* result,
   ZoneList<CharacterRange>* trail_surrogates = CharacterRange::List(
       zone, CharacterRange::Range(kTrailSurrogateStart, kTrailSurrogateEnd));
 
-  Node* match;
+  RegExpNode* match;
   if (compiler->read_backward()) {
     // Reading backward. Assert that reading forward, there is no trail
     // surrogate, and then backward match the lead surrogate.
@@ -470,8 +471,9 @@ void AddLoneLeadSurrogates(Compiler* compiler, ChoiceNode* result,
   result->AddAlternative(GuardedAlternative(match));
 }
 
-void AddLoneTrailSurrogates(Compiler* compiler, ChoiceNode* result,
-                            Node* on_success, UnicodeRangeSplitter* splitter) {
+void AddLoneTrailSurrogates(RegExpCompiler* compiler, ChoiceNode* result,
+                            RegExpNode* on_success,
+                            UnicodeRangeSplitter* splitter) {
   ZoneList<CharacterRange>* trail_surrogates =
       ToCanonicalZoneList(splitter->trail_surrogates(), compiler->zone());
   if (trail_surrogates == nullptr) return;
@@ -481,7 +483,7 @@ void AddLoneTrailSurrogates(Compiler* compiler, ChoiceNode* result,
   ZoneList<CharacterRange>* lead_surrogates = CharacterRange::List(
       zone, CharacterRange::Range(kLeadSurrogateStart, kLeadSurrogateEnd));
 
-  Node* match;
+  RegExpNode* match;
   if (compiler->read_backward()) {
     // Reading backward. Backward match the trail surrogate and assert that no
     // lead surrogate precedes it.
@@ -496,11 +498,19 @@ void AddLoneTrailSurrogates(Compiler* compiler, ChoiceNode* result,
   result->AddAlternative(GuardedAlternative(match));
 }
 
-Node* UnanchoredAdvance(Compiler* compiler, Node* on_success) {
+RegExpNode* UnanchoredAdvance(RegExpCompiler* compiler,
+                              RegExpNode* on_success) {
   // This implements ES2015 21.2.5.2.3, AdvanceStringIndex.
   DCHECK(!compiler->read_backward());
-  Node* node = compiler->zone()->New<UnanchoredAdvanceNode>(on_success,
-                                                            compiler->flags());
+  Zone* zone = compiler->zone();
+  // Advance any character. If the character happens to be a lead surrogate and
+  // we advanced into the middle of a surrogate pair, it will work out, as
+  // nothing will match from there. We will have to advance again, consuming
+  // the associated trail surrogate.
+  ZoneList<CharacterRange>* range =
+      CharacterRange::List(zone, CharacterRange::Range(0, kMaxUtf16CodeUnit));
+  RegExpNode* node =
+      TextNode::CreateForCharacterRanges(zone, range, false, on_success);
   REGISTER_NODE(node);
   return node;
 }
@@ -529,7 +539,7 @@ void CharacterRange::AddUnicodeCaseEquivalents(ZoneList<CharacterRange>* ranges,
   }
   // Clear the ranges list without freeing the backing store.
   ranges->Rewind(0);
-  CaseFolding::CloseOver(set, CaseFolding::Mode::kUnicode);
+  set.closeOver(USET_SIMPLE_CASE_INSENSITIVE);
   for (int i = 0; i < set.getRangeCount(); i++) {
     ranges->Add(Range(set.getRangeStart(i), set.getRangeEnd(i)), zone);
   }
@@ -538,7 +548,8 @@ void CharacterRange::AddUnicodeCaseEquivalents(ZoneList<CharacterRange>* ranges,
 #endif  // V8_INTL_SUPPORT
 }
 
-Node* ClassRanges::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpClassRanges::ToNodeImpl(RegExpCompiler* compiler,
+                                          RegExpNode* on_success) {
   set_.Canonicalize();
   TRACE_WITH_NODE("* After canonicalization: ", this);
   Zone* const zone = compiler->zone();
@@ -554,11 +565,10 @@ Node* ClassRanges::ToNodeImpl(Compiler* compiler, Node* on_success) {
 
   if (!IsEitherUnicode(compiler->flags()) || compiler->one_byte() ||
       contains_split_surrogate()) {
-    TextNode* result = zone->New<TextNode>(this, compiler->read_backward(),
-                                           on_success, compiler->flags());
+    TextNode* result =
+        zone->New<TextNode>(this, compiler->read_backward(), on_success);
     if (compiler->one_byte() && !result->CanMatchLatin1(compiler)) {
-      Node* backtrack =
-          zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+      RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
       REGISTER_NODE(backtrack);
       return backtrack;
     }
@@ -599,8 +609,7 @@ Node* ClassRanges::ToNodeImpl(Compiler* compiler, Node* on_success) {
   }
 
   if (ranges->length() == 0) {
-    Node* backtrack =
-        zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+    RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
     REGISTER_NODE(backtrack);
     return backtrack;
   }
@@ -615,7 +624,7 @@ Node* ClassRanges::ToNodeImpl(Compiler* compiler, Node* on_success) {
   //   units (irregexp operates only on code units).
   // - Lone surrogates: these require lookarounds to ensure we don't match in
   //   the middle of a surrogate pair.
-  ChoiceNode* result = zone->New<ChoiceNode>(2, compiler->flags(), zone);
+  ChoiceNode* result = zone->New<ChoiceNode>(2, zone);
   UnicodeRangeSplitter splitter(ranges);
   AddBmpCharacters(compiler, result, on_success, &splitter);
   AddNonBmpSurrogatePairs(compiler, result, on_success, &splitter);
@@ -633,23 +642,24 @@ Node* ClassRanges::ToNodeImpl(Compiler* compiler, Node* on_success) {
   return result;
 }
 
-Node* ClassSetOperand::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpClassSetOperand::ToNodeImpl(RegExpCompiler* compiler,
+                                              RegExpNode* on_success) {
   Zone* zone = compiler->zone();
   const int size = (has_strings() ? static_cast<int>(strings()->size()) : 0) +
                    (ranges()->is_empty() ? 0 : 1);
   if (size == 0) {
     // If neither ranges nor strings are present, the operand is equal to an
     // empty range (matching nothing).
-    Node* backtrack =
-        zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+    RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
     REGISTER_NODE(backtrack);
     return backtrack;
   }
-  ZoneList<Tree*>* alternatives = zone->New<ZoneList<Tree*>>(size, zone);
+  ZoneList<RegExpTree*>* alternatives =
+      zone->New<ZoneList<RegExpTree*>>(size, zone);
   // Strings are sorted by length first (larger strings before shorter ones).
   // See the comment on CharacterClassStrings.
   // Empty strings (if present) are added after character ranges.
-  Tree* empty_string = nullptr;
+  RegExpTree* empty_string = nullptr;
   if (has_strings()) {
     for (auto string : *strings()) {
       if (string.second->IsEmpty()) {
@@ -664,37 +674,39 @@ Node* ClassSetOperand::ToNodeImpl(Compiler* compiler, Node* on_success) {
     // (e.g. before building complements).
     // It is therefore the parsers responsibility to case fold (sub-) ranges
     // before creating ClassSetOperands.
-    alternatives->Add(zone->New<ClassRanges>(
-                          zone, ranges(), ClassRanges::NO_CASE_FOLDING_NEEDED),
-                      zone);
+    alternatives->Add(
+        zone->New<RegExpClassRanges>(zone, ranges(),
+                                     RegExpClassRanges::NO_CASE_FOLDING_NEEDED),
+        zone);
   }
   if (empty_string != nullptr) {
     alternatives->Add(empty_string, zone);
   }
 
-  Tree* tree = nullptr;
+  RegExpTree* tree = nullptr;
   if (size == 1) {
     DCHECK_EQ(alternatives->length(), 1);
     tree = alternatives->first();
   } else {
-    tree = zone->New<Disjunction>(alternatives);
+    tree = zone->New<RegExpDisjunction>(alternatives);
   }
-  Node* node = tree->ToNode(compiler, on_success);
+  RegExpNode* node = tree->ToNode(compiler, on_success);
   REGISTER_NODE(node);
   return node;
 }
 
-Node* ClassSetExpression::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpClassSetExpression::ToNodeImpl(RegExpCompiler* compiler,
+                                                 RegExpNode* on_success) {
   Zone* zone = compiler->zone();
   ZoneList<CharacterRange>* temp_ranges =
       zone->New<ZoneList<CharacterRange>>(4, zone);
-  ClassSetOperand* root = ComputeExpression(this, temp_ranges, zone);
-  Node* node = root->ToNode(compiler, on_success);
+  RegExpClassSetOperand* root = ComputeExpression(this, temp_ranges, zone);
+  RegExpNode* node = root->ToNode(compiler, on_success);
   REGISTER_NODE(node);
   return node;
 }
 
-void ClassSetOperand::Union(ClassSetOperand* other, Zone* zone) {
+void RegExpClassSetOperand::Union(RegExpClassSetOperand* other, Zone* zone) {
   ranges()->AddAll(*other->ranges(), zone);
   if (other->has_strings()) {
     if (strings_ == nullptr) {
@@ -704,9 +716,9 @@ void ClassSetOperand::Union(ClassSetOperand* other, Zone* zone) {
   }
 }
 
-void ClassSetOperand::Intersect(ClassSetOperand* other,
-                                ZoneList<CharacterRange>* temp_ranges,
-                                Zone* zone) {
+void RegExpClassSetOperand::Intersect(RegExpClassSetOperand* other,
+                                      ZoneList<CharacterRange>* temp_ranges,
+                                      Zone* zone) {
   CharacterRange::Intersect(ranges(), other->ranges(), temp_ranges, zone);
   std::swap(*ranges(), *temp_ranges);
   temp_ranges->Rewind(0);
@@ -725,9 +737,9 @@ void ClassSetOperand::Intersect(ClassSetOperand* other,
   }
 }
 
-void ClassSetOperand::Subtract(ClassSetOperand* other,
-                               ZoneList<CharacterRange>* temp_ranges,
-                               Zone* zone) {
+void RegExpClassSetOperand::Subtract(RegExpClassSetOperand* other,
+                                     ZoneList<CharacterRange>* temp_ranges,
+                                     Zone* zone) {
   CharacterRange::Subtract(ranges(), other->ranges(), temp_ranges, zone);
   std::swap(*ranges(), *temp_ranges);
   temp_ranges->Rewind(0);
@@ -743,20 +755,20 @@ void ClassSetOperand::Subtract(ClassSetOperand* other,
 }
 
 // static
-ClassSetOperand* ClassSetExpression::ComputeExpression(
-    Tree* root, ZoneList<CharacterRange>* temp_ranges, Zone* zone) {
+RegExpClassSetOperand* RegExpClassSetExpression::ComputeExpression(
+    RegExpTree* root, ZoneList<CharacterRange>* temp_ranges, Zone* zone) {
   DCHECK(temp_ranges->is_empty());
   if (root->IsClassSetOperand()) {
     return root->AsClassSetOperand();
   }
   DCHECK(root->IsClassSetExpression());
-  ClassSetExpression* node = root->AsClassSetExpression();
-  ClassSetOperand* result =
+  RegExpClassSetExpression* node = root->AsClassSetExpression();
+  RegExpClassSetOperand* result =
       ComputeExpression(node->operands()->at(0), temp_ranges, zone);
   switch (node->operation()) {
     case OperationType::kUnion: {
       for (int i = 1; i < node->operands()->length(); i++) {
-        ClassSetOperand* op =
+        RegExpClassSetOperand* op =
             ComputeExpression(node->operands()->at(i), temp_ranges, zone);
         result->Union(op, zone);
       }
@@ -765,7 +777,7 @@ ClassSetOperand* ClassSetExpression::ComputeExpression(
     }
     case OperationType::kIntersection: {
       for (int i = 1; i < node->operands()->length(); i++) {
-        ClassSetOperand* op =
+        RegExpClassSetOperand* op =
             ComputeExpression(node->operands()->at(i), temp_ranges, zone);
         result->Intersect(op, temp_ranges, zone);
       }
@@ -773,7 +785,7 @@ ClassSetOperand* ClassSetExpression::ComputeExpression(
     }
     case OperationType::kSubtraction: {
       for (int i = 1; i < node->operands()->length(); i++) {
-        ClassSetOperand* op =
+        RegExpClassSetOperand* op =
             ComputeExpression(node->operands()->at(i), temp_ranges, zone);
         result->Subtract(op, temp_ranges, zone);
       }
@@ -796,19 +808,19 @@ ClassSetOperand* ClassSetExpression::ComputeExpression(
 
 namespace {
 
-bool StartsWithAtom(Tree* tree) {
+bool StartsWithAtom(RegExpTree* tree) {
   if (tree->IsAtom()) return true;
   return tree->IsText() && tree->AsText()->StartsWithAtom();
 }
 
-Atom* FirstAtom(Tree* tree) {
+RegExpAtom* FirstAtom(RegExpTree* tree) {
   if (tree->IsAtom()) return tree->AsAtom();
   return tree->AsText()->FirstAtom();
 }
 
-int CompareFirstChar(Tree* const* a, Tree* const* b) {
-  Atom* atom1 = FirstAtom(*a);
-  Atom* atom2 = FirstAtom(*b);
+int CompareFirstChar(RegExpTree* const* a, RegExpTree* const* b) {
+  RegExpAtom* atom1 = FirstAtom(*a);
+  RegExpAtom* atom2 = FirstAtom(*b);
   base::uc16 character1 = atom1->data().at(0);
   base::uc16 character2 = atom2->data().at(0);
   if (character1 < character2) return -1;
@@ -818,37 +830,29 @@ int CompareFirstChar(Tree* const* a, Tree* const* b) {
 
 #ifdef V8_INTL_SUPPORT
 
-CaseFolding::Mode CaseFoldingMode(Flags flags) {
-  return IsEitherUnicode(flags) ? CaseFolding::Mode::kUnicode
-                                : CaseFolding::Mode::kNonUnicode;
+int CompareCaseInsensitive(const icu::UnicodeString& a,
+                           const icu::UnicodeString& b) {
+  return a.caseCompare(b, U_FOLD_CASE_DEFAULT);
 }
 
-// Use the matcher's case equivalence (see
-// TextNode::GetCaseIndependentLetters). Full case folding would, for example,
-// conflate U+017F and 's' under /i.
-int CompareCaseInsensitive(CaseFolding::Mode mode, base::uc16 a, base::uc16 b) {
-  if (a == b) return 0;
-  return CaseFolding::EquivalenceKey(a, mode) -
-         CaseFolding::EquivalenceKey(b, mode);
+int CompareFirstCharCaseInsensitive(RegExpTree* const* a,
+                                    RegExpTree* const* b) {
+  RegExpAtom* atom1 = FirstAtom(*a);
+  RegExpAtom* atom2 = FirstAtom(*b);
+  return CompareCaseInsensitive(icu::UnicodeString{atom1->data().at(0)},
+                                icu::UnicodeString{atom2->data().at(0)});
 }
 
-int CompareFirstCharCaseInsensitive(CaseFolding::Mode mode, Tree* const* a,
-                                    Tree* const* b) {
-  Atom* atom1 = FirstAtom(*a);
-  Atom* atom2 = FirstAtom(*b);
-  return CompareCaseInsensitive(mode, atom1->data().at(0), atom2->data().at(0));
-}
-
-bool Equals(bool ignore_case, CaseFolding::Mode mode, base::uc16 a,
-            base::uc16 b) {
+bool Equals(bool ignore_case, const icu::UnicodeString& a,
+            const icu::UnicodeString& b) {
   if (a == b) return true;
-  if (ignore_case) return CompareCaseInsensitive(mode, a, b) == 0;
+  if (ignore_case) return CompareCaseInsensitive(a, b) == 0;
   return false;  // Case-sensitive equality already checked above.
 }
 
-bool CharAtEquals(bool ignore_case, CaseFolding::Mode mode, int index,
-                  const Atom* a, const Atom* b) {
-  return Equals(ignore_case, mode, a->data().at(index), b->data().at(index));
+bool CharAtEquals(bool ignore_case, int index, const RegExpAtom* a,
+                  const RegExpAtom* b) {
+  return Equals(ignore_case, a->data().at(index), b->data().at(index));
 }
 
 #else
@@ -877,9 +881,9 @@ int CompareCaseInsensitive(
 
 int CompareFirstCharCaseInsensitive(
     unibrow::Mapping<unibrow::Ecma262Canonicalize>* canonicalize,
-    Tree* const* a, Tree* const* b) {
-  Atom* atom1 = FirstAtom(*a);
-  Atom* atom2 = FirstAtom(*b);
+    RegExpTree* const* a, RegExpTree* const* b) {
+  RegExpAtom* atom1 = FirstAtom(*a);
+  RegExpAtom* atom2 = FirstAtom(*b);
   return CompareCaseInsensitive(canonicalize, atom1->data().at(0),
                                 atom2->data().at(0));
 }
@@ -896,7 +900,7 @@ bool Equals(bool ignore_case,
 
 bool CharAtEquals(bool ignore_case,
                   unibrow::Mapping<unibrow::Ecma262Canonicalize>* canonicalize,
-                  int index, const Atom* a, const Atom* b) {
+                  int index, const RegExpAtom* a, const RegExpAtom* b) {
   return Equals(ignore_case, canonicalize, a->data().at(index),
                 b->data().at(index));
 }
@@ -908,13 +912,13 @@ bool CharAtEquals(bool ignore_case,
 // We can stable sort runs of atoms, since the order does not matter if they
 // start with different characters.
 // Returns true if any consecutive atoms were found.
-bool Disjunction::SortConsecutiveAtoms(Compiler* compiler) {
-  ZoneList<Tree*>* alternatives = this->alternatives();
+bool RegExpDisjunction::SortConsecutiveAtoms(RegExpCompiler* compiler) {
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
   int length = alternatives->length();
   bool found_consecutive_atoms = false;
   for (int i = 0; i < length; i++) {
     while (i < length) {
-      Tree* alternative = alternatives->at(i);
+      RegExpTree* alternative = alternatives->at(i);
       if (StartsWithAtom(alternative)) break;
       i++;
     }
@@ -923,27 +927,28 @@ bool Disjunction::SortConsecutiveAtoms(Compiler* compiler) {
     int first_atom = i;
     i++;
     while (i < length) {
-      Tree* alternative = alternatives->at(i);
+      RegExpTree* alternative = alternatives->at(i);
       if (!StartsWithAtom(alternative)) break;
       i++;
     }
-    // Sort atoms to bring common prefixes together. A case-insensitive sort
-    // must preserve the order of alternatives whose first characters are
-    // equivalent: changing /is|I/ to /I|is/ would change the match result.
+    // Sort atoms to get ones with common prefixes together.
+    // This step is more tricky if we are in a case-independent regexp,
+    // because it would change /is|I/ to /I|is/, and order matters when
+    // the regexp parts don't match only disjoint starting points. To fix
+    // this we have a version of CompareFirstChar that uses case-
+    // independent character classes for comparison.
     DCHECK_LT(first_atom, alternatives->length());
     DCHECK_LE(i, alternatives->length());
     DCHECK_LE(first_atom, i);
     if (IsIgnoreCase(compiler->flags())) {
 #ifdef V8_INTL_SUPPORT
-      const CaseFolding::Mode mode = CaseFoldingMode(compiler->flags());
-      auto compare_closure = [mode](Tree* const* a, Tree* const* b) {
-        return CompareFirstCharCaseInsensitive(mode, a, b);
-      };
-      alternatives->StableSort(compare_closure, first_atom, i - first_atom);
+      alternatives->StableSort(CompareFirstCharCaseInsensitive, first_atom,
+                               i - first_atom);
 #else
       unibrow::Mapping<unibrow::Ecma262Canonicalize>* canonicalize =
           compiler->isolate()->regexp_macro_assembler_canonicalize();
-      auto compare_closure = [canonicalize](Tree* const* a, Tree* const* b) {
+      auto compare_closure = [canonicalize](RegExpTree* const* a,
+                                            RegExpTree* const* b) {
         return CompareFirstCharCaseInsensitive(canonicalize, a, b);
       };
       alternatives->StableSort(compare_closure, first_atom, i - first_atom);
@@ -957,28 +962,25 @@ bool Disjunction::SortConsecutiveAtoms(Compiler* compiler) {
 }
 
 // Optimizes ab|ac|az to a(?:b|c|d).
-void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
+void RegExpDisjunction::RationalizeConsecutiveAtoms(RegExpCompiler* compiler) {
   Zone* zone = compiler->zone();
-  ZoneList<Tree*>* alternatives = this->alternatives();
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
   int length = alternatives->length();
   const bool ignore_case = IsIgnoreCase(compiler->flags());
-#ifdef V8_INTL_SUPPORT
-  const CaseFolding::Mode mode = CaseFoldingMode(compiler->flags());
-#endif  // V8_INTL_SUPPORT
 
   int write_posn = 0;
   int i = 0;
   while (i < length) {
-    Tree* alternative = alternatives->at(i);
+    RegExpTree* alternative = alternatives->at(i);
     if (!StartsWithAtom(alternative)) {
       alternatives->at(write_posn++) = alternatives->at(i);
       i++;
       continue;
     }
-    Atom* const atom = FirstAtom(alternative);
+    RegExpAtom* const atom = FirstAtom(alternative);
 
 #ifdef V8_INTL_SUPPORT
-    base::uc16 common_prefix = atom->data().at(0);
+    icu::UnicodeString common_prefix(atom->data().at(0));
 #else
     unibrow::Mapping<unibrow::Ecma262Canonicalize>* const canonicalize =
         compiler->isolate()->regexp_macro_assembler_canonicalize();
@@ -993,10 +995,10 @@ void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
     while (i < length) {
       alternative = alternatives->at(i);
       if (!StartsWithAtom(alternative)) break;
-      Atom* const alt_atom = FirstAtom(alternative);
+      RegExpAtom* const alt_atom = FirstAtom(alternative);
 #ifdef V8_INTL_SUPPORT
-      base::uc16 new_prefix = alt_atom->data().at(0);
-      if (!Equals(ignore_case, mode, new_prefix, common_prefix)) break;
+      icu::UnicodeString new_prefix(alt_atom->data().at(0));
+      if (!Equals(ignore_case, new_prefix, common_prefix)) break;
 #else
       unibrow::uchar new_prefix = alt_atom->data().at(0);
       if (!Equals(ignore_case, canonicalize, new_prefix, common_prefix)) break;
@@ -1011,13 +1013,15 @@ void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
       // common prefix if the terms were similar or presorted in the input.
       // Find out how long the common prefix is.
       int run_length = i - first_with_prefix;
-      Atom* const alt_atom = FirstAtom(alternatives->at(first_with_prefix));
+      RegExpAtom* const alt_atom =
+          FirstAtom(alternatives->at(first_with_prefix));
       alternatives->at(first_with_prefix)->AsAtom();
       for (int j = 1; j < run_length && prefix_length > 1; j++) {
-        Atom* old_atom = FirstAtom(alternatives->at(j + first_with_prefix));
+        RegExpAtom* old_atom =
+            FirstAtom(alternatives->at(j + first_with_prefix));
         for (int k = 1; k < prefix_length; k++) {
 #ifdef V8_INTL_SUPPORT
-          if (!CharAtEquals(ignore_case, mode, k, alt_atom, old_atom)) {
+          if (!CharAtEquals(ignore_case, k, alt_atom, old_atom)) {
 #else
           if (!CharAtEquals(ignore_case, canonicalize, k, alt_atom, old_atom)) {
 #endif  // V8_INTL_SUPPORT
@@ -1026,33 +1030,36 @@ void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
           }
         }
       }
-      Atom* prefix =
-          zone->New<Atom>(alt_atom->data().SubVector(0, prefix_length));
+      RegExpAtom* prefix =
+          zone->New<RegExpAtom>(alt_atom->data().SubVector(0, prefix_length));
       TRACE_WITH_NODE("* Found common prefix: ", prefix);
 
-      ZoneList<Tree*>* pair = zone->New<ZoneList<Tree*>>(2, zone);
+      ZoneList<RegExpTree*>* pair = zone->New<ZoneList<RegExpTree*>>(2, zone);
       pair->Add(prefix, zone);
-      ZoneList<Tree*>* suffixes = zone->New<ZoneList<Tree*>>(run_length, zone);
+      ZoneList<RegExpTree*>* suffixes =
+          zone->New<ZoneList<RegExpTree*>>(run_length, zone);
       for (int j = 0; j < run_length; j++) {
         if (alternatives->at(j + first_with_prefix)->IsAtom()) {
-          Atom* old_atom = alternatives->at(j + first_with_prefix)->AsAtom();
+          RegExpAtom* old_atom =
+              alternatives->at(j + first_with_prefix)->AsAtom();
           int len = old_atom->length();
           if (len == prefix_length) {
-            suffixes->Add(zone->New<Empty>(), zone);
+            suffixes->Add(zone->New<RegExpEmpty>(), zone);
           } else {
-            Tree* suffix =
-                zone->New<Atom>(old_atom->data().SubVector(prefix_length, len));
+            RegExpTree* suffix = zone->New<RegExpAtom>(
+                old_atom->data().SubVector(prefix_length, len));
             suffixes->Add(suffix, zone);
           }
         } else {
-          Text* new_text = zone->New<Text>(zone);
-          Text* old_text = alternatives->at(j + first_with_prefix)->AsText();
-          Atom* old_atom = old_text->FirstAtom();
+          RegExpText* new_text = zone->New<RegExpText>(zone);
+          RegExpText* old_text =
+              alternatives->at(j + first_with_prefix)->AsText();
+          RegExpAtom* old_atom = old_text->FirstAtom();
           int len = old_atom->length();
           if (len != prefix_length) {
-            Atom* suffix =
-                zone->New<Atom>(old_atom->data().SubVector(prefix_length, len));
-            new_text->AddElement(TextElement::FromAtom(suffix), zone);
+            RegExpAtom* suffix = zone->New<RegExpAtom>(
+                old_atom->data().SubVector(prefix_length, len));
+            new_text->AddElement(TextElement::Atom(suffix), zone);
           }
           for (int k = 1; k < old_text->elements()->length(); k++) {
             new_text->AddElement(old_text->elements()->at(k), zone);
@@ -1060,12 +1067,12 @@ void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
           if (new_text->elements()->length() != 0) {
             suffixes->Add(new_text, zone);
           } else {
-            suffixes->Add(zone->New<Empty>(), zone);
+            suffixes->Add(zone->New<RegExpEmpty>(), zone);
           }
         }
       }
-      pair->Add(zone->New<Disjunction>(suffixes), zone);
-      alternatives->at(write_posn++) = zone->New<Alternative>(pair);
+      pair->Add(zone->New<RegExpDisjunction>(suffixes), zone);
+      alternatives->at(write_posn++) = zone->New<RegExpAlternative>(pair);
     } else {
       // Just copy any non-worthwhile alternatives.
       for (int j = first_with_prefix; j < i; j++) {
@@ -1077,27 +1084,28 @@ void Disjunction::RationalizeConsecutiveAtoms(Compiler* compiler) {
 }
 
 // Optimizes b|c|z to [bcz].
-void Disjunction::FixSingleCharacterDisjunctions(Compiler* compiler) {
+void RegExpDisjunction::FixSingleCharacterDisjunctions(
+    RegExpCompiler* compiler) {
   Zone* zone = compiler->zone();
-  ZoneList<Tree*>* alternatives = this->alternatives();
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
   int length = alternatives->length();
 
   int write_posn = 0;
   int i = 0;
   while (i < length) {
-    Tree* alternative = alternatives->at(i);
+    RegExpTree* alternative = alternatives->at(i);
     if (!alternative->IsAtom()) {
       alternatives->at(write_posn++) = alternatives->at(i);
       i++;
       continue;
     }
-    Atom* const atom = alternative->AsAtom();
+    RegExpAtom* const atom = alternative->AsAtom();
     if (atom->length() != 1) {
       alternatives->at(write_posn++) = alternatives->at(i);
       i++;
       continue;
     }
-    const Flags flags = compiler->flags();
+    const RegExpFlags flags = compiler->flags();
     DCHECK_IMPLIES(IsEitherUnicode(flags),
                    !unibrow::Utf16::IsLeadSurrogate(atom->data().at(0)));
     bool contains_trail_surrogate =
@@ -1109,7 +1117,7 @@ void Disjunction::FixSingleCharacterDisjunctions(Compiler* compiler) {
     while (i < length) {
       alternative = alternatives->at(i);
       if (!alternative->IsAtom()) break;
-      Atom* const alt_atom = alternative->AsAtom();
+      RegExpAtom* const alt_atom = alternative->AsAtom();
       if (alt_atom->length() != 1) break;
       DCHECK_IMPLIES(IsEitherUnicode(flags),
                      !unibrow::Utf16::IsLeadSurrogate(alt_atom->data().at(0)));
@@ -1123,16 +1131,16 @@ void Disjunction::FixSingleCharacterDisjunctions(Compiler* compiler) {
       ZoneList<CharacterRange>* ranges =
           zone->New<ZoneList<CharacterRange>>(2, zone);
       for (int j = 0; j < run_length; j++) {
-        Atom* old_atom = alternatives->at(j + first_in_run)->AsAtom();
+        RegExpAtom* old_atom = alternatives->at(j + first_in_run)->AsAtom();
         DCHECK_EQ(old_atom->length(), 1);
         ranges->Add(CharacterRange::Singleton(old_atom->data().at(0)), zone);
       }
-      ClassRanges::ClassRangesFlags class_ranges_flags;
+      RegExpClassRanges::ClassRangesFlags class_ranges_flags;
       if (IsEitherUnicode(flags) && contains_trail_surrogate) {
-        class_ranges_flags = ClassRanges::CONTAINS_SPLIT_SURROGATE;
+        class_ranges_flags = RegExpClassRanges::CONTAINS_SPLIT_SURROGATE;
       }
       alternatives->at(write_posn++) =
-          zone->New<ClassRanges>(zone, ranges, class_ranges_flags);
+          zone->New<RegExpClassRanges>(zone, ranges, class_ranges_flags);
     } else {
       // Just copy any trivial alternatives.
       for (int j = first_in_run; j < i; j++) {
@@ -1143,21 +1151,14 @@ void Disjunction::FixSingleCharacterDisjunctions(Compiler* compiler) {
   alternatives->Rewind(write_posn);  // Trim end of array.
 }
 
-Node* Disjunction::ToNodeImpl(Compiler* compiler, Node* on_success) {
-  ZoneList<Tree*>* alternatives = this->alternatives();
+RegExpNode* RegExpDisjunction::ToNodeImpl(RegExpCompiler* compiler,
+                                          RegExpNode* on_success) {
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
 
   if (alternatives->length() > 2) {
-    if (!compiler->read_backward() && v8_flags.regexp_optimization) {
-      // We deliberately disable SortConsecutiveAtoms and
-      // RationalizeConsecutiveAtoms in lookbehinds rather than keep
-      // rationalizing already-adjacent runs. Lookbehind disjunctions must keep
-      // source order. The code generator already turns off quick checks,
-      // Boyer-Moore and first-char dispatch when reading backward, so the
-      // passes buy almost nothing there.
-      bool found_consecutive_atoms = SortConsecutiveAtoms(compiler);
-      if (found_consecutive_atoms) RationalizeConsecutiveAtoms(compiler);
-      TRACE_WITH_NODE("* After rationalizing consecutive atoms: ", this);
-    }
+    bool found_consecutive_atoms = SortConsecutiveAtoms(compiler);
+    if (found_consecutive_atoms) RationalizeConsecutiveAtoms(compiler);
+    TRACE_WITH_NODE("* After rationalizing consecutive atoms: ", this);
     FixSingleCharacterDisjunctions(compiler);
     TRACE_WITH_NODE("* After fixing single character disjunctions: ", this);
     if (alternatives->length() == 1) {
@@ -1167,8 +1168,8 @@ Node* Disjunction::ToNodeImpl(Compiler* compiler, Node* on_success) {
 
   int length = alternatives->length();
 
-  ChoiceNode* result = compiler->zone()->New<ChoiceNode>(
-      length, compiler->flags(), compiler->zone());
+  ChoiceNode* result =
+      compiler->zone()->New<ChoiceNode>(length, compiler->zone());
   for (int i = 0; i < length; i++) {
     GuardedAlternative alternative(
         alternatives->at(i)->ToNode(compiler, on_success));
@@ -1181,21 +1182,22 @@ Node* Disjunction::ToNodeImpl(Compiler* compiler, Node* on_success) {
   if (node_length >= 2) return result;
   if (node_length == 1) return result->alternatives()->at(0).node();
   Zone* zone = on_success->zone();
-  Node* backtrack =
-      zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
+  RegExpNode* backtrack = zone->New<EndNode>(EndNode::BACKTRACK, zone);
   REGISTER_NODE(backtrack);
   return backtrack;
 }
 
-Node* Quantifier::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpQuantifier::ToNodeImpl(RegExpCompiler* compiler,
+                                         RegExpNode* on_success) {
   return ToNode(min(), max(), is_greedy(), body(), compiler, on_success);
 }
 
 namespace {
 // Desugar \b to (?<=\w)(?=\W)|(?<=\W)(?=\w) and
 //         \B to (?<=\w)(?=\w)|(?<=\W)(?=\W)
-Node* BoundaryAssertionAsLookaround(Compiler* compiler, Node* on_success,
-                                    Assertion::Type type) {
+RegExpNode* BoundaryAssertionAsLookaround(RegExpCompiler* compiler,
+                                          RegExpNode* on_success,
+                                          RegExpAssertion::Type type) {
   CHECK(NeedsUnicodeCaseEquivalents(compiler->flags()));
   Zone* zone = compiler->zone();
   ZoneList<CharacterRange>* word_range =
@@ -1204,7 +1206,7 @@ Node* BoundaryAssertionAsLookaround(Compiler* compiler, Node* on_success,
                                  zone);
   int stack_register = compiler->UnicodeLookaroundStackRegister();
   int position_register = compiler->UnicodeLookaroundPositionRegister();
-  ChoiceNode* result = zone->New<ChoiceNode>(2, compiler->flags(), zone);
+  ChoiceNode* result = zone->New<ChoiceNode>(2, zone);
   // Add two choices. The (non-)boundary could start with a word or
   // a non-word-character.
   for (int i = 0; i < 2; i++) {
@@ -1212,21 +1214,20 @@ Node* BoundaryAssertionAsLookaround(Compiler* compiler, Node* on_success,
     TRACE("* Creating " << (lookbehind_for_word ? "lookbehind" : "lookahead")
                         << " for word boundary");
     bool lookahead_for_word =
-        (type == Assertion::Type::BOUNDARY) ^ lookbehind_for_word;
+        (type == RegExpAssertion::Type::BOUNDARY) ^ lookbehind_for_word;
     // Look to the left.
-    Lookaround::Builder lookbehind(lookbehind_for_word, on_success, compiler,
-                                   stack_register, position_register);
-    Node* backward = TextNode::CreateForCharacterRanges(
-        zone, word_range, true, lookbehind.on_match_success(),
-        compiler->flags());
+    RegExpLookaround::Builder lookbehind(lookbehind_for_word, on_success,
+                                         compiler, stack_register,
+                                         position_register);
+    RegExpNode* backward = TextNode::CreateForCharacterRanges(
+        zone, word_range, true, lookbehind.on_match_success());
     REGISTER_NODE(backward);
     // Look to the right.
-    Lookaround::Builder lookahead(lookahead_for_word,
-                                  lookbehind.ForMatch(compiler, backward),
-                                  compiler, stack_register, position_register);
-    Node* forward = TextNode::CreateForCharacterRanges(
-        zone, word_range, false, lookahead.on_match_success(),
-        compiler->flags());
+    RegExpLookaround::Builder lookahead(
+        lookahead_for_word, lookbehind.ForMatch(compiler, backward), compiler,
+        stack_register, position_register);
+    RegExpNode* forward = TextNode::CreateForCharacterRanges(
+        zone, word_range, false, lookahead.on_match_success());
     REGISTER_NODE(forward);
     result->AddAlternative(
         GuardedAlternative(lookahead.ForMatch(compiler, forward)));
@@ -1236,96 +1237,42 @@ Node* BoundaryAssertionAsLookaround(Compiler* compiler, Node* on_success,
 }
 }  // anonymous namespace
 
-Node* Assertion::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpAssertion::ToNodeImpl(RegExpCompiler* compiler,
+                                        RegExpNode* on_success) {
   NodeInfo info;
   Zone* zone = compiler->zone();
 
   switch (assertion_type()) {
     case Type::START_OF_LINE: {
-      Node* node = AssertionNode::AfterNewline(on_success, compiler->flags());
+      RegExpNode* node = AssertionNode::AfterNewline(on_success);
       REGISTER_NODE(node);
       return node;
     }
     case Type::START_OF_INPUT: {
-      Node* node = AssertionNode::AtStart(on_success, compiler->flags());
+      RegExpNode* node = AssertionNode::AtStart(on_success);
       REGISTER_NODE(node);
       return node;
     }
     case Type::BOUNDARY: {
-      Node* node =
-          NeedsUnicodeCaseEquivalents(compiler->flags())
-              ? BoundaryAssertionAsLookaround(compiler, on_success,
-                                              Type::BOUNDARY)
-              : AssertionNode::AtBoundary(on_success, compiler->flags());
+      RegExpNode* node = NeedsUnicodeCaseEquivalents(compiler->flags())
+                             ? BoundaryAssertionAsLookaround(
+                                   compiler, on_success, Type::BOUNDARY)
+                             : AssertionNode::AtBoundary(on_success);
       REGISTER_NODE(node);
       return node;
     }
     case Type::NON_BOUNDARY: {
-      Node* node =
-          NeedsUnicodeCaseEquivalents(compiler->flags())
-              ? BoundaryAssertionAsLookaround(compiler, on_success,
-                                              Type::NON_BOUNDARY)
-              : AssertionNode::AtNonBoundary(on_success, compiler->flags());
+      RegExpNode* node = NeedsUnicodeCaseEquivalents(compiler->flags())
+                             ? BoundaryAssertionAsLookaround(
+                                   compiler, on_success, Type::NON_BOUNDARY)
+                             : AssertionNode::AtNonBoundary(on_success);
       REGISTER_NODE(node);
       return node;
     }
     case Type::END_OF_INPUT: {
-      Node* node = AssertionNode::AtEnd(on_success, compiler->flags());
+      RegExpNode* node = AssertionNode::AtEnd(on_success);
       REGISTER_NODE(node);
       return node;
-    }
-    case Type::END_OF_BUFFER: {
-      // \Z matches at end-of-input, OR end-of-input preceded by a single
-      // line terminator, OR end-of-input preceded by a trailing \r\n.
-      // Desugar as:
-      //   (?: (?:\r\n | [LF CR LS PS]) AT_END ) | AT_END
-      // wrapped so that the inner consumption is a positive lookahead
-      // (state is restored on success). The CRLF alternative is listed
-      // first so that a trailing "\r\n" takes the two-char branch
-      // without first trying the single-char branch and backtracking.
-      int stack_pointer_register = compiler->AllocateRegister();
-      int position_register = compiler->AllocateRegister();
-      Lookaround::Builder lookahead(true, on_success, compiler,
-                                    stack_pointer_register, position_register);
-      Node* submatch_success = lookahead.on_match_success();
-      // Alt A: \r\n atom then AT_END (inside the lookahead).
-      static constexpr base::uc16 kCrlf[] = {'\r', '\n'};
-      Atom* crlf_atom =
-          zone->New<Atom>(zone->CloneVector(base::ArrayVector(kCrlf)));
-      ZoneList<TextElement>* crlf_elms =
-          zone->New<ZoneList<TextElement>>(1, zone);
-      crlf_elms->Add(TextElement::FromAtom(crlf_atom), zone);
-      AssertionNode* crlf_at_end =
-          AssertionNode::AtEnd(submatch_success, compiler->flags());
-      REGISTER_NODE(crlf_at_end);
-      TextNode* crlf_matcher =
-          zone->New<TextNode>(crlf_elms, false, crlf_at_end, compiler->flags());
-      REGISTER_NODE(crlf_matcher);
-      // Alt B: [LF CR LS PS] then AT_END.
-      ClassRanges* lt_atom =
-          zone->New<ClassRanges>(StandardCharacterSet::kLineTerminator);
-      AssertionNode* lt_at_end =
-          AssertionNode::AtEnd(submatch_success, compiler->flags());
-      REGISTER_NODE(lt_at_end);
-      TextNode* lt_matcher =
-          zone->New<TextNode>(lt_atom, false, lt_at_end, compiler->flags());
-      REGISTER_NODE(lt_matcher);
-      // Inner choice: CRLF first, then single LT.
-      ChoiceNode* inner_choice =
-          zone->New<ChoiceNode>(2, compiler->flags(), zone);
-      inner_choice->AddAlternative(GuardedAlternative(crlf_matcher));
-      inner_choice->AddAlternative(GuardedAlternative(lt_matcher));
-      REGISTER_NODE(inner_choice);
-      // Wrap inner choice in a positive lookahead.
-      Node* lookahead_node = lookahead.ForMatch(compiler, inner_choice);
-      // Outer choice: either the trailing-terminator lookahead matches, or
-      // we're already at end-of-input.
-      ChoiceNode* result = zone->New<ChoiceNode>(2, compiler->flags(), zone);
-      result->AddAlternative(GuardedAlternative(lookahead_node));
-      result->AddAlternative(GuardedAlternative(
-          AssertionNode::AtEnd(on_success, compiler->flags())));
-      REGISTER_NODE(result);
-      return result;
     }
     case Type::END_OF_LINE: {
       // Compile $ in multiline regexps as an alternation with a positive
@@ -1334,7 +1281,7 @@ Node* Assertion::ToNodeImpl(Compiler* compiler, Node* on_success) {
       int stack_pointer_register = compiler->AllocateRegister();
       int position_register = compiler->AllocateRegister();
       // The ChoiceNode to distinguish between a newline and end-of-input.
-      ChoiceNode* result = zone->New<ChoiceNode>(2, compiler->flags(), zone);
+      ChoiceNode* result = zone->New<ChoiceNode>(2, zone);
       // Create a newline atom.
       ZoneList<CharacterRange>* newline_ranges =
           zone->New<ZoneList<CharacterRange>>(3, zone);
@@ -1344,23 +1291,22 @@ Node* Assertion::ToNodeImpl(Compiler* compiler, Node* on_success) {
           stack_pointer_register, position_register,
           0,   // No captures inside.
           -1,  // Ignored if no captures.
-          on_success, compiler->flags());
+          on_success);
       REGISTER_NODE(submatch_success);
-      ClassRanges* newline_atom =
-          zone->New<ClassRanges>(StandardCharacterSet::kLineTerminator);
-      TextNode* newline_matcher = zone->New<TextNode>(
-          newline_atom, false, submatch_success, compiler->flags());
+      RegExpClassRanges* newline_atom =
+          zone->New<RegExpClassRanges>(StandardCharacterSet::kLineTerminator);
+      TextNode* newline_matcher =
+          zone->New<TextNode>(newline_atom, false, submatch_success);
       REGISTER_NODE(newline_matcher);
       // Create an end-of-input matcher.
-      Node* end_of_line = ActionNode::BeginPositiveSubmatch(
+      RegExpNode* end_of_line = ActionNode::BeginPositiveSubmatch(
           stack_pointer_register, position_register, newline_matcher,
-          submatch_success, compiler->flags());
+          submatch_success);
       REGISTER_NODE(end_of_line);
       // Add the two alternatives to the ChoiceNode.
       GuardedAlternative eol_alternative(end_of_line);
       result->AddAlternative(eol_alternative);
-      GuardedAlternative end_alternative(
-          AssertionNode::AtEnd(on_success, compiler->flags()));
+      GuardedAlternative end_alternative(AssertionNode::AtEnd(on_success));
       result->AddAlternative(end_alternative);
       REGISTER_NODE(result);
       return result;
@@ -1370,22 +1316,24 @@ Node* Assertion::ToNodeImpl(Compiler* compiler, Node* on_success) {
   }
 }
 
-Node* BackReference::ToNodeImpl(Compiler* compiler, Node* on_success) {
-  Node* backref_node = on_success;
+RegExpNode* RegExpBackReference::ToNodeImpl(RegExpCompiler* compiler,
+                                            RegExpNode* on_success) {
+  RegExpNode* backref_node = on_success;
   // Only one of the captures in the list can actually match. Since
   // back-references to unmatched captures are treated as empty, we can simply
   // create back-references to all possible captures.
   for (auto capture : *captures()) {
     backref_node = compiler->zone()->New<BackReferenceNode>(
-        Capture::StartRegister(capture->index()),
-        Capture::EndRegister(capture->index()), compiler->read_backward(),
-        backref_node, compiler->flags());
+        RegExpCapture::StartRegister(capture->index()),
+        RegExpCapture::EndRegister(capture->index()), compiler->read_backward(),
+        backref_node);
     REGISTER_NODE(backref_node);
   }
   return backref_node;
 }
 
-Node* Empty::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpEmpty::ToNodeImpl(RegExpCompiler* compiler,
+                                    RegExpNode* on_success) {
   return on_success;
 }
 
@@ -1393,28 +1341,45 @@ namespace {
 
 class V8_NODISCARD ModifiersScope {
  public:
-  ModifiersScope(Compiler* compiler, Flags flags)
+  ModifiersScope(RegExpCompiler* compiler, RegExpFlags flags)
       : compiler_(compiler), previous_flags_(compiler->flags()) {
     compiler->set_flags(flags);
   }
   ~ModifiersScope() { compiler_->set_flags(previous_flags_); }
 
  private:
-  Compiler* compiler_;
-  const Flags previous_flags_;
+  RegExpCompiler* compiler_;
+  const RegExpFlags previous_flags_;
 };
 
 }  // namespace
 
-Node* Group::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpGroup::ToNodeImpl(RegExpCompiler* compiler,
+                                    RegExpNode* on_success) {
+  // If no flags are modified, simply convert and return the body.
+  if (flags() == compiler->flags()) {
+    return body_->ToNode(compiler, on_success);
+  }
+  // Reset flags for successor node.
+  const RegExpFlags old_flags = compiler->flags();
+  on_success = ActionNode::ModifyFlags(old_flags, on_success);
+
+  // Convert body using modifier.
   ModifiersScope modifiers_scope(compiler, flags());
-  return body_->ToNode(compiler, on_success);
+  RegExpNode* body = body_->ToNode(compiler, on_success);
+  if (body->IsBacktrack()) return body;
+
+  // Wrap body into modifier node.
+  RegExpNode* modified_body = ActionNode::ModifyFlags(flags(), body);
+  return modified_body;
 }
 
-Lookaround::Builder::Builder(bool is_positive, Node* on_success,
-                             Compiler* compiler, int stack_pointer_register,
-                             int position_register, int capture_register_count,
-                             int capture_register_start)
+RegExpLookaround::Builder::Builder(bool is_positive, RegExpNode* on_success,
+                                   RegExpCompiler* compiler,
+                                   int stack_pointer_register,
+                                   int position_register,
+                                   int capture_register_count,
+                                   int capture_register_start)
     : is_positive_(is_positive),
       on_success_(on_success),
       stack_pointer_register_(stack_pointer_register),
@@ -1422,22 +1387,22 @@ Lookaround::Builder::Builder(bool is_positive, Node* on_success,
   if (is_positive_) {
     on_match_success_ = ActionNode::PositiveSubmatchSuccess(
         stack_pointer_register, position_register, capture_register_count,
-        capture_register_start, on_success_, compiler->flags());
+        capture_register_start, on_success_);
   } else {
     Zone* zone = on_success_->zone();
     on_match_success_ = zone->New<NegativeSubmatchSuccess>(
         stack_pointer_register, position_register, capture_register_count,
-        capture_register_start, compiler->flags(), zone);
+        capture_register_start, zone);
   }
   REGISTER_NODE(on_match_success_);
 }
 
-Node* Lookaround::Builder::ForMatch(Compiler* compiler, Node* match) {
+RegExpNode* RegExpLookaround::Builder::ForMatch(RegExpCompiler* compiler,
+                                                RegExpNode* match) {
   if (is_positive_) {
     ActionNode* on_match_success = on_match_success_->AsActionNode();
-    Node* node = ActionNode::BeginPositiveSubmatch(
-        stack_pointer_register_, position_register_, match, on_match_success,
-        compiler->flags());
+    RegExpNode* node = ActionNode::BeginPositiveSubmatch(
+        stack_pointer_register_, position_register_, match, on_match_success);
     REGISTER_NODE(node);
     return node;
   } else {
@@ -1448,18 +1413,17 @@ Node* Lookaround::Builder::ForMatch(Compiler* compiler, Node* match) {
     // NegativeLookaroundChoiceNode is a special ChoiceNode that ignores the
     // first exit when calculating quick checks.
     ChoiceNode* choice_node = zone->New<NegativeLookaroundChoiceNode>(
-        GuardedAlternative(match), GuardedAlternative(on_success_),
-        compiler->flags(), zone);
+        GuardedAlternative(match), GuardedAlternative(on_success_), zone);
     REGISTER_NODE(choice_node);
-    Node* node = ActionNode::BeginNegativeSubmatch(
-        stack_pointer_register_, position_register_, choice_node,
-        compiler->flags());
+    RegExpNode* node = ActionNode::BeginNegativeSubmatch(
+        stack_pointer_register_, position_register_, choice_node);
     REGISTER_NODE(node);
     return node;
   }
 }
 
-Node* Lookaround::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpLookaround::ToNodeImpl(RegExpCompiler* compiler,
+                                         RegExpNode* on_success) {
   int stack_pointer_register = compiler->AllocateRegister();
   int position_register = compiler->AllocateRegister();
 
@@ -1469,12 +1433,12 @@ Node* Lookaround::ToNodeImpl(Compiler* compiler, Node* on_success) {
   int register_start =
       register_of_first_capture + capture_from_ * registers_per_capture;
 
-  Node* result;
+  RegExpNode* result;
   bool was_reading_backward = compiler->read_backward();
   compiler->set_read_backward(type() == LOOKBEHIND);
   Builder builder(is_positive(), on_success, compiler, stack_pointer_register,
                   position_register, register_count, register_start);
-  Node* match = body_->ToNode(compiler, builder.on_match_success());
+  RegExpNode* match = body_->ToNode(compiler, builder.on_match_success());
   if (match->IsBacktrack() && (is_positive() || compiler->IsRegExpTooBig())) {
     compiler->set_read_backward(was_reading_backward);
     return match;
@@ -1484,24 +1448,24 @@ Node* Lookaround::ToNodeImpl(Compiler* compiler, Node* on_success) {
   return result;
 }
 
-Node* Capture::ToNodeImpl(Compiler* compiler, Node* on_success) {
+RegExpNode* RegExpCapture::ToNodeImpl(RegExpCompiler* compiler,
+                                      RegExpNode* on_success) {
   return ToNode(body(), index(), compiler, on_success);
 }
 
 // static
-Node* Capture::ToNode(Tree* body, int index, Compiler* compiler,
-                      Node* on_success) {
+RegExpNode* RegExpCapture::ToNode(RegExpTree* body, int index,
+                                  RegExpCompiler* compiler,
+                                  RegExpNode* on_success) {
   DCHECK_NOT_NULL(body);
-  int start_reg = Capture::StartRegister(index);
-  int end_reg = Capture::EndRegister(index);
+  int start_reg = RegExpCapture::StartRegister(index);
+  int end_reg = RegExpCapture::EndRegister(index);
   if (compiler->read_backward()) std::swap(start_reg, end_reg);
-  Node* store_end =
-      ActionNode::StorePosition(end_reg, on_success, compiler->flags());
+  RegExpNode* store_end = ActionNode::StorePosition(end_reg, on_success);
   REGISTER_NODE(store_end);
-  Node* body_node = body->ToNode(compiler, store_end);
+  RegExpNode* body_node = body->ToNode(compiler, store_end);
   if (body_node->IsBacktrack()) return body_node;
-  Node* node =
-      ActionNode::StorePosition(start_reg, body_node, compiler->flags());
+  RegExpNode* node = ActionNode::StorePosition(start_reg, body_node);
   REGISTER_NODE(node);
   return node;
 }
@@ -1512,126 +1476,94 @@ class AssertionSequenceRewriter final {
  public:
   // TODO(jgruber): Consider moving this to a separate AST tree rewriter pass
   // instead of sprinkling rewrites into the AST->Node conversion process.
-  static ZoneList<Tree*>* MaybeRewrite(ZoneList<Tree*>* terms,
-                                       Compiler* compiler) {
-    Zone* zone = compiler->zone();
-    Flags flags = compiler->flags();
+  static void MaybeRewrite(ZoneList<RegExpTree*>* terms, Zone* zone) {
+    AssertionSequenceRewriter rewriter(terms, zone);
 
-    bool has_assertion = false;
-    bool needs_flattening = false;
+    static constexpr int kNoIndex = -1;
+    int from = kNoIndex;
 
     for (int i = 0; i < terms->length(); i++) {
-      Tree* t = terms->at(i);
-      if (t->IsAssertion()) {
-        has_assertion = true;
-      } else if (t->IsAlternative() ||
-                 (t->IsGroup() && t->AsGroup()->flags() == flags)) {
-        needs_flattening = true;
+      RegExpTree* t = terms->at(i);
+      if (from == kNoIndex && t->IsAssertion()) {
+        from = i;  // Start a sequence.
+      } else if (from != kNoIndex && !t->IsAssertion()) {
+        // Terminate and process the sequence.
+        if (i - from > 1) rewriter.Rewrite(from, i);
+        from = kNoIndex;
       }
     }
 
-    if (!has_assertion && !needs_flattening) return terms;
+    if (from != kNoIndex && terms->length() - from > 1) {
+      rewriter.Rewrite(from, terms->length());
+    }
+  }
 
-    ZoneList<Tree*>* flattened =
-        zone->New<ZoneList<Tree*>>(terms->length(), zone);
+  // All assertions are zero width. A consecutive sequence of assertions is
+  // order-independent. There's two ways we can optimize here:
+  // 1. fold all identical assertions.
+  // 2. if any assertion combinations are known to fail (e.g. \b\B), the entire
+  //    sequence fails.
+  void Rewrite(int from, int to) {
+    DCHECK_GT(to, from + 1);
+
+    // Bitfield of all seen assertions.
     uint32_t seen_assertions = 0;
-    int sequence_start_idx = -1;
+    static_assert(static_cast<int>(RegExpAssertion::Type::LAST_ASSERTION_TYPE) <
+                  kUInt32Size * kBitsPerByte);
 
-    for (int i = 0; i < terms->length(); i++) {
-      AppendFlattenedAndFold(flattened, terms->at(i), flags, zone,
-                             &seen_assertions, &sequence_start_idx);
+    for (int i = from; i < to; i++) {
+      RegExpAssertion* t = terms_->at(i)->AsAssertion();
+      const uint32_t bit = 1 << static_cast<int>(t->assertion_type());
+
+      if (seen_assertions & bit) {
+        // Fold duplicates.
+        terms_->Set(i, zone_->New<RegExpEmpty>());
+      }
+
+      seen_assertions |= bit;
     }
 
-    return flattened;
+    // Collapse failures.
+    const uint32_t always_fails_mask =
+        1 << static_cast<int>(RegExpAssertion::Type::BOUNDARY) |
+        1 << static_cast<int>(RegExpAssertion::Type::NON_BOUNDARY);
+    if ((seen_assertions & always_fails_mask) == always_fails_mask) {
+      ReplaceSequenceWithFailure(from, to);
+    }
+  }
+
+  void ReplaceSequenceWithFailure(int from, int to) {
+    // Replace the entire sequence with a single node that always fails.
+    // TODO(jgruber): Consider adding an explicit Fail kind. Until then, the
+    // negated '*' (everything) range serves the purpose.
+    ZoneList<CharacterRange>* ranges =
+        zone_->New<ZoneList<CharacterRange>>(0, zone_);
+    RegExpClassRanges* cc = zone_->New<RegExpClassRanges>(zone_, ranges);
+    terms_->Set(from, cc);
+
+    // Zero out the rest.
+    RegExpEmpty* empty = zone_->New<RegExpEmpty>();
+    for (int i = from + 1; i < to; i++) terms_->Set(i, empty);
   }
 
  private:
-  // Appends a term to the flattened list, unwrapping same-flag Groups and
-  // Alternatives while folding consecutive assertions in a single pass.
-  //
-  // All assertions are zero width, so a consecutive sequence of assertions is
-  // order-independent. We optimize consecutive assertions by:
-  // 1. Folding all identical assertions (e.g. \b\b -> \b). Duplicate assertions
-  //    are skipped during list construction without creating Empty AST nodes.
-  // 2. Collapsing conflicting assertion combinations (e.g. \b\B) into a single
-  //    failure node (ClassRanges).
-  //
-  // Note some crucial safety invariants:
-  // 1. Concatenation is associative, so nested Alternatives are completely
-  //    redundant and can be flattened: A(BC)D -> ABCD.
-  // 2. Only same-flags groups are flattened (ensuring flag scoping is
-  //    correct).
-  // 3. Quantified groups, capturing groups, and lookarounds are represented
-  //    by Quantifier, Capture, and Lookaround nodes respectively. Since they
-  //    are not Group nodes, they are naturally shielded from flattening here,
-  //    preserving correct syntax and quantifier bindings.
-  static void AppendFlattenedAndFold(ZoneList<Tree*>* list, Tree* term,
-                                     Flags flags, Zone* zone,
-                                     uint32_t* seen_assertions,
-                                     int* sequence_start_idx) {
-    if (term->IsAssertion()) {
-      Assertion* assertion = term->AsAssertion();
-      uint32_t bit = 1 << static_cast<int>(assertion->assertion_type());
+  AssertionSequenceRewriter(ZoneList<RegExpTree*>* terms, Zone* zone)
+      : zone_(zone), terms_(terms) {}
 
-      if (*seen_assertions & bit) {
-        // Duplicate assertion! Skip adding it to the list.
-        return;
-      }
-
-      *seen_assertions |= bit;
-
-      const uint32_t always_fails_mask =
-          1 << static_cast<int>(Assertion::Type::BOUNDARY) |
-          1 << static_cast<int>(Assertion::Type::NON_BOUNDARY);
-
-      if ((*seen_assertions & always_fails_mask) == always_fails_mask) {
-        // Replace the current assertion sequence with a single node that always
-        // fails.
-        DCHECK_NE(*sequence_start_idx, -1);
-        list->Rewind(*sequence_start_idx);
-        ZoneList<CharacterRange>* ranges =
-            zone->New<ZoneList<CharacterRange>>(0, zone);
-        list->Add(zone->New<ClassRanges>(zone, ranges), zone);
-        return;
-      }
-
-      if (*sequence_start_idx == -1) {
-        *sequence_start_idx = list->length();
-      }
-      list->Add(term, zone);
-    } else if (term->IsAlternative()) {
-      Alternative* alternative = term->AsAlternative();
-      ZoneList<Tree*>* nodes = alternative->nodes();
-      for (int i = 0; i < nodes->length(); i++) {
-        AppendFlattenedAndFold(list, nodes->at(i), flags, zone, seen_assertions,
-                               sequence_start_idx);
-      }
-    } else if (term->IsGroup()) {
-      Group* group = term->AsGroup();
-      if (group->flags() == flags) {
-        AppendFlattenedAndFold(list, group->body(), flags, zone,
-                               seen_assertions, sequence_start_idx);
-      } else {
-        *seen_assertions = 0;
-        *sequence_start_idx = -1;
-        list->Add(term, zone);
-      }
-    } else {
-      *seen_assertions = 0;
-      *sequence_start_idx = -1;
-      list->Add(term, zone);
-    }
-  }
+  Zone* zone_;
+  ZoneList<RegExpTree*>* terms_;
 };
 
 }  // namespace
 
-Node* Alternative::ToNodeImpl(Compiler* compiler, Node* on_success) {
-  ZoneList<Tree*>* children =
-      AssertionSequenceRewriter::MaybeRewrite(nodes(), compiler);
+RegExpNode* RegExpAlternative::ToNodeImpl(RegExpCompiler* compiler,
+                                          RegExpNode* on_success) {
+  ZoneList<RegExpTree*>* children = nodes();
+
+  AssertionSequenceRewriter::MaybeRewrite(children, compiler->zone());
   TRACE_WITH_NODE("* After assertion sequence rewrite: ", this);
 
-  Node* current = on_success;
+  RegExpNode* current = on_success;
   if (compiler->read_backward()) {
     for (int i = 0; i < children->length(); i++) {
       current = children->at(i)->ToNode(compiler, current);
@@ -1681,8 +1613,7 @@ void CharacterRange::AddClassEscape(StandardCharacterSet standard_character_set,
   if (add_unicode_case_equivalents &&
       (standard_character_set == StandardCharacterSet::kWord ||
        standard_character_set == StandardCharacterSet::kNotWord)) {
-    // See
-    // https://tc39.es/ecma262/#sec-runtime-semantics-wordcharacters-abstract-operation
+    // See #sec-runtime-semantics-wordcharacters-abstract-operation
     // In case of unicode and ignore_case, we need to create the closure over
     // case equivalent characters before negating.
     ZoneList<CharacterRange>* new_ranges =
@@ -1759,8 +1690,22 @@ void CharacterRange::AddCaseEquivalents(Isolate* isolate, Zone* zone,
     others.add(from, to);
   }
 
+  // Compute the set of additional characters that should be added,
+  // using UnicodeSet::closeOver. ECMA 262 defines slightly different
+  // case-folding rules than Unicode, so some characters that are
+  // added by closeOver do not match anything other than themselves in
+  // JS. For example, 'ſ' (U+017F LATIN SMALL LETTER LONG S) is the
+  // same case-insensitive character as 's' or 'S' according to
+  // Unicode, but does not match any other character in JS. To handle
+  // this case, we add such characters to the IgnoreSet and filter
+  // them out. We filter twice: once before calling closeOver (to
+  // prevent 'ſ' from adding 's'), and once after calling closeOver
+  // (to prevent 's' from adding 'ſ'). See regexp/special-case.h for
+  // more information.
   icu::UnicodeSet already_added(others);
-  CaseFolding::CloseOver(others, CaseFolding::Mode::kNonUnicode);
+  others.removeAll(RegExpCaseFolding::IgnoreSet());
+  others.closeOver(USET_CASE_INSENSITIVE);
+  others.removeAll(RegExpCaseFolding::IgnoreSet());
   others.removeAll(already_added);
 
   // Add others to the ranges
@@ -2041,27 +1986,6 @@ void CharacterRange::Intersect(const ZoneList<CharacterRange>* lhs,
   DCHECK(IsCanonical(intersection));
 }
 
-// static
-bool CharacterRange::Intersects(const ZoneList<CharacterRange>* lhs,
-                                const ZoneList<CharacterRange>* rhs) {
-  DCHECK(CharacterRange::IsCanonical(lhs));
-  DCHECK(CharacterRange::IsCanonical(rhs));
-  int lhs_index = 0;
-  int rhs_index = 0;
-  while (lhs_index < lhs->length() && rhs_index < rhs->length()) {
-    const CharacterRange& lhs_range = lhs->at(lhs_index);
-    const CharacterRange& rhs_range = rhs->at(rhs_index);
-    if (lhs_range.to() < rhs_range.from()) {
-      lhs_index++;
-    } else if (rhs_range.to() < lhs_range.from()) {
-      rhs_index++;
-    } else {
-      return true;
-    }
-  }
-  return false;
-}
-
 namespace {
 
 // Advance |index| and set |from| and |to| to the new range, if not out of
@@ -2191,10 +2115,10 @@ namespace {
 
 // Scoped object to keep track of how much we unroll quantifier loops in the
 // regexp graph generator.
-class ExpansionLimiter {
+class RegExpExpansionLimiter {
  public:
   static const int kMaxExpansionFactor = 6;
-  ExpansionLimiter(Compiler* compiler, int factor)
+  RegExpExpansionLimiter(RegExpCompiler* compiler, int factor)
       : compiler_(compiler),
         saved_expansion_factor_(compiler->current_expansion_factor()),
         ok_to_expand_(saved_expansion_factor_ <= kMaxExpansionFactor) {
@@ -2212,28 +2136,29 @@ class ExpansionLimiter {
     }
   }
 
-  ~ExpansionLimiter() {
+  ~RegExpExpansionLimiter() {
     compiler_->set_current_expansion_factor(saved_expansion_factor_);
   }
 
   bool ok_to_expand() { return ok_to_expand_; }
 
  private:
-  Compiler* compiler_;
+  RegExpCompiler* compiler_;
   int saved_expansion_factor_;
   bool ok_to_expand_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(ExpansionLimiter);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(RegExpExpansionLimiter);
 };
 
 }  // namespace
 
 // static
-Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
-                         Compiler* compiler, Node* on_success,
-                         bool not_at_start) {
+RegExpNode* RegExpQuantifier::ToNode(int min, int max, bool is_greedy,
+                                     RegExpTree* body, RegExpCompiler* compiler,
+                                     RegExpNode* on_success,
+                                     bool not_at_start) {
 #ifdef V8_ENABLE_REGEXP_DIAGNOSTICS
-  TraceTreeScope trace_tree_scope(compiler->diagnostics());
+  TraceRegExpTreeScope trace_tree_scope(compiler->diagnostics());
 #endif
   TRACE("* Handling quantifier {"
         << min << "," << (max == kInfinity ? "∞" : std::to_string(max)) << "}");
@@ -2261,20 +2186,14 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
   static const int kMaxUnrolledMaxMatches = 3;  // Unroll (foo)? and (foo){x,3}
   if (max == 0) return on_success;  // This can happen due to recursion.
   bool body_can_be_empty = (body->min_match() == 0);
-  int body_start_reg = Compiler::kNoRegister;
-  Zone* zone = compiler->zone();
-  Interval capture_registers =
-      body->CaptureRegisters(StackLimiter(Node::kRecursionBudget));
-  if (!capture_registers.is_valid()) {
-    compiler->SetRegExpTooBig();
-    return zone->New<EndNode>(EndNode::BACKTRACK, compiler->flags(), zone);
-  }
-
+  int body_start_reg = RegExpCompiler::kNoRegister;
+  Interval capture_registers = body->CaptureRegisters();
   // At the start of the next iteration of a quantifier the captures must be
   // cleared, so that /(?:x(.)?z){2}/ when applied to "xyzxz" captures ""
   // (rather than "y" from the first repeat). However, if the max number of
   // iterations is 1 then there is no 'next repeat' so we don't need to do this.
   bool needs_capture_clearing = !capture_registers.is_empty() && max != 1;
+  Zone* zone = compiler->zone();
 
   bool want_unroll = compiler->optimize() && v8_flags.regexp_unroll;
   if (body_can_be_empty) {
@@ -2283,14 +2202,14 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
     // Only unroll if there are no captures and the body can't be
     // empty.
     {
-      ExpansionLimiter limiter(compiler, min + ((max != min) ? 1 : 0));
+      RegExpExpansionLimiter limiter(compiler, min + ((max != min) ? 1 : 0));
       if (min > 0 && min <= kMaxUnrolledMinMatches && limiter.ok_to_expand()) {
         TRACE("* Recurse for remainder after unrolling (unrolling "
               << min << " times)");
         int new_max = (max == kInfinity) ? max : max - min;
         // Recurse once to get the loop or optional matches after the fixed
         // ones.
-        Node* answer =
+        RegExpNode* answer =
             ToNode(0, new_max, is_greedy, body, compiler, on_success, true);
         // Unroll the forced matches from 0 to min.  This can cause chains of
         // TextNodes (which the parser does not generate).  These should be
@@ -2305,15 +2224,14 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
     }
     if (max <= kMaxUnrolledMaxMatches && min == 0) {
       DCHECK_LT(0, max);  // Due to the 'if' above.
-      ExpansionLimiter limiter(compiler, max);
+      RegExpExpansionLimiter limiter(compiler, max);
       if (limiter.ok_to_expand()) {
         TRACE("* Unrolling loop " << max << " times for max matches");
         // Unroll the optional matches up to max.
-        Node* answer = on_success;
+        RegExpNode* answer = on_success;
         for (int i = 0; i < max; i++) {
           TRACE("* Iteration " << i + 1 << " / " << max);
-          ChoiceNode* alternation =
-              zone->New<ChoiceNode>(2, compiler->flags(), zone);
+          ChoiceNode* alternation = zone->New<ChoiceNode>(2, zone);
           if (is_greedy) {
             alternation->AddAlternative(
                 GuardedAlternative(body->ToNode(compiler, answer)));
@@ -2334,28 +2252,26 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
     }
   }
   bool has_min = min > 0;
-  bool has_max = max < Tree::kInfinity;
+  bool has_max = max < RegExpTree::kInfinity;
   bool needs_counter = has_min || has_max;
-  int reg_ctr =
-      needs_counter ? compiler->AllocateRegister() : Compiler::kNoRegister;
-  LoopChoiceNode* center = zone->New<LoopChoiceNode>(body->min_match() == 0,
-                                                     compiler->read_backward(),
-                                                     compiler->flags(), zone);
+  int reg_ctr = needs_counter ? compiler->AllocateRegister()
+                              : RegExpCompiler::kNoRegister;
+  LoopChoiceNode* center = zone->New<LoopChoiceNode>(
+      body->min_match() == 0, compiler->read_backward(), zone);
   if (not_at_start && !compiler->read_backward()) center->set_not_at_start();
-  Node* loop_return = center;
+  RegExpNode* loop_return = center;
   if (needs_counter) {
-    loop_return =
-        ActionNode::IncrementRegister(reg_ctr, loop_return, compiler->flags());
+    loop_return = ActionNode::IncrementRegister(reg_ctr, loop_return);
     REGISTER_NODE(loop_return);
   }
   if (body_can_be_empty) {
     // If the body can be empty we need to check if it was and then
     // backtrack.
-    loop_return = ActionNode::EmptyMatchCheck(body_start_reg, reg_ctr, min,
-                                              loop_return, compiler->flags());
+    loop_return =
+        ActionNode::EmptyMatchCheck(body_start_reg, reg_ctr, min, loop_return);
     REGISTER_NODE(loop_return);
   }
-  Node* body_node = body->ToNode(compiler, loop_return);
+  RegExpNode* body_node = body->ToNode(compiler, loop_return);
   if (body_node->IsBacktrack()) {
     // Body can never match. If there is a minimum number of iterations that
     // means this whole part of the regexp can't match, so we just return the
@@ -2368,14 +2284,12 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
   if (body_can_be_empty) {
     // If the body can be empty we need to store the start position
     // so we can bail out if it was empty.
-    body_node = ActionNode::RestorePosition(body_start_reg, body_node,
-                                            compiler->flags());
+    body_node = ActionNode::RestorePosition(body_start_reg, body_node);
     REGISTER_NODE(body_node);
   }
   if (needs_capture_clearing) {
     // Before entering the body of this loop we need to clear captures.
-    body_node = ActionNode::ClearCaptures(capture_registers, body_node,
-                                          compiler->flags());
+    body_node = ActionNode::ClearCaptures(capture_registers, body_node);
     REGISTER_NODE(body_node);
   }
   GuardedAlternative body_alt(body_node);
@@ -2396,24 +2310,19 @@ Node* Quantifier::ToNode(int min, int max, bool is_greedy, Tree* body,
     center->AddLoopAlternative(body_alt);
   }
   REGISTER_NODE(center);
-  Node* result = center;
+  RegExpNode* result = center;
   if (min > 0 && body->min_match() > 0 && !compiler->read_backward()) {
     uint8_t eats = base::saturated_cast<uint8_t>(
         std::min(256, min) * std::min(256, body->min_match()));
-    result = ActionNode::EatsAtLeast(eats, result, compiler->flags());
+    result = ActionNode::EatsAtLeast(eats, result);
     REGISTER_NODE(result);
   }
   if (needs_counter) {
-    result =
-        ActionNode::SetRegisterForLoop(reg_ctr, 0, result, compiler->flags());
+    result = ActionNode::SetRegisterForLoop(reg_ctr, 0, result);
     REGISTER_NODE(result);
   }
   return result;
 }
-#undef TRACE
-#undef TRACE_WITH_NODE
-#undef REGISTER_NODE
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8

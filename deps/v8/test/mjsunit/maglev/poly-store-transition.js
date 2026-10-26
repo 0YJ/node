@@ -29,4 +29,4 @@ assertTrue(%HasDoubleElements(c));
 poly_store(c, 'a');
 assertTrue(%HasObjectElements(c));
 assertEquals(c[0], 'a');
-assertMaglevved(poly_store);
+assertTrue(isMaglevved(poly_store));

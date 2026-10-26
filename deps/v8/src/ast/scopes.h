@@ -115,7 +115,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   ClassScope* AsClassScope();
   const ClassScope* AsClassScope() const;
 
-  bool from_scope_info() const { return !scope_info_.is_null(); }
+  bool is_reparsed() const { return !scope_info_.is_null(); }
 
   // Re-writes the {VariableLocation} of top-level 'let' bindings from CONTEXT
   // to REPL_GLOBAL. Should only be called on REPL scripts.
@@ -162,13 +162,12 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
 
   template <typename IsolateT>
   EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
-  static Scope* DeserializeScopeChain(
-      IsolateT* isolate, Zone* zone, Tagged<ScopeInfo> scope_info,
-      DeclarationScope* script_scope, AstValueFactory* ast_value_factory,
-      DeserializationMode deserialization_mode,
-      Tagged<Script> script = Tagged<Script>(),
-      Tagged<ScopeInfo> eval_outer_info = Tagged<ScopeInfo>(),
-      ParseInfo* info = nullptr);
+  static Scope* DeserializeScopeChain(IsolateT* isolate, Zone* zone,
+                                      Tagged<ScopeInfo> scope_info,
+                                      DeclarationScope* script_scope,
+                                      AstValueFactory* ast_value_factory,
+                                      DeserializationMode deserialization_mode,
+                                      ParseInfo* info = nullptr);
 
   template <typename IsolateT>
   EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE)
@@ -368,7 +367,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   bool is_script_scope() const {
     return scope_type_ == SCRIPT_SCOPE || scope_type_ == REPL_MODE_SCOPE;
   }
-  bool is_toplevel_scope() const { return scope_type_ <= MODULE_SCOPE; }
   bool is_catch_scope() const { return scope_type_ == CATCH_SCOPE; }
   bool is_block_scope() const {
     return scope_type_ == BLOCK_SCOPE || scope_type_ == CLASS_SCOPE;
@@ -377,17 +375,15 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   bool is_declaration_scope() const {
     return IsDeclarationScopeField::decode(flags_);
   }
-  bool is_closure_scope() const {
-    return is_declaration_scope() && !is_block_scope();
-  }
   bool is_class_scope() const { return scope_type_ == CLASS_SCOPE; }
   bool is_home_object_scope() const {
     return is_class_scope() ||
            (is_block_scope() && is_block_scope_for_object_literal());
   }
   bool is_block_scope_for_object_literal() const {
-    return is_block_scope() &&
-           IsBlockScopeForObjectLiteralField::decode(flags_);
+    DCHECK_IMPLIES(IsBlockScopeForObjectLiteralField::decode(flags_),
+                   is_block_scope());
+    return IsBlockScopeForObjectLiteralField::decode(flags_);
   }
   void set_is_block_scope_for_object_literal() {
     DCHECK(is_block_scope());
@@ -413,19 +409,20 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   }
 
   bool is_wrapped_function() const {
-    return is_function_scope() && IsWrappedFunctionField::decode(flags_);
+    DCHECK_IMPLIES(IsWrappedFunctionField::decode(flags_), is_function_scope());
+    return IsWrappedFunctionField::decode(flags_);
   }
   void set_is_wrapped_function() {
     DCHECK(is_function_scope());
     flags_ = IsWrappedFunctionField::update(flags_, true);
   }
 
-  bool is_hoisted_in_context() const {
-    return IsHoistedInContextField::decode(flags_);
-  }
-  void set_is_hoisted_in_context(bool value) {
-    flags_ = IsHoistedInContextField::update(flags_, value);
-  }
+#if V8_ENABLE_WEBASSEMBLY
+  bool IsAsmModule() const;
+  // Returns true if this scope or any inner scopes that might be eagerly
+  // compiled are asm modules.
+  bool ContainsAsmModule() const;
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   // Does this scope have the potential to execute declarations non-linearly?
   bool is_nonlinear() const { return ScopeNonlinearField::decode(flags_); }
@@ -573,10 +570,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   DeclarationScope* GetClosureScope();
   const DeclarationScope* GetClosureScope() const;
 
-  // Returns true if this scope is an outer scope of the given scope, up to
-  // and including the closure scope of the given scope.
-  bool IsOuterScopeUpToClosureScopeOf(Scope* scope) const;
-
   // Find the first (non-arrow) function or script scope.  This is where
   // 'this' is bound, and what determines the function kind.
   DeclarationScope* GetReceiverScope();
@@ -604,8 +597,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   }
 
   int num_var() const { return variables_.occupancy(); }
-
-  UnresolvedList& unresolved_list() { return unresolved_list_; }
 
   // ---------------------------------------------------------------------------
   // Debugging.
@@ -686,14 +677,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
 
  protected:
   Scope(Zone* zone, ScopeType scope_type);
-
-  void set_scope_type(ScopeType type) {
-    // The only case when a scope type is allowed to change is
-    // SCRIPT_SCOPE->REPL_MODE_SCOPE update.
-    DCHECK_EQ(scope_type_, SCRIPT_SCOPE);
-    DCHECK_EQ(type, REPL_MODE_SCOPE);
-    scope_type_ = type;
-  }
 
   void set_language_mode(LanguageMode language_mode) {
     flags_ = IsStrictField::update(flags_, is_strict(language_mode));
@@ -787,21 +770,17 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   // calling context of 'eval'.
   template <ScopeLookupMode mode>
   static Variable* Lookup(VariableProxy* proxy, Scope* scope,
-                          Scope* outer_scope_end, int* access_position,
-                          Scope* cache_scope = nullptr,
+                          Scope* outer_scope_end, Scope* cache_scope = nullptr,
                           bool force_context_allocation = false);
   static Variable* LookupWith(VariableProxy* proxy, Scope* scope,
-                              Scope* outer_scope_end, int* access_position,
-                              Scope* cache_scope = nullptr,
-                              bool force_context_allocation = false);
+                              Scope* outer_scope_end, Scope* cache_scope,
+                              bool force_context_allocation);
   static Variable* LookupSloppyEval(VariableProxy* proxy, Scope* scope,
-                                    Scope* outer_scope_end,
-                                    int* access_position,
-                                    Scope* cache_scope = nullptr,
-                                    bool force_context_allocation = false);
+                                    Scope* outer_scope_end, Scope* cache_scope,
+                                    bool force_context_allocation);
   static void ResolvePreparsedVariable(VariableProxy* proxy, Scope* scope,
                                        Scope* end);
-  void ResolveTo(VariableProxy* proxy, Variable* var, int access_position);
+  void ResolveTo(VariableProxy* proxy, Variable* var);
   void ResolveVariable(VariableProxy* proxy);
   V8_WARN_UNUSED_RESULT bool ResolveVariablesRecursively(Scope* end);
 
@@ -811,10 +790,6 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
                         AstNodeFactory* ast_node_factory,
                         UnresolvedList* new_unresolved_list,
                         bool maybe_in_arrowhead);
-
-  // Mark a variable as used and maybe-assigned if it might be dynamically
-  // accessed by name (e.g. via eval(), in a catch scope, or script scope).
-  void MarkMaybeAssignedIfEval(Variable* var);
 
   // Predicates.
   bool MustAllocate(Variable* var);
@@ -898,7 +873,7 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   int num_heap_slots_;
 
   // The scope type.
-  ScopeType scope_type_;
+  const ScopeType scope_type_;
 
   // Scope-specific information computed during parsing.
   //
@@ -938,12 +913,10 @@ class V8_EXPORT_PRIVATE Scope : public NON_EXPORTED_BASE(ZoneObject) {
   using HasAwaitUsingDeclarationField = HasUsingDeclarationField::Next<bool, 1>;
   // If the scope was generated for wrapped function syntax, which will affect
   // its UniqueIdInScript.
-  // This shares the same bit as IsBlockScopeForObjectLiteralField.
-  using IsWrappedFunctionField = IsBlockScopeForObjectLiteralField;
+  using IsWrappedFunctionField = HasAwaitUsingDeclarationField::Next<bool, 1>;
   // The context associated with the scope might have context cells.
-  using HasContextCellsField = HasAwaitUsingDeclarationField::Next<bool, 1>;
-  using IsHoistedInContextField = HasContextCellsField::Next<bool, 1>;
-  using LastScopeField = IsHoistedInContextField;
+  using HasContextCellsField = IsWrappedFunctionField::Next<bool, 1>;
+  using LastScopeField = HasContextCellsField;
 
   uint32_t flags_;
 };
@@ -958,8 +931,6 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   // Creates a script scope.
   DeclarationScope(Zone* zone, AstValueFactory* ast_value_factory,
                    REPLMode repl_mode = REPLMode::kNo);
-
-  void SwitchScriptScopeToREPLMode();
 
   FunctionKind function_kind() const { return function_kind_; }
 
@@ -1012,8 +983,7 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
       //   3. This is a debug evaluate and all bets are off.
       DeclarationScope* outer_decl_scope = outer_scope()->GetDeclarationScope();
       while (outer_decl_scope->is_eval_scope()) {
-        outer_decl_scope =
-            outer_decl_scope->outer_scope_->GetDeclarationScope();
+        outer_decl_scope = outer_decl_scope->GetDeclarationScope();
       }
       if (V8_UNLIKELY(outer_decl_scope->is_debug_evaluate_scope())) {
         // Don't check anything.
@@ -1120,6 +1090,13 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
     scope_info_ = scope_info;
   }
 
+#if V8_ENABLE_WEBASSEMBLY
+  bool is_asm_module() const { return IsAsmModuleField::decode(flags_); }
+  void set_is_asm_module(bool value) {
+    flags_ = IsAsmModuleField::update(flags_, value);
+  }
+#endif  // V8_ENABLE_WEBASSEMBLY
+
   bool should_ban_arguments() const {
     return IsClassInitializerFunction(function_kind());
   }
@@ -1134,7 +1111,7 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   void DeclareDefaultFunctionVariables(AstValueFactory* ast_value_factory);
 
   // Declare the function variable for a function literal. This variable
-  // is in an intermediate scope between this function scope and the
+  // is in an intermediate scope between this function scope and the the
   // outer scope. Only possible for function scopes; at most one variable.
   //
   // This function needs to be called after all other variables have been
@@ -1208,9 +1185,6 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   //   function foo(a, b, ...c) {}   ==> 2
   //   function foo(a, b, c = 1) {}  ==> 3
   int num_parameters() const { return num_parameters_; }
-
-  int eval_position() const { return eval_position_; }
-  void set_eval_position(int eval_position) { eval_position_ = eval_position; }
 
   // The function's rest parameter (nullptr if there is none).
   Variable* rest_parameter() const {
@@ -1431,6 +1405,11 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   using ClassScopeHasPrivateBrandField =
       NeedsPrivateNameContextChainRecalcField::Next<bool, 1>;
 
+#if V8_ENABLE_WEBASSEMBLY
+  // This scope contains an "use asm" annotation.
+  using IsAsmModuleField = ClassScopeHasPrivateBrandField::Next<bool, 1>;
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 #if DEBUG
   bool is_being_lazily_parsed_;
 #endif
@@ -1439,7 +1418,6 @@ class V8_EXPORT_PRIVATE DeclarationScope : public Scope {
   FunctionKind function_kind_;
 
   int num_parameters_ = 0;
-  int eval_position_ = kNoSourcePosition;
 
   // Parameter list in source order.
   ZonePtrList<Variable> params_;

@@ -11,8 +11,6 @@
 
 #include <cstdint>
 
-#include "src/base/logging.h"
-
 namespace v8 {
 namespace internal {
 namespace wasm {
@@ -40,7 +38,6 @@ inline const char* ExecutionTierToString(ExecutionTier tier) {
     case ExecutionTier::kNone:
       return "none";
   }
-  UNREACHABLE();
 }
 
 // {kForDebugging} is used for default tiered-down code, {kWithBreakpoints} if

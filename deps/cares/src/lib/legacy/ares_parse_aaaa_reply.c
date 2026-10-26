@@ -63,11 +63,8 @@ int ares_parse_aaaa_reply(const unsigned char *abuf, int alen,
   }
 
   if (naddrttls) {
-    /* A negative requested count would wrap to SIZE_MAX. */
-    if (*naddrttls > 0) {
-      req_naddrttls = (size_t)*naddrttls;
-    }
-    *naddrttls = 0;
+    req_naddrttls = (size_t)*naddrttls;
+    *naddrttls    = 0;
   }
 
   memset(&ai, 0, sizeof(ai));

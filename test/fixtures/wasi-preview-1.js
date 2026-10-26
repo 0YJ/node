@@ -68,9 +68,6 @@ assert.strictEqual(wasiPreview1.wasiImport,
       const name = `pthread-${tid}`;
       const sab = new SharedArrayBuffer(8 + 8192);
       const result = new Int32Array(sab);
-      // The thread stores 0 once it has loaded or 1 with an error; wait on a
-      // value neither of them writes so an early notify cannot be missed.
-      Atomics.store(result, 0, -1);
 
       const workerData = {
         name,
@@ -109,7 +106,7 @@ assert.strictEqual(wasiPreview1.wasiImport,
         throw new Error(e);
       });
 
-      const r = Atomics.wait(result, 0, -1, common.platformTimeout(30_000));
+      const r = Atomics.wait(result, 0, 0, 1000);
       if (r === 'timed-out') {
         workers[tid].terminate();
         delete workers[tid];

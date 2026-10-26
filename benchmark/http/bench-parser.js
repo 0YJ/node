@@ -16,7 +16,6 @@ function main({ len, n }) {
   const kOnHeadersComplete = HTTPParser.kOnHeadersComplete | 0;
   const kOnBody = HTTPParser.kOnBody | 0;
   const kOnMessageComplete = HTTPParser.kOnMessageComplete | 0;
-  const kMaxHeaderPairs = 2000;
 
   function processHeader(header, n) {
     const parser = newParser(REQUEST);
@@ -24,15 +23,16 @@ function main({ len, n }) {
     bench.start();
     for (let i = 0; i < n; i++) {
       parser.execute(header, 0, header.length);
-      parser.initialize(REQUEST, {}, 0, 0, undefined, kMaxHeaderPairs);
+      parser.initialize(REQUEST, {});
     }
     bench.end(n);
   }
 
   function newParser(type) {
     const parser = new HTTPParser();
+    parser.initialize(type, {});
     // Direct parsers bypass cleanParser(); use its production default.
-    parser.initialize(type, {}, 0, 0, undefined, kMaxHeaderPairs);
+    parser.maxHeaderPairs = 2000;
 
     parser.headers = [];
 

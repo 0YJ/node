@@ -18,17 +18,14 @@
 #include <openssl/core_names.h>
 #include <openssl/params.h>
 #include <openssl/err.h>
-#include <openssl/proverr.h>
 #include <openssl/pem.h> /* Functions for writing MSBLOB and PVK */
 #include <openssl/dsa.h>
-#include "internal/cryptlib.h"
 #include "internal/passphrase.h"
 #include "crypto/rsa.h"
 #include "prov/implementations.h"
 #include "prov/bio.h"
 #include "prov/provider_ctx.h"
-#include "prov/endecoder_local.h"
-#include "providers/implementations/encode_decode/encode_key2ms.inc"
+#include "endecoder_local.h"
 
 struct key2ms_ctx_st {
     PROV_CTX *provctx;
@@ -94,18 +91,21 @@ static void key2ms_freectx(void *vctx)
 
 static const OSSL_PARAM *key2pvk_settable_ctx_params(ossl_unused void *provctx)
 {
-    return key2pvk_set_ctx_params_list;
+    static const OSSL_PARAM settables[] = {
+        OSSL_PARAM_int(OSSL_ENCODER_PARAM_ENCRYPT_LEVEL, NULL),
+        OSSL_PARAM_END,
+    };
+
+    return settables;
 }
 
 static int key2pvk_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     struct key2ms_ctx_st *ctx = vctx;
-    struct key2pvk_set_ctx_params_st p;
+    const OSSL_PARAM *p;
 
-    if (ctx == NULL || !key2pvk_set_ctx_params_decoder(params, &p))
-        return 0;
-
-    if (p.enclvl != NULL && !OSSL_PARAM_get_int(p.enclvl, &ctx->pvk_encr_level))
+    p = OSSL_PARAM_locate_const(params, OSSL_ENCODER_PARAM_ENCRYPT_LEVEL);
+    if (p != NULL && !OSSL_PARAM_get_int(p, &ctx->pvk_encr_level))
         return 0;
     return 1;
 }

@@ -35,21 +35,7 @@ const net = require('net');
   });
 }
 
-// Third test. Check that a second listen call throws while the first is pending.
-{
-  const server = net.Server();
-
-  server.listen(0, '127.0.0.1');
-
-  assert.throws(() => server.listen(), {
-    code: 'ERR_SERVER_ALREADY_LISTEN',
-    name: 'Error'
-  });
-
-  server.close();
-}
-
-// Fourth test.
+// Third test.
 // Check that after the close call you can run listen method just fine.
 {
   const server = net.Server();

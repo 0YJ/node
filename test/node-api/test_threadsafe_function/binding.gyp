@@ -2,8 +2,7 @@
   'targets': [
     {
       'target_name': 'binding',
-      'sources': ['binding.c'],
-      'include_dirs': ['<@(node_shared_libuv_include_dirs)'],
+      'sources': ['binding.c']
     },
     {
       'target_name': 'test_uncaught_exception_v9',

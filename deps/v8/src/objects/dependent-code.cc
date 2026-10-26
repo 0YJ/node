@@ -10,7 +10,6 @@
 #include "src/objects/contexts.h"
 #include "src/objects/dependent-code-inl.h"
 #include "src/objects/map.h"
-#include "src/objects/property-cell-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -104,7 +103,7 @@ void DependentCode::IterateAndCompact(IsolateForSandbox isolate,
                                       const Function& fn) {
   DisallowGarbageCollection no_gc;
 
-  uint32_t len = length().value();
+  int len = length();
   if (len == 0) return;
 
   // We compact during traversal, thus use a somewhat custom loop construct:
@@ -112,8 +111,7 @@ void DependentCode::IterateAndCompact(IsolateForSandbox isolate,
   // - Loop back-to-front s.t. trailing cleared entries can simply drop off
   //   the back of the list.
   // - Any cleared slots are filled from the back of the list.
-  // TODO(375937549): Convert to uint32_t.
-  int i = static_cast<int>(len) - kSlotsPerEntry;
+  int i = len - kSlotsPerEntry;
   while (i >= 0) {
     Tagged<MaybeObject> obj = Get(i + kCodeSlotOffset);
     if (obj.IsCleared()) {

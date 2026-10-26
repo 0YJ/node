@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-shared
+// Flags: --experimental-wasm-shared --no-wasm-lazy-validation
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -81,9 +81,9 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function RefEqValid() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let sharedArray = builder.addArray(kWasmI32, {shared: true});
+  let sharedArray = builder.addArray(kWasmI32, true, kNoSuperType, false, true);
   let sharedStruct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], shared: true});
+    [makeField(kWasmI32, true)], kNoSuperType, false, true);
 
   let types = [
     [
@@ -133,7 +133,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function ArrayLenShared() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let sharedArray = builder.addArray(kWasmI32, {shared: true});
+  let sharedArray = builder.addArray(kWasmI32, true, kNoSuperType, false, true);
   builder.addFunction("main",
     makeSig([kWasmI32], [kWasmI32]))
   .addBody([

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ class LIEF_API DylinkerCommand : public LoadCommand {
   std::ostream& print(std::ostream& os) const override;
 
   /// Path to the linker (or loader)
-  const std::string& name() const LIEF_LIFETIMEBOUND {
+  const std::string& name() const {
     return name_;
   }
 

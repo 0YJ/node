@@ -326,7 +326,6 @@ ObjectEntriesValuesBuiltinsAssembler::FinalizeValuesOrEntriesJSArray(
   return array;
 }
 
-// https://tc39.es/ecma262/#sec-object.prototype.hasownproperty
 TF_BUILTIN(ObjectPrototypeHasOwnProperty, ObjectBuiltinsAssembler) {
   auto object = Parameter<Object>(Descriptor::kReceiver);
   auto key = Parameter<Object>(Descriptor::kKey);
@@ -396,7 +395,7 @@ TF_BUILTIN(ObjectPrototypeHasOwnProperty, ObjectBuiltinsAssembler) {
   Return(CallRuntime(Runtime::kObjectHasOwnProperty, context, object, key));
 }
 
-// https://tc39.es/ecma262/#sec-object.assign
+// ES #sec-object.assign
 TF_BUILTIN(ObjectAssign, ObjectBuiltinsAssembler) {
   TNode<IntPtrT> argc = ChangeInt32ToIntPtr(
       UncheckedParameter<Int32T>(Descriptor::kJSActualArgumentsCount));
@@ -533,7 +532,7 @@ TF_BUILTIN(ObjectAssign, ObjectBuiltinsAssembler) {
     {
       // First check if we have a transition array.
       TNode<MaybeObject> maybe_transitions = LoadMaybeWeakObjectField(
-          from_map, offsetof(Map, transitions_or_prototype_info_));
+          from_map, Map::kTransitionsOrPrototypeInfoOffset);
       TNode<HeapObject> maybe_transitions2 =
           GetHeapObjectIfStrong(maybe_transitions, &runtime_map_lookup);
       GotoIfNot(IsTransitionArrayMap(LoadMap(maybe_transitions2)),
@@ -625,7 +624,7 @@ TF_BUILTIN(ObjectAssign, ObjectBuiltinsAssembler) {
   args.PopAndReturn(to);
 }
 
-// https://tc39.es/ecma262/#sec-object.keys
+// ES #sec-object.keys
 TF_BUILTIN(ObjectKeys, ObjectBuiltinsAssembler) {
   auto object = Parameter<Object>(Descriptor::kObject);
   auto context = Parameter<Context>(Descriptor::kContext);
@@ -665,7 +664,7 @@ TF_BUILTIN(ObjectKeys, ObjectBuiltinsAssembler) {
     // The {object} has a usable enum cache, use that.
     TNode<DescriptorArray> object_descriptors = LoadMapDescriptors(object_map);
     TNode<EnumCache> object_enum_cache = LoadObjectField<EnumCache>(
-        object_descriptors, offsetof(DescriptorArray, enum_cache_));
+        object_descriptors, DescriptorArray::kEnumCacheOffset);
     auto object_enum_keys = LoadObjectField<FixedArrayBase>(
         object_enum_cache, offsetof(EnumCache, keys_));
 
@@ -698,8 +697,7 @@ TF_BUILTIN(ObjectKeys, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements.
     TNode<FixedArray> elements =
         CAST(CallRuntime(Runtime::kObjectKeys, context, object));
-    var_length = Convert<Smi>(
-        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
+    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -746,7 +744,7 @@ TF_BUILTIN(ObjectHasOwn, ObjectBuiltinsAssembler) {
                        new_target, object, key));
 }
 
-// https://tc39.es/ecma262/#sec-object.getOwnPropertyNames
+// ES #sec-object.getOwnPropertyNames
 TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
   auto object = Parameter<Object>(Descriptor::kObject);
   auto context = Parameter<Context>(Descriptor::kContext);
@@ -796,7 +794,7 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // enumerable, use that.
     TNode<DescriptorArray> object_descriptors = LoadMapDescriptors(object_map);
     TNode<EnumCache> object_enum_cache = LoadObjectField<EnumCache>(
-        object_descriptors, offsetof(DescriptorArray, enum_cache_));
+        object_descriptors, DescriptorArray::kEnumCacheOffset);
     auto object_enum_keys = LoadObjectField<FixedArrayBase>(
         object_enum_cache, offsetof(EnumCache, keys_));
 
@@ -821,8 +819,7 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements and try initializing enum cache.
     TNode<FixedArray> elements = CAST(CallRuntime(
         Runtime::kObjectGetOwnPropertyNamesTryFast, context, object));
-    var_length = Convert<Smi>(
-        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
+    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -840,8 +837,7 @@ TF_BUILTIN(ObjectGetOwnPropertyNames, ObjectBuiltinsAssembler) {
     // Let the runtime compute the elements.
     TNode<FixedArray> elements =
         CAST(CallRuntime(Runtime::kObjectGetOwnPropertyNames, context, object));
-    var_length = Convert<Smi>(
-        LoadObjectField<Uint32T>(elements, offsetof(FixedArray, length_)));
+    var_length = LoadObjectField<Smi>(elements, offsetof(FixedArray, length_));
     var_elements = elements;
     Goto(&if_join);
   }
@@ -870,7 +866,7 @@ TF_BUILTIN(ObjectEntries, ObjectEntriesValuesBuiltinsAssembler) {
   GetOwnValuesOrEntries(context, object, CollectType::kEntries);
 }
 
-// https://tc39.es/ecma262/#sec-object.prototype.isprototypeof
+// ES #sec-object.prototype.isprototypeof
 TF_BUILTIN(ObjectPrototypeIsPrototypeOf, ObjectBuiltinsAssembler) {
   auto receiver = Parameter<Object>(Descriptor::kReceiver);
   auto value = Parameter<Object>(Descriptor::kValue);
@@ -985,8 +981,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     TNode<NativeContext> native_context = LoadNativeContext(context);
     TNode<JSFunction> boolean_constructor = CAST(LoadContextElementNoCell(
         native_context, Context::BOOLEAN_FUNCTION_INDEX));
-    TNode<Map> boolean_initial_map =
-        CAST(LoadJSFunctionPrototypeOrInitialMap(boolean_constructor));
+    TNode<Map> boolean_initial_map = LoadObjectField<Map>(
+        boolean_constructor, JSFunction::kPrototypeOrInitialMapOffset);
     TNode<JSPrototype> boolean_prototype =
         LoadMapPrototype(boolean_initial_map);
     var_default = BooleanToStringConstant();
@@ -1018,8 +1014,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     TNode<NativeContext> native_context = LoadNativeContext(context);
     TNode<JSFunction> number_constructor = CAST(LoadContextElementNoCell(
         native_context, Context::NUMBER_FUNCTION_INDEX));
-    TNode<Map> number_initial_map =
-        CAST(LoadJSFunctionPrototypeOrInitialMap(number_constructor));
+    TNode<Map> number_initial_map = LoadObjectField<Map>(
+        number_constructor, JSFunction::kPrototypeOrInitialMapOffset);
     TNode<JSPrototype> number_prototype = LoadMapPrototype(number_initial_map);
     var_default = NumberToStringConstant();
     var_holder = number_prototype;
@@ -1062,8 +1058,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     TNode<NativeContext> native_context = LoadNativeContext(context);
     TNode<JSFunction> string_constructor = CAST(LoadContextElementNoCell(
         native_context, Context::STRING_FUNCTION_INDEX));
-    TNode<Map> string_initial_map =
-        CAST(LoadJSFunctionPrototypeOrInitialMap(string_constructor));
+    TNode<Map> string_initial_map = LoadObjectField<Map>(
+        string_constructor, JSFunction::kPrototypeOrInitialMapOffset);
     TNode<JSPrototype> string_prototype = LoadMapPrototype(string_initial_map);
     var_default = StringToStringConstant();
     var_holder = string_prototype;
@@ -1076,8 +1072,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     TNode<NativeContext> native_context = LoadNativeContext(context);
     TNode<JSFunction> symbol_constructor = CAST(LoadContextElementNoCell(
         native_context, Context::SYMBOL_FUNCTION_INDEX));
-    TNode<Map> symbol_initial_map =
-        CAST(LoadJSFunctionPrototypeOrInitialMap(symbol_constructor));
+    TNode<Map> symbol_initial_map = LoadObjectField<Map>(
+        symbol_constructor, JSFunction::kPrototypeOrInitialMapOffset);
     TNode<JSPrototype> symbol_prototype = LoadMapPrototype(symbol_initial_map);
     var_default = ObjectToStringConstant();
     var_holder = symbol_prototype;
@@ -1090,8 +1086,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     TNode<NativeContext> native_context = LoadNativeContext(context);
     TNode<JSFunction> bigint_constructor = CAST(LoadContextElementNoCell(
         native_context, Context::BIGINT_FUNCTION_INDEX));
-    TNode<Map> bigint_initial_map =
-        CAST(LoadJSFunctionPrototypeOrInitialMap(bigint_constructor));
+    TNode<Map> bigint_initial_map = LoadObjectField<Map>(
+        bigint_constructor, JSFunction::kPrototypeOrInitialMapOffset);
     TNode<JSPrototype> bigint_prototype = LoadMapPrototype(bigint_initial_map);
     var_default = ObjectToStringConstant();
     var_holder = bigint_prototype;
@@ -1174,8 +1170,8 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
     receiver_map = var_holder_map.value();
     // Check if the proxy has been revoked.
     Label throw_proxy_handler_revoked(this, Label::kDeferred);
-    TNode<HeapObject> handler = CAST(
-        LoadObjectField(receiver_heap_object, offsetof(JSProxy, handler_)));
+    TNode<HeapObject> handler =
+        CAST(LoadObjectField(receiver_heap_object, JSProxy::kHandlerOffset));
     CSA_DCHECK(this, IsNullOrJSReceiver(handler));
     GotoIfNot(JSAnyIsNotPrimitive(handler), &throw_proxy_handler_revoked);
 
@@ -1220,7 +1216,7 @@ TF_BUILTIN(ObjectToString, ObjectBuiltinsAssembler) {
   }
 }
 
-// https://tc39.es/ecma262/#sec-object.create
+// ES #sec-object.create
 TF_BUILTIN(ObjectCreate, ObjectBuiltinsAssembler) {
   int const kPrototypeArg = 0;
   int const kPropertiesArg = 1;
@@ -1290,8 +1286,8 @@ TF_BUILTIN(ObjectCreate, ObjectBuiltinsAssembler) {
       TNode<PrototypeInfo> prototype_info =
           LoadMapPrototypeInfo(LoadMap(CAST(prototype)), &call_runtime);
       Comment("Load ObjectCreateMap from PrototypeInfo");
-      TNode<HeapObject> derived_maps = CAST(LoadObjectField(
-          prototype_info, offsetof(PrototypeInfo, derived_maps_)));
+      TNode<HeapObject> derived_maps = CAST(
+          LoadObjectField(prototype_info, PrototypeInfo::kDerivedMapsOffset));
       // In case it exists, derived maps is a weak array list where the first
       // element is the object create map.
       GotoIf(TaggedEqual(derived_maps, UndefinedConstant()), &call_runtime);
@@ -1319,7 +1315,7 @@ TF_BUILTIN(ObjectCreate, ObjectBuiltinsAssembler) {
   }
 }
 
-// https://tc39.es/ecma262/#sec-object.is
+// ES #sec-object.is
 TF_BUILTIN(ObjectIs, ObjectBuiltinsAssembler) {
   const auto left = Parameter<Object>(Descriptor::kLeft);
   const auto right = Parameter<Object>(Descriptor::kRight);
@@ -1408,10 +1404,15 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   // have one.
   Label done(this), runtime(this);
   GotoIfForceSlowPath(&runtime);
-  TNode<Map> map = LoadJSFunctionInitialMap(closure, &runtime);
+  GotoIfNot(IsFunctionWithPrototypeSlotMap(LoadMap(closure)), &runtime);
+  TNode<UnionOf<JSPrototype, Map, TheHole>> maybe_map =
+      LoadObjectField<UnionOf<JSPrototype, Map, TheHole>>(
+          closure, JSFunction::kPrototypeOrInitialMapOffset);
+  GotoIf(DoesntHaveInstanceType(maybe_map, MAP_TYPE), &runtime);
+  TNode<Map> map = CAST(maybe_map);
 
   TNode<SharedFunctionInfo> shared = LoadObjectField<SharedFunctionInfo>(
-      closure, offsetof(JSFunction, shared_function_info_));
+      closure, JSFunction::kSharedFunctionInfoOffset);
   // TODO(40931165): load bytecode array from function's dispatch table entry
   // when available instead of shared function info.
   TNode<BytecodeArray> bytecode_array =
@@ -1420,8 +1421,8 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<IntPtrT> parameter_count = Signed(ChangeUint32ToWord(
       LoadBytecodeArrayParameterCountWithoutReceiver(bytecode_array)));
 
-  TNode<IntPtrT> frame_size = ChangeInt32ToIntPtr(LoadObjectField<Int32T>(
-      bytecode_array, offsetof(BytecodeArray, frame_size_)));
+  TNode<IntPtrT> frame_size = ChangeInt32ToIntPtr(
+      LoadObjectField<Int32T>(bytecode_array, BytecodeArray::kFrameSizeOffset));
   TNode<IntPtrT> length =
       IntPtrAdd(WordSar(frame_size, IntPtrConstant(kSystemPointerSizeLog2)),
                 parameter_count);
@@ -1434,34 +1435,30 @@ TF_BUILTIN(CreateGeneratorObject, ObjectBuiltinsAssembler) {
   TNode<JSObject> result =
       AllocateJSObjectFromMap(map, std::nullopt, std::nullopt,
                               AllocationFlag::kNone, kWithSlackTracking);
-  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, function_),
+  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kFunctionOffset,
                                  closure);
-  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, context_),
+  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kContextOffset,
                                  context);
-  StoreObjectFieldNoWriteBarrier(result, offsetof(JSGeneratorObject, receiver_),
+  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kReceiverOffset,
                                  receiver);
   StoreObjectFieldNoWriteBarrier(
-      result, offsetof(JSGeneratorObject, parameters_and_registers_),
+      result, JSGeneratorObject::kParametersAndRegistersOffset,
       parameters_and_registers);
   TNode<Smi> resume_mode = SmiConstant(JSGeneratorObject::ResumeMode::kNext);
-  StoreObjectFieldNoWriteBarrier(
-      result, offsetof(JSGeneratorObject, resume_mode_), resume_mode);
+  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kResumeModeOffset,
+                                 resume_mode);
   TNode<Smi> executing = SmiConstant(JSGeneratorObject::kGeneratorExecuting);
-  StoreObjectFieldNoWriteBarrier(
-      result, offsetof(JSGeneratorObject, continuation_), executing);
-  StoreObjectFieldNoWriteBarrier(
-      result, offsetof(JSGeneratorObject, yielded_value_), UndefinedConstant());
+  StoreObjectFieldNoWriteBarrier(result, JSGeneratorObject::kContinuationOffset,
+                                 executing);
   GotoIfNot(InstanceTypeEqual(LoadMapInstanceType(map),
                               JS_ASYNC_GENERATOR_OBJECT_TYPE),
             &done);
   StoreObjectFieldNoWriteBarrier(
-      result, offsetof(JSAsyncGeneratorObject, is_awaiting_), SmiConstant(0));
+      result, JSAsyncGeneratorObject::kIsAwaitingOffset, SmiConstant(0));
   Goto(&done);
 
   BIND(&done);
-  {
-    Return(result);
-  }
+  { Return(result); }
 
   BIND(&runtime);
   {

@@ -306,22 +306,6 @@ class BalancedPoolMissingUpstreamError extends UndiciError {
   }
 }
 
-const kWebAssemblyNotSupportedError = Symbol.for('undici.error.ERR_WEBASSEMBLY_NOT_SUPPORTED')
-class WebAssemblyNotSupportedError extends Error {
-  constructor (message) {
-    super(message || 'WebAssembly is not supported in this environment, but is required for HTTP/1 parsing')
-    this.code = 'ERR_WEBASSEMBLY_NOT_SUPPORTED'
-  }
-
-  static [Symbol.hasInstance] (instance) {
-    return instance && instance[kWebAssemblyNotSupportedError] === true
-  }
-
-  get [kWebAssemblyNotSupportedError] () {
-    return true
-  }
-}
-
 const kHTTPParserError = Symbol.for('undici.error.UND_ERR_HTTP_PARSER')
 class HTTPParserError extends Error {
   constructor (message, code, data) {
@@ -381,14 +365,13 @@ class RequestRetryError extends UndiciError {
 
 const kResponseError = Symbol.for('undici.error.UND_ERR_RESPONSE')
 class ResponseError extends UndiciError {
-  constructor (message, code, { headers, body, bodyTruncated = false }) {
+  constructor (message, code, { headers, body }) {
     super(message)
     this.name = 'ResponseError'
     this.message = message || 'Response error'
     this.code = 'UND_ERR_RESPONSE'
     this.statusCode = code
     this.body = body
-    this.bodyTruncated = bodyTruncated
     this.headers = headers
   }
 
@@ -435,24 +418,6 @@ class ProxyConnectionError extends UndiciError {
   }
 
   get [kProxyConnectionError] () {
-    return true
-  }
-}
-
-const kMaxRedirectsError = Symbol.for('undici.error.UND_ERR_REDIRECT_MAX')
-class MaxRedirectsError extends UndiciError {
-  constructor (message) {
-    super(message)
-    this.name = 'MaxRedirectsError'
-    this.message = message || 'max redirects'
-    this.code = 'UND_ERR_REDIRECT_MAX'
-  }
-
-  static [Symbol.hasInstance] (instance) {
-    return instance && instance[kMaxRedirectsError] === true
-  }
-
-  get [kMaxRedirectsError] () {
     return true
   }
 }
@@ -504,7 +469,6 @@ class MessageSizeExceededError extends UndiciError {
 
 module.exports = {
   AbortError,
-  WebAssemblyNotSupportedError,
   HTTPParserError,
   UndiciError,
   HeadersTimeoutError,
@@ -528,7 +492,6 @@ module.exports = {
   SecureProxyConnectionError,
   ProxyConnectionError,
   MaxOriginsReachedError,
-  MaxRedirectsError,
   Socks5ProxyError,
   MessageSizeExceededError
 }

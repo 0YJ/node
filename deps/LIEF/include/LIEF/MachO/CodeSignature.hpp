@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 #include <cstdint>
 
 #include "LIEF/span.hpp"
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 
 #include "LIEF/MachO/LoadCommand.hpp"
@@ -68,11 +67,11 @@ class LIEF_API CodeSignature : public LoadCommand {
     data_size_ = size;
   }
 
-  span<uint8_t> content() LIEF_LIFETIMEBOUND {
+  span<uint8_t> content() {
     return content_;
   }
 
-  span<const uint8_t> content() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> content() const {
     return content_;
   }
 
@@ -90,6 +89,7 @@ class LIEF_API CodeSignature : public LoadCommand {
   uint32_t data_offset_ = 0;
   uint32_t data_size_ = 0;
   span<uint8_t> content_;
+
 };
 
 }

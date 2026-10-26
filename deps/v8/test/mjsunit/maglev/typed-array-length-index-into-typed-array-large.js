@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // Flags: --allow-natives-syntax --maglev
-// Flags: --typed-array-length-loading --multi-mapped-mock-allocator
+// Flags: --typed-array-length-loading
 // Flags: --no-optimize-maglev-optimizes-to-turbofan
 
 function foo(size) {
@@ -23,16 +23,16 @@ if (%Is64Bit()) {
     %OptimizeMaglevOnNextCall(foo);
     const a1 = foo(100);
     assertEquals(1, a1[100]);
-    assertMaglevved(foo);
+    assertTrue(isMaglevved(foo));
 
     const a2 = foo(largeLength);
     assertEquals(1, a2[largeLength]);
 
     // TODO(389019544): Fix the deopt loop and enable this:
-    // assertMaglevved(foo);
+    // assertTrue(isMaglevved(foo));
     // Once this is fixed also --no-optimize-maglev-optimizes-to-turbofan
     // could be removed.
-    assertNotMaglevved(foo);  // This will fail when the issue is fixed.
+    assertFalse(isMaglevved(foo));  // This will fail when the issue is fixed.
   } catch (e) {
     // If alloating the TypedArray failed, we'll get a RangeError. Other
     // errors are just normal test failures.

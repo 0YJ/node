@@ -193,8 +193,8 @@ class V8FileLogger : public LogEventListener {
   void SetterCallbackEvent(DirectHandle<Name> name,
                            Address entry_point) override;
   void RegExpCodeCreateEvent(DirectHandle<AbstractCode> code,
-                             DirectHandle<String> escaped_source,
-                             regexp::Flags flags) override;
+                             DirectHandle<String> source,
+                             RegExpFlags flags) override;
   void CodeMoveEvent(Tagged<InstructionStream> from,
                      Tagged<InstructionStream> to) override;
   void BytecodeMoveEvent(Tagged<BytecodeArray> from,
@@ -206,14 +206,14 @@ class V8FileLogger : public LogEventListener {
                            DirectHandle<SharedFunctionInfo> shared) override;
   void CodeDeoptEvent(DirectHandle<Code> code, DeoptimizeKind kind, Address pc,
                       int fp_to_sp_delta) override;
-  void CodeDependencyChangeEvent(Tagged<Code> code,
-                                 Tagged<SharedFunctionInfo> sfi,
+  void CodeDependencyChangeEvent(DirectHandle<Code> code,
+                                 DirectHandle<SharedFunctionInfo> sfi,
                                  const char* reason) override;
   void FeedbackVectorEvent(Tagged<FeedbackVector> vector,
                            Tagged<AbstractCode> code);
   void WeakCodeClearEvent() override {}
 
-  void ProcessDeoptEvent(Tagged<Code> code, SourcePosition position,
+  void ProcessDeoptEvent(DirectHandle<Code> code, SourcePosition position,
                          const char* kind, const char* reason);
 
   // Emits a code line info record event.
@@ -235,9 +235,6 @@ class V8FileLogger : public LogEventListener {
       const char* type, DirectHandle<Map> from, DirectHandle<Map> to,
       const char* reason = nullptr,
       DirectHandle<HeapObject> name_or_sfi = DirectHandle<HeapObject>());
-  void MapEvent(DisallowGarbageCollection& no_gc, const char* type,
-                Tagged<Map> from, Tagged<Map> to, const char* reason = nullptr,
-                Tagged<HeapObject> name_or_sfi = Tagged<HeapObject>());
   void MapCreate(Tagged<Map> map);
   void MapDetails(Tagged<Map> map);
   void MapMoveEvent(Tagged<Map> from, Tagged<Map> to);
@@ -450,8 +447,8 @@ class V8_EXPORT_PRIVATE CodeEventLogger : public LogEventListener {
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   void RegExpCodeCreateEvent(DirectHandle<AbstractCode> code,
-                             DirectHandle<String> escaped_source,
-                             regexp::Flags flags) override;
+                             DirectHandle<String> source,
+                             RegExpFlags flags) override;
   void CallbackEvent(DirectHandle<Name> name, Address entry_point) override {}
   void GetterCallbackEvent(DirectHandle<Name> name,
                            Address entry_point) override {}
@@ -462,8 +459,8 @@ class V8_EXPORT_PRIVATE CodeEventLogger : public LogEventListener {
   void CodeMovingGCEvent() override {}
   void CodeDeoptEvent(DirectHandle<Code> code, DeoptimizeKind kind, Address pc,
                       int fp_to_sp_delta) override {}
-  void CodeDependencyChangeEvent(Tagged<Code> code,
-                                 Tagged<SharedFunctionInfo> sfi,
+  void CodeDependencyChangeEvent(DirectHandle<Code> code,
+                                 DirectHandle<SharedFunctionInfo> sfi,
                                  const char* reason) override {}
   void WeakCodeClearEvent() override {}
 
@@ -523,8 +520,8 @@ class ExternalLogEventListener : public LogEventListener {
 #endif  // V8_ENABLE_WEBASSEMBLY
 
   void RegExpCodeCreateEvent(DirectHandle<AbstractCode> code,
-                             DirectHandle<String> escaped_source,
-                             regexp::Flags flags) override;
+                             DirectHandle<String> source,
+                             RegExpFlags flags) override;
   void CallbackEvent(DirectHandle<Name> name, Address entry_point) override {}
   void GetterCallbackEvent(DirectHandle<Name> name,
                            Address entry_point) override {}
@@ -541,8 +538,8 @@ class ExternalLogEventListener : public LogEventListener {
   void CodeMovingGCEvent() override {}
   void CodeDeoptEvent(DirectHandle<Code> code, DeoptimizeKind kind, Address pc,
                       int fp_to_sp_delta) override {}
-  void CodeDependencyChangeEvent(Tagged<Code> code,
-                                 Tagged<SharedFunctionInfo> sfi,
+  void CodeDependencyChangeEvent(DirectHandle<Code> code,
+                                 DirectHandle<SharedFunctionInfo> sfi,
                                  const char* reason) override {}
   void WeakCodeClearEvent() override {}
 

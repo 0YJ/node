@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 #define LIEF_MACHO_SYMBOL_COMMAND_H
 #include <ostream>
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/span.hpp"
 
@@ -65,7 +64,7 @@ class LIEF_API SymbolCommand : public LoadCommand {
     return strings_offset_;
   }
 
-  /// Size of the string table
+  /// Size of the size string table
   uint32_t strings_size() const {
     return strings_size_;
   }
@@ -83,19 +82,19 @@ class LIEF_API SymbolCommand : public LoadCommand {
     strings_size_ = size;
   }
 
-  span<const uint8_t> symbol_table() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> symbol_table() const {
     return symbol_table_;
   }
 
-  span<uint8_t> symbol_table() LIEF_LIFETIMEBOUND {
+  span<uint8_t> symbol_table() {
     return symbol_table_;
   }
 
-  span<const uint8_t> string_table() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> string_table() const {
     return string_table_;
   }
 
-  span<uint8_t> string_table() LIEF_LIFETIMEBOUND {
+  span<uint8_t> string_table() {
     return string_table_;
   }
 
@@ -117,11 +116,11 @@ class LIEF_API SymbolCommand : public LoadCommand {
 
   private:
   uint32_t symbols_offset_ = 0;
-  uint32_t nb_symbols_ = 0;
+  uint32_t nb_symbols_     = 0;
   uint32_t strings_offset_ = 0;
-  uint32_t strings_size_ = 0;
+  uint32_t strings_size_   = 0;
 
-  uint32_t original_str_size_ = 0;
+  uint32_t original_str_size_   = 0;
   uint32_t original_nb_symbols_ = 0;
 
   span<uint8_t> symbol_table_;

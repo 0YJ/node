@@ -19,7 +19,6 @@ namespace v8 {
 namespace internal {
 
 class BigInt;
-struct SandboxFreeDeleter;
 class SharedStringAccessGuardIfNeeded;
 
 // uint64_t constants prefixed with kFP64 are bit patterns of doubles.
@@ -66,7 +65,7 @@ constexpr uint32_t kFP32MinFP16ZeroRepresentable = 0x33000000;
 constexpr uint32_t kFP32MaxFP16Representable = 0x47800000;
 constexpr uint32_t kFP32SubnormalThresholdOfFP16 = 0x38800000;
 
-// The limit for the fractionDigits/precision for toFixed, toPrecision
+// The limit for the the fractionDigits/precision for toFixed, toPrecision
 // and toExponential.
 constexpr int kMaxFractionDigits = 100;
 constexpr int kDoubleToFixedMaxDigitsBeforePoint = 21;
@@ -181,7 +180,7 @@ ImplicitOctalStringToDouble(base::Vector<const uint8_t> str);
 
 double StringToInt(Isolate* isolate, DirectHandle<String> string, int radix);
 
-// This follows https://tc39.es/proposal-bigint/#sec-string-to-bigint
+// This follows https://tc39.github.io/proposal-bigint/#sec-string-to-bigint
 // semantics: "" => 0n.
 MaybeHandle<BigInt> StringToBigInt(Isolate* isolate,
                                    DirectHandle<String> string);
@@ -205,8 +204,7 @@ constexpr int kDoubleToStringMinBufferSize = 100;
 V8_EXPORT_PRIVATE std::string_view DoubleToStringView(
     double value, base::Vector<char> buffer);
 
-using SandboxChars = std::unique_ptr<uint8_t, SandboxFreeDeleter>;
-std::pair<SandboxChars, uint32_t> BigIntLiteralToDecimal(
+V8_EXPORT_PRIVATE std::unique_ptr<char[]> BigIntLiteralToDecimal(
     LocalIsolate* isolate, base::Vector<const uint8_t> literal);
 // Convert an int to string value. The returned string is located inside the
 // buffer, but not necessarily at the start.

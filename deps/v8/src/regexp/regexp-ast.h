@@ -17,7 +17,7 @@
 #include "unicode/uniset.h"
 #endif  // V8_INTL_SUPPORT
 
-namespace v8::internal::regexp {
+namespace v8::internal {
 
 #define FOR_EACH_REG_EXP_TREE_TYPE(VISIT) \
   VISIT(Disjunction)                      \
@@ -35,18 +35,19 @@ namespace v8::internal::regexp {
   VISIT(Empty)                            \
   VISIT(Text)
 
-#define FORWARD_DECLARE(Name) class Name;
+#define FORWARD_DECLARE(Name) class RegExp##Name;
 FOR_EACH_REG_EXP_TREE_TYPE(FORWARD_DECLARE)
 #undef FORWARD_DECLARE
 
-class Compiler;
-class Node;
-class Tree;
+class RegExpCompiler;
+class RegExpNode;
+class RegExpTree;
 
-class Visitor {
+class RegExpVisitor {
  public:
-  virtual ~Visitor() = default;
-#define MAKE_CASE(Name) virtual void* Visit##Name(Name*, void* data) = 0;
+  virtual ~RegExpVisitor() = default;
+#define MAKE_CASE(Name) \
+  virtual void* Visit##Name(RegExp##Name*, void* data) = 0;
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_CASE)
 #undef MAKE_CASE
 };
@@ -57,43 +58,22 @@ class Interval {
   Interval() : from_(kNone), to_(kNone - 1) {}  // '- 1' for branchless size().
   Interval(int from, int to) : from_(from), to_(to) {}
   Interval Union(Interval that) {
-    if (!is_valid()) return *this;
-    if (!that.is_valid()) return that;
     if (that.from_ == kNone) return *this;
     if (from_ == kNone) return that;
     return Interval(std::min(from_, that.from_), std::max(to_, that.to_));
   }
 
   static Interval Empty() { return Interval(); }
-  static Interval Invalid() { return Interval(kInvalid, kInvalid); }
 
-  bool Contains(int value) const {
-    DCHECK(is_valid());
-    return (from_ <= value) && (value <= to_);
-  }
-  bool is_empty() const {
-    DCHECK(is_valid());
-    return from_ == kNone;
-  }
-  bool is_valid() const { return from_ != kInvalid; }
-  int from() const {
-    DCHECK(is_valid());
-    return from_;
-  }
-  int to() const {
-    DCHECK(is_valid());
-    return to_;
-  }
-  int size() const {
-    DCHECK(is_valid());
-    return to_ - from_ + 1;
-  }
+  bool Contains(int value) const { return (from_ <= value) && (value <= to_); }
+  bool is_empty() const { return from_ == kNone; }
+  int from() const { return from_; }
+  int to() const { return to_; }
+  int size() const { return to_ - from_ + 1; }
 
   static constexpr int kNone = -1;
 
  private:
-  static constexpr int kInvalid = -2;
-
   int from_;
   int to_;
 };
@@ -178,9 +158,6 @@ class CharacterRange {
   static void Intersect(const ZoneList<CharacterRange>* lhs,
                         const ZoneList<CharacterRange>* rhs,
                         ZoneList<CharacterRange>* dst, Zone* zone);
-  // Whether two character ranges in canonical form intersect.
-  static bool Intersects(const ZoneList<CharacterRange>* lhs,
-                         const ZoneList<CharacterRange>* rhs);
   // Subtract the contents of |to_remove| from the contents of |src|.
   static void Subtract(const ZoneList<CharacterRange>* src,
                        const ZoneList<CharacterRange>* to_remove,
@@ -207,115 +184,95 @@ inline bool operator!=(const CharacterRange& lhs, const CharacterRange& rhs) {
   return !operator==(lhs, rhs);
 }
 
-class StackLimiter {
- public:
-  explicit StackLimiter(int budget) : budget_(budget) {}
-
-  // Remember to decrement, not copy.
-  StackLimiter(StackLimiter& other) = delete;
-  StackLimiter(const StackLimiter& other) = delete;
-  StackLimiter& operator=(const StackLimiter&) = delete;
-  StackLimiter(StackLimiter&&) = delete;
-  StackLimiter& operator=(StackLimiter&&) = delete;
-
-  StackLimiter operator-(int value) { return StackLimiter(budget_ - value); }
-
-  bool IsOverflowed();
-
- private:
-  int budget_;
-};
-
-#define DECL_BOILERPLATE(Name)                                     \
-  void* Accept(Visitor* visitor, void* data) override;             \
-  Node* ToNodeImpl(Compiler* compiler, Node* on_success) override; \
-  Name* As##Name() override;                                       \
+#define DECL_BOILERPLATE(Name)                                             \
+  void* Accept(RegExpVisitor* visitor, void* data) override;               \
+  RegExpNode* ToNodeImpl(RegExpCompiler* compiler, RegExpNode* on_success) \
+      override;                                                            \
+  RegExp##Name* As##Name() override;                                       \
   bool Is##Name() override
 
-class Tree : public ZoneObject {
+class RegExpTree : public ZoneObject {
  public:
   static const int kInfinity = kMaxInt;
-  virtual ~Tree() = default;
-  virtual void* Accept(Visitor* visitor, void* data) = 0;
-  Node* ToNode(Compiler* compiler, Node* on_success);
-  virtual Node* ToNodeImpl(Compiler* compiler, Node* on_success) = 0;
+  virtual ~RegExpTree() = default;
+  virtual void* Accept(RegExpVisitor* visitor, void* data) = 0;
+  RegExpNode* ToNode(RegExpCompiler* compiler, RegExpNode* on_success);
+  virtual RegExpNode* ToNodeImpl(RegExpCompiler* compiler,
+                                 RegExpNode* on_success) = 0;
   virtual bool IsTextElement() { return false; }
-  virtual bool IsCertainlyAnchoredAtStart(int budget) { return false; }
-  virtual bool IsCertainlyAnchoredAtEnd(int budget) { return false; }
+  virtual bool IsAnchoredAtStart() { return false; }
+  virtual bool IsAnchoredAtEnd() { return false; }
   virtual int min_match() = 0;
   virtual int max_match() = 0;
   // Returns the interval of registers used for captures within this
   // expression.
-  virtual Interval CaptureRegisters(StackLimiter limiter) {
-    return Interval::Empty();
-  }
-  virtual void AppendToText(Text* text, Zone* zone);
-#define MAKE_ASTYPE(Name)   \
-  virtual Name* As##Name(); \
+  virtual Interval CaptureRegisters() { return Interval::Empty(); }
+  virtual void AppendToText(RegExpText* text, Zone* zone);
+#define MAKE_ASTYPE(Name)           \
+  virtual RegExp##Name* As##Name(); \
   virtual bool Is##Name();
   FOR_EACH_REG_EXP_TREE_TYPE(MAKE_ASTYPE)
 #undef MAKE_ASTYPE
 };
 
-class Disjunction final : public Tree {
+class RegExpDisjunction final : public RegExpTree {
  public:
-  explicit Disjunction(ZoneList<Tree*>* alternatives);
+  explicit RegExpDisjunction(ZoneList<RegExpTree*>* alternatives);
 
   DECL_BOILERPLATE(Disjunction);
 
-  Interval CaptureRegisters(StackLimiter limiter) override;
-  bool IsCertainlyAnchoredAtStart(int budget) override;
-  bool IsCertainlyAnchoredAtEnd(int budget) override;
+  Interval CaptureRegisters() override;
+  bool IsAnchoredAtStart() override;
+  bool IsAnchoredAtEnd() override;
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
-  ZoneList<Tree*>* alternatives() const { return alternatives_; }
+  ZoneList<RegExpTree*>* alternatives() const { return alternatives_; }
 
  private:
-  bool SortConsecutiveAtoms(Compiler* compiler);
-  void RationalizeConsecutiveAtoms(Compiler* compiler);
-  void FixSingleCharacterDisjunctions(Compiler* compiler);
-  ZoneList<Tree*>* alternatives_;
+  bool SortConsecutiveAtoms(RegExpCompiler* compiler);
+  void RationalizeConsecutiveAtoms(RegExpCompiler* compiler);
+  void FixSingleCharacterDisjunctions(RegExpCompiler* compiler);
+  ZoneList<RegExpTree*>* alternatives_;
   int min_match_;
   int max_match_;
 };
 
-class Alternative final : public Tree {
+class RegExpAlternative final : public RegExpTree {
  public:
-  explicit Alternative(ZoneList<Tree*>* nodes);
+  explicit RegExpAlternative(ZoneList<RegExpTree*>* nodes);
 
   DECL_BOILERPLATE(Alternative);
 
-  Interval CaptureRegisters(StackLimiter limiter) override;
-  bool IsCertainlyAnchoredAtStart(int budget) override;
-  bool IsCertainlyAnchoredAtEnd(int budget) override;
+  Interval CaptureRegisters() override;
+  bool IsAnchoredAtStart() override;
+  bool IsAnchoredAtEnd() override;
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
-  ZoneList<Tree*>* nodes() const { return nodes_; }
+  ZoneList<RegExpTree*>* nodes() const { return nodes_; }
 
  private:
-  ZoneList<Tree*>* nodes_;
+  ZoneList<RegExpTree*>* nodes_;
   int min_match_;
   int max_match_;
 };
 
-class Assertion final : public Tree {
+class RegExpAssertion final : public RegExpTree {
  public:
   enum class Type {
     START_OF_LINE = 0,
     START_OF_INPUT = 1,
     END_OF_LINE = 2,
     END_OF_INPUT = 3,
-    END_OF_BUFFER = 4,
-    BOUNDARY = 5,
-    NON_BOUNDARY = 6,
+    BOUNDARY = 4,
+    NON_BOUNDARY = 5,
     LAST_ASSERTION_TYPE = NON_BOUNDARY,
   };
-  explicit Assertion(Type type) : assertion_type_(type) {}
+  explicit RegExpAssertion(Type type) : assertion_type_(type) {}
 
   DECL_BOILERPLATE(Assertion);
 
-  bool IsCertainlyAnchoredAtStart(int budget) override;
-  bool IsCertainlyAnchoredAtEnd(int budget) override;
+  bool IsAnchoredAtStart() override;
+  bool IsAnchoredAtEnd() override;
   int min_match() override { return 0; }
   int max_match() override { return 0; }
   Type assertion_type() const { return assertion_type_; }
@@ -345,7 +302,7 @@ class CharacterSet final {
   std::optional<StandardCharacterSet> standard_set_type_;
 };
 
-class ClassRanges final : public Tree {
+class RegExpClassRanges final : public RegExpTree {
  public:
   // NEGATED: The character class is negated and should match everything but
   //     the specified ranges.
@@ -362,9 +319,9 @@ class ClassRanges final : public Tree {
   };
   using ClassRangesFlags = base::Flags<Flag>;
 
-  ClassRanges(Zone* zone, ZoneList<CharacterRange>* ranges,
-              ClassRangesFlags class_ranges_flags = ClassRangesFlags());
-  explicit ClassRanges(StandardCharacterSet standard_set_type)
+  RegExpClassRanges(Zone* zone, ZoneList<CharacterRange>* ranges,
+                    ClassRangesFlags class_ranges_flags = ClassRangesFlags());
+  explicit RegExpClassRanges(StandardCharacterSet standard_set_type)
       : set_(standard_set_type), class_ranges_flags_() {}
 
   DECL_BOILERPLATE(ClassRanges);
@@ -386,7 +343,7 @@ class ClassRanges final : public Tree {
     return 2;
   }
 
-  void AppendToText(Text* text, Zone* zone) override;
+  void AppendToText(RegExpText* text, Zone* zone) override;
 
   // TODO(lrn): Remove need for complex version if is_standard that
   // recognizes a mangled standard set and just do { return set_.is_special(); }
@@ -443,15 +400,16 @@ struct CharacterClassStringLess {
 // we can avoid sorting before assembling the code.
 // Strings are likely short (the largest string in current unicode properties
 // consists of 10 code points).
-using CharacterClassStrings =
-    ZoneMap<base::Vector<const base::uc32>, Tree*, CharacterClassStringLess>;
+using CharacterClassStrings = ZoneMap<base::Vector<const base::uc32>,
+                                      RegExpTree*, CharacterClassStringLess>;
 
 // TODO(pthier): If we are sure we don't want to use icu::UnicodeSets
-// (performance evaluation pending), this class can be merged with ClassRanges.
-class ClassSetOperand final : public Tree {
+// (performance evaluation pending), this class can be merged with
+// RegExpClassRanges.
+class RegExpClassSetOperand final : public RegExpTree {
  public:
-  ClassSetOperand(ZoneList<CharacterRange>* ranges,
-                  CharacterClassStrings* strings);
+  RegExpClassSetOperand(ZoneList<CharacterRange>* ranges,
+                        CharacterClassStrings* strings);
 
   DECL_BOILERPLATE(ClassSetOperand);
 
@@ -459,11 +417,11 @@ class ClassSetOperand final : public Tree {
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
 
-  void Union(ClassSetOperand* other, Zone* zone);
-  void Intersect(ClassSetOperand* other, ZoneList<CharacterRange>* temp_ranges,
-                 Zone* zone);
-  void Subtract(ClassSetOperand* other, ZoneList<CharacterRange>* temp_ranges,
-                Zone* zone);
+  void Union(RegExpClassSetOperand* other, Zone* zone);
+  void Intersect(RegExpClassSetOperand* other,
+                 ZoneList<CharacterRange>* temp_ranges, Zone* zone);
+  void Subtract(RegExpClassSetOperand* other,
+                ZoneList<CharacterRange>* temp_ranges, Zone* zone);
 
   bool has_strings() const { return strings_ != nullptr && !strings_->empty(); }
   ZoneList<CharacterRange>* ranges() { return ranges_; }
@@ -479,18 +437,19 @@ class ClassSetOperand final : public Tree {
   int max_match_;
 };
 
-class ClassSetExpression final : public Tree {
+class RegExpClassSetExpression final : public RegExpTree {
  public:
   enum class OperationType { kUnion, kIntersection, kSubtraction };
 
-  ClassSetExpression(OperationType op, bool is_negated,
-                     bool may_contain_strings, ZoneList<Tree*>* operands);
+  RegExpClassSetExpression(OperationType op, bool is_negated,
+                           bool may_contain_strings,
+                           ZoneList<RegExpTree*>* operands);
 
   DECL_BOILERPLATE(ClassSetExpression);
 
   // Create an empty class set expression (matches everything if |is_negated|,
   // nothing otherwise).
-  static ClassSetExpression* Empty(Zone* zone, bool is_negated);
+  static RegExpClassSetExpression* Empty(Zone* zone, bool is_negated);
 
   bool IsTextElement() override { return true; }
   int min_match() override { return 0; }
@@ -499,8 +458,8 @@ class ClassSetExpression final : public Tree {
   OperationType operation() const { return operation_; }
   bool is_negated() const { return is_negated_; }
   bool may_contain_strings() const { return may_contain_strings_; }
-  const ZoneList<Tree*>* operands() const { return operands_; }
-  ZoneList<Tree*>* operands() { return operands_; }
+  const ZoneList<RegExpTree*>* operands() const { return operands_; }
+  ZoneList<RegExpTree*>* operands() { return operands_; }
 
  private:
   // Recursively evaluates the tree rooted at |root|, computing the valid
@@ -511,26 +470,26 @@ class ClassSetExpression final : public Tree {
   // the method (e.g. when unrolling quantifiers).
   // |temp_ranges| is used for intermediate results, passed as parameter to
   // avoid allocating new lists all the time.
-  static ClassSetOperand* ComputeExpression(
-      Tree* root, ZoneList<CharacterRange>* temp_ranges, Zone* zone);
+  static RegExpClassSetOperand* ComputeExpression(
+      RegExpTree* root, ZoneList<CharacterRange>* temp_ranges, Zone* zone);
 
   const OperationType operation_;
   bool is_negated_;
   const bool may_contain_strings_;
-  ZoneList<Tree*>* operands_ = nullptr;
+  ZoneList<RegExpTree*>* operands_ = nullptr;
   int max_match_;
 };
 
-class Atom final : public Tree {
+class RegExpAtom final : public RegExpTree {
  public:
-  explicit Atom(base::Vector<const base::uc16> data) : data_(data) {}
+  explicit RegExpAtom(base::Vector<const base::uc16> data) : data_(data) {}
 
   DECL_BOILERPLATE(Atom);
 
   bool IsTextElement() override { return true; }
   int min_match() override { return data_.length(); }
   int max_match() override { return data_.length(); }
-  void AppendToText(Text* text, Zone* zone) override;
+  void AppendToText(RegExpText* text, Zone* zone) override;
 
   base::Vector<const base::uc16> data() const { return data_; }
   int length() const { return data_.length(); }
@@ -543,8 +502,8 @@ class TextElement final {
  public:
   enum TextType { ATOM, CLASS_RANGES };
 
-  static TextElement FromAtom(Atom* atom);
-  static TextElement FromClassRanges(ClassRanges* class_ranges);
+  static TextElement Atom(RegExpAtom* atom);
+  static TextElement ClassRanges(RegExpClassRanges* class_ranges);
 
   int cp_offset() const { return cp_offset_; }
   void set_cp_offset(int cp_offset) { cp_offset_ = cp_offset; }
@@ -552,37 +511,37 @@ class TextElement final {
 
   TextType text_type() const { return text_type_; }
 
-  Tree* tree() const { return tree_; }
+  RegExpTree* tree() const { return tree_; }
 
-  Atom* atom() const {
+  RegExpAtom* atom() const {
     DCHECK(text_type() == ATOM);
-    return reinterpret_cast<Atom*>(tree());
+    return reinterpret_cast<RegExpAtom*>(tree());
   }
 
-  ClassRanges* class_ranges() const {
+  RegExpClassRanges* class_ranges() const {
     DCHECK(text_type() == CLASS_RANGES);
-    return reinterpret_cast<ClassRanges*>(tree());
+    return reinterpret_cast<RegExpClassRanges*>(tree());
   }
 
  private:
-  TextElement(TextType text_type, Tree* tree)
+  TextElement(TextType text_type, RegExpTree* tree)
       : cp_offset_(-1), text_type_(text_type), tree_(tree) {}
 
   int cp_offset_;
   TextType text_type_;
-  Tree* tree_;
+  RegExpTree* tree_;
 };
 
-class Text final : public Tree {
+class RegExpText final : public RegExpTree {
  public:
-  explicit Text(Zone* zone) : elements_(2, zone) {}
+  explicit RegExpText(Zone* zone) : elements_(2, zone) {}
 
   DECL_BOILERPLATE(Text);
 
   bool IsTextElement() override { return true; }
   int min_match() override { return length_; }
   int max_match() override { return length_; }
-  void AppendToText(Text* text, Zone* zone) override;
+  void AppendToText(RegExpText* text, Zone* zone) override;
   void AddElement(TextElement elm, Zone* zone) {
     elements_.Add(elm, zone);
     length_ += elm.length();
@@ -590,17 +549,18 @@ class Text final : public Tree {
   ZoneList<TextElement>* elements() { return &elements_; }
 
   bool StartsWithAtom() const;
-  Atom* FirstAtom() const;
+  RegExpAtom* FirstAtom() const;
 
  private:
   ZoneList<TextElement> elements_;
   int length_ = 0;
 };
 
-class Quantifier final : public Tree {
+class RegExpQuantifier final : public RegExpTree {
  public:
   enum QuantifierType { GREEDY, NON_GREEDY, POSSESSIVE };
-  Quantifier(int min, int max, QuantifierType type, int index, Tree* body)
+  RegExpQuantifier(int min, int max, QuantifierType type, int index,
+                   RegExpTree* body)
       : body_(body),
         min_(min),
         max_(max),
@@ -620,10 +580,10 @@ class Quantifier final : public Tree {
 
   DECL_BOILERPLATE(Quantifier);
 
-  static Node* ToNode(int min, int max, bool is_greedy, Tree* body,
-                      Compiler* compiler, Node* on_success,
-                      bool not_at_start = false);
-  Interval CaptureRegisters(StackLimiter limiter) override;
+  static RegExpNode* ToNode(int min, int max, bool is_greedy, RegExpTree* body,
+                            RegExpCompiler* compiler, RegExpNode* on_success,
+                            bool not_at_start = false);
+  Interval CaptureRegisters() override;
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
   int min() const { return min_; }
@@ -633,10 +593,10 @@ class Quantifier final : public Tree {
   bool is_possessive() const { return quantifier_type_ == POSSESSIVE; }
   bool is_non_greedy() const { return quantifier_type_ == NON_GREEDY; }
   bool is_greedy() const { return quantifier_type_ == GREEDY; }
-  Tree* body() const { return body_; }
+  RegExpTree* body() const { return body_; }
 
  private:
-  Tree* body_;
+  RegExpTree* body_;
   int min_;
   int max_;
   int min_match_;
@@ -645,9 +605,9 @@ class Quantifier final : public Tree {
   int index_;
 };
 
-class Capture final : public Tree {
+class RegExpCapture final : public RegExpTree {
  public:
-  explicit Capture(int index)
+  explicit RegExpCapture(int index)
       : body_(nullptr),
         index_(index),
         min_match_(0),
@@ -656,15 +616,15 @@ class Capture final : public Tree {
 
   DECL_BOILERPLATE(Capture);
 
-  static Node* ToNode(Tree* body, int index, Compiler* compiler,
-                      Node* on_success);
-  bool IsCertainlyAnchoredAtStart(int budget) override;
-  bool IsCertainlyAnchoredAtEnd(int budget) override;
-  Interval CaptureRegisters(StackLimiter limiter) override;
+  static RegExpNode* ToNode(RegExpTree* body, int index,
+                            RegExpCompiler* compiler, RegExpNode* on_success);
+  bool IsAnchoredAtStart() override;
+  bool IsAnchoredAtEnd() override;
+  Interval CaptureRegisters() override;
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
-  Tree* body() { return body_; }
-  void set_body(Tree* body) {
+  RegExpTree* body() { return body_; }
+  void set_body(RegExpTree* body) {
     body_ = body;
     min_match_ = body->min_match();
     max_match_ = body->max_match();
@@ -676,16 +636,16 @@ class Capture final : public Tree {
   static int EndRegister(int index) { return index * 2 + 1; }
 
  private:
-  Tree* body_ = nullptr;
+  RegExpTree* body_ = nullptr;
   int index_;
   int min_match_ = 0;
   int max_match_ = 0;
   const ZoneVector<base::uc16>* name_ = nullptr;
 };
 
-class Group final : public Tree {
+class RegExpGroup final : public RegExpTree {
  public:
-  explicit Group(Tree* body, Flags flags)
+  explicit RegExpGroup(RegExpTree* body, RegExpFlags flags)
       : body_(body),
         flags_(flags),
         min_match_(body->min_match()),
@@ -693,33 +653,27 @@ class Group final : public Tree {
 
   DECL_BOILERPLATE(Group);
 
-  bool IsCertainlyAnchoredAtStart(int budget) override {
-    if (budget < 0) return false;
-    return body_->IsCertainlyAnchoredAtStart(budget - 1);
-  }
-  bool IsCertainlyAnchoredAtEnd(int budget) override {
-    if (budget < 0) return false;
-    return body_->IsCertainlyAnchoredAtEnd(budget - 1);
-  }
+  bool IsAnchoredAtStart() override { return body_->IsAnchoredAtStart(); }
+  bool IsAnchoredAtEnd() override { return body_->IsAnchoredAtEnd(); }
   int min_match() override { return min_match_; }
   int max_match() override { return max_match_; }
-  Interval CaptureRegisters(StackLimiter limiter) override;
-  Tree* body() const { return body_; }
-  Flags flags() const { return flags_; }
+  Interval CaptureRegisters() override { return body_->CaptureRegisters(); }
+  RegExpTree* body() const { return body_; }
+  RegExpFlags flags() const { return flags_; }
 
  private:
-  Tree* body_;
-  const Flags flags_;
+  RegExpTree* body_;
+  const RegExpFlags flags_;
   int min_match_;
   int max_match_;
 };
 
-class Lookaround final : public Tree {
+class RegExpLookaround final : public RegExpTree {
  public:
   enum Type { LOOKAHEAD, LOOKBEHIND };
 
-  Lookaround(Tree* body, bool is_positive, int capture_count, int capture_from,
-             Type type, int index)
+  RegExpLookaround(RegExpTree* body, bool is_positive, int capture_count,
+                   int capture_from, Type type, int index)
       : body_(body),
         is_positive_(is_positive),
         capture_count_(capture_count),
@@ -729,11 +683,11 @@ class Lookaround final : public Tree {
 
   DECL_BOILERPLATE(Lookaround);
 
-  Interval CaptureRegisters(StackLimiter limiter) override;
-  bool IsCertainlyAnchoredAtStart(int budget) override;
+  Interval CaptureRegisters() override;
+  bool IsAnchoredAtStart() override;
   int min_match() override { return 0; }
   int max_match() override { return 0; }
-  Tree* body() const { return body_; }
+  RegExpTree* body() const { return body_; }
   bool is_positive() const { return is_positive_; }
   int capture_count() const { return capture_count_; }
   int capture_from() const { return capture_from_; }
@@ -742,22 +696,22 @@ class Lookaround final : public Tree {
 
   class Builder {
    public:
-    Builder(bool is_positive, Node* on_success, Compiler* compiler,
+    Builder(bool is_positive, RegExpNode* on_success, RegExpCompiler* compiler,
             int stack_pointer_register, int position_register,
             int capture_register_count = 0, int capture_register_start = 0);
-    Node* on_match_success() const { return on_match_success_; }
-    Node* ForMatch(Compiler*, Node* match);
+    RegExpNode* on_match_success() const { return on_match_success_; }
+    RegExpNode* ForMatch(RegExpCompiler*, RegExpNode* match);
 
    private:
     bool is_positive_;
-    Node* on_match_success_;
-    Node* on_success_;
+    RegExpNode* on_match_success_;
+    RegExpNode* on_success_;
     int stack_pointer_register_;
     int position_register_;
   };
 
  private:
-  Tree* body_;
+  RegExpTree* body_;
   bool is_positive_;
   int capture_count_;
   int capture_from_;
@@ -765,10 +719,11 @@ class Lookaround final : public Tree {
   int index_;
 };
 
-class BackReference final : public Tree {
+class RegExpBackReference final : public RegExpTree {
  public:
-  explicit BackReference(Zone* zone) : captures_(1, zone) {}
-  explicit BackReference(Capture* capture, Zone* zone) : captures_(1, zone) {
+  explicit RegExpBackReference(Zone* zone) : captures_(1, zone) {}
+  explicit RegExpBackReference(RegExpCapture* capture, Zone* zone)
+      : captures_(1, zone) {
     captures_.Add(capture, zone);
   }
 
@@ -778,26 +733,26 @@ class BackReference final : public Tree {
   // The back reference may be recursive, e.g. /(\2)(\1)/. To avoid infinite
   // recursion, we give up. Ignorance is bliss.
   int max_match() override { return kInfinity; }
-  const ZoneList<Capture*>* captures() const { return &captures_; }
-  void add_capture(Capture* capture, Zone* zone) {
+  const ZoneList<RegExpCapture*>* captures() const { return &captures_; }
+  void add_capture(RegExpCapture* capture, Zone* zone) {
     captures_.Add(capture, zone);
   }
   const ZoneVector<base::uc16>* name() const { return name_; }
   void set_name(const ZoneVector<base::uc16>* name) { name_ = name; }
 
  private:
-  ZoneList<Capture*> captures_;
+  ZoneList<RegExpCapture*> captures_;
   const ZoneVector<base::uc16>* name_ = nullptr;
 };
 
-class Empty final : public Tree {
+class RegExpEmpty final : public RegExpTree {
  public:
   DECL_BOILERPLATE(Empty);
   int min_match() override { return 0; }
   int max_match() override { return 0; }
 };
 
-}  // namespace v8::internal::regexp
+}  // namespace v8::internal
 
 #undef DECL_BOILERPLATE
 

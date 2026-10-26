@@ -24,11 +24,17 @@
 #define FROZEN_LETITGO_CONSTEXPR_ASSERT_H
 
 #include <cassert>
-#include <utility>
 
-inline void constexpr_assert_failed() {}
+#ifdef _MSC_VER
 
-#define constexpr_assert(cond, msg) ((void)((cond) ? 0 : (constexpr_assert_failed(), 0)))
+// FIXME: find a way to implement that correctly for msvc
+#define constexpr_assert(cond, msg)
+
+#else
+
+#define constexpr_assert(cond, msg)\
+    assert(cond && msg);
+#endif
 
 #endif
 

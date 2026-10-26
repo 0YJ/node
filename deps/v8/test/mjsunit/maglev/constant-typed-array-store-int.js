@@ -36,4 +36,4 @@ function test() {
 %NeverOptimizeFunction(test);
 test();
 
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));

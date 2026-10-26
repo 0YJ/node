@@ -16,7 +16,7 @@ function sarl_test(lhs, rhs, expected_result) {
   %OptimizeMaglevOnNextCall(sarl);
 
   assertEquals(expected_result, sarl(lhs, rhs));
-  assertMaglevved(sarl);
+  assertTrue(isMaglevved(sarl));
 
   %DeoptimizeFunction(sarl);
   assertEquals(expected_result, sarl(lhs, rhs));
@@ -30,7 +30,7 @@ function sarl_test_expect_deopt(lhs, rhs, expected_result) {
   %OptimizeMaglevOnNextCall(sarl);
 
   assertEquals(expected_result, sarl(lhs, rhs));
-  assertNotMaglevved(sarl);
+  assertFalse(isMaglevved(sarl));
 }
 
 sarl_test(8, 2, 2);

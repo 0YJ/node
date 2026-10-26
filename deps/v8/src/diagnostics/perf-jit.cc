@@ -39,12 +39,10 @@
 
 #include <memory>
 
-#include "include/v8config.h"
 #include "src/base/platform/wrappers.h"
 #include "src/codegen/assembler.h"
 #include "src/codegen/source-position-table.h"
 #include "src/diagnostics/eh-frame.h"
-#include "src/objects/abstract-code-inl.h"
 #include "src/objects/code-kind.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/shared-function-info.h"
@@ -140,8 +138,8 @@ FILE* PerfJitLogger::perf_output_handle_ = nullptr;
 void PerfJitLogger::OpenJitDumpFile() {
   size_t bufferSize = strlen(v8_flags.perf_prof_path) +
                       sizeof(kFilenameFormatString) + kFilenameBufferPadding;
-  auto perf_dump_name = base::OwnedVector<char>::NewForOverwrite(bufferSize);
-  int size = SNPrintF(perf_dump_name.as_vector(), kFilenameFormatString,
+  base::ScopedVector<char> perf_dump_name(bufferSize);
+  int size = SNPrintF(perf_dump_name, kFilenameFormatString,
                       v8_flags.perf_prof_path.value(), process_id_);
   CHECK_NE(size, -1);
 
@@ -226,7 +224,7 @@ void PerfJitLogger::LogRecordedBuffer(
     size_t length) {
   DisallowGarbageCollection no_gc;
   if (v8_flags.perf_basic_prof_only_functions) {
-    CodeKind code_kind = abstract_code->kind();
+    CodeKind code_kind = abstract_code->kind(isolate_);
     if (!CodeKindIsJSFunction(code_kind)) {
       return;
     }
@@ -237,8 +235,8 @@ void PerfJitLogger::LogRecordedBuffer(
   if (perf_output_handle_ == nullptr) return;
 
   // We only support non-interpreted functions.
-  if (!IsCode(abstract_code)) return;
-  Tagged<Code> code = abstract_code->GetCode();
+  Tagged<Code> code;
+  if (!TryCast(abstract_code, &code)) return;
 
   // Debug info has to be emitted first.
   DirectHandle<SharedFunctionInfo> sfi;
@@ -307,9 +305,9 @@ constexpr size_t kUnknownScriptNameStringLen =
     arraysize(kUnknownScriptNameString) - 1;
 
 namespace {
-base::Vector<const char> GetScriptName(
-    Tagged<Object> maybeScript, std::unique_ptr<char[]>* storage,
-    const DisallowGarbageCollection& no_gc V8_LIFETIME_BOUND) {
+base::Vector<const char> GetScriptName(Tagged<Object> maybeScript,
+                                       std::unique_ptr<char[]>* storage,
+                                       const DisallowGarbageCollection& no_gc) {
   if (IsScript(maybeScript)) {
     Tagged<Object> name_or_url =
         Cast<Script>(maybeScript)->GetNameOrSourceURL();
@@ -399,18 +397,11 @@ void PerfJitLogger::LogWriteDebugInfo(Tagged<Code> code,
   Address code_start = code->instruction_start();
 
   last_script = Smi::zero();
-  int script_names_index = -1;
+  int script_names_index = 0;
   for (SourcePositionTableIterator iterator(source_position_table);
        !iterator.done(); iterator.Advance()) {
     SourcePositionInfo info(GetSourcePositionInfo(isolate_, code, shared,
                                                   iterator.source_position()));
-    Tagged<Object> current_script = *info.script;
-    // Advance to this entry's script name *before* writing it, so that each
-    // entry emits the name of its own script run.
-    if (current_script != last_script) {
-      script_names_index++;
-      last_script = current_script;
-    }
     PerfJitDebugEntry entry;
     // The entry point of the function will be placed straight after the ELF
     // header when processed by "perf inject". Adjust the position addresses
@@ -419,9 +410,14 @@ void PerfJitLogger::LogWriteDebugInfo(Tagged<Code> code,
     entry.line_number_ = info.line + 1;
     entry.column_ = info.column + 1;
     LogWriteBytes(reinterpret_cast<const char*>(&entry), sizeof(entry));
-    base::Vector<const char> name_string = script_names[script_names_index];
+    Tagged<Object> current_script = *info.script;
+    auto name_string = script_names[script_names_index];
     LogWriteBytes(name_string.begin(), name_string.size());
     LogWriteBytes(kStringTerminator, sizeof(kStringTerminator));
+    if (current_script != last_script) {
+      if (last_script != Smi::zero()) script_names_index++;
+      last_script = current_script;
+    }
   }
   char padding_bytes[8] = {0};
   LogWriteBytes(padding_bytes, padding);

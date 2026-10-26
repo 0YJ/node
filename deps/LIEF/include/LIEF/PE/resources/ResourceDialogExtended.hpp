@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ namespace PE {
 /// See: https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgtemplateex
 class LIEF_API ResourceDialogExtended : public ResourceDialog {
   public:
+
   /// This class represents a `DLGTEMPLATEEX` item (`DLGITEMTEMPLATEEX`).
   ///
   /// See: https://learn.microsoft.com/en-us/windows/win32/dlgbox/dlgitemtemplateex
@@ -93,8 +94,7 @@ class LIEF_API ResourceDialogExtended : public ResourceDialog {
 
     std::string to_string() const;
 
-    LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                             const font_t& font) {
+    LIEF_API friend std::ostream& operator<<(std::ostream& os, const font_t& font) {
       os << font.to_string();
       return os;
     }
@@ -105,7 +105,8 @@ class LIEF_API ResourceDialogExtended : public ResourceDialog {
   using it_const_items = const_ref_iterator<const items_t&>;
 
   ResourceDialogExtended() :
-    ResourceDialog(ResourceDialog::TYPE::EXTENDED) {}
+    ResourceDialog(ResourceDialog::TYPE::EXTENDED)
+  {}
 
   ResourceDialogExtended(const ResourceDialogExtended&) = default;
   ResourceDialogExtended& operator=(const ResourceDialogExtended&) = default;
@@ -116,9 +117,7 @@ class LIEF_API ResourceDialogExtended : public ResourceDialog {
   static std::unique_ptr<ResourceDialogExtended> create(BinaryStream& stream);
 
   std::unique_ptr<ResourceDialog> clone() const override {
-    return std::unique_ptr<ResourceDialogExtended>(
-        new ResourceDialogExtended(*this)
-    );
+    return std::unique_ptr<ResourceDialogExtended>(new ResourceDialogExtended(*this));
   }
 
   static bool classof(const ResourceDialog* dialog) {
@@ -152,11 +151,11 @@ class LIEF_API ResourceDialogExtended : public ResourceDialog {
   }
 
   /// Iterator over the control items of this dialog box
-  it_items items() LIEF_LIFETIMEBOUND {
+  it_items items() {
     return items_;
   }
 
-  it_const_items items() const LIEF_LIFETIMEBOUND {
+  it_const_items items() const {
     return items_;
   }
 
@@ -186,7 +185,8 @@ class LIEF_API ResourceDialogExtended : public ResourceDialog {
   }
 
   ResourceDialogExtended& font(uint16_t point_size, uint16_t weight, bool italic,
-                               uint8_t charset, std::u16string typeface) {
+                               uint8_t charset, std::u16string typeface)
+  {
     font_.point_size = point_size;
     font_.weight = weight;
     font_.italic = italic;

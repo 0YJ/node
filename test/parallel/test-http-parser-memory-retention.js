@@ -1,10 +1,9 @@
-// Flags: --expose-internals --no-warnings
 'use strict';
 
 const common = require('../common');
 const assert = require('assert');
 const http = require('http');
-const { HTTPParser } = require('internal/http/common');
+const { HTTPParser } = require('_http_common');
 
 // Test that the `HTTPParser` instance is cleaned up before being returned to
 // the pool to avoid memory retention issues.

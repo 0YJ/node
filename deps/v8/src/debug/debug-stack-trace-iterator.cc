@@ -15,8 +15,6 @@
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/debug/debug-wasm-objects.h"
-#include "src/wasm/wasm-module.h"
-#include "src/wasm/wasm-objects-inl.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
@@ -93,7 +91,9 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::GetReceiver() const {
     // Arrow function defined in top level function without references to
     // variables may have NativeContext as context.
     if (!context->IsFunctionContext()) return v8::MaybeLocal<v8::Value>();
-    ScopeIterator scope_iterator(isolate_, frame_inspector_.get());
+    ScopeIterator scope_iterator(
+        isolate_, frame_inspector_.get(),
+        ScopeIterator::ReparseStrategy::kFunctionLiteral);
     // We lookup this variable in function context only when it is used in arrow
     // function otherwise V8 can optimize it out.
     if (!scope_iterator.ClosureScopeHasThisReference()) {
@@ -104,15 +104,12 @@ v8::MaybeLocal<v8::Value> DebugStackTraceIterator::GetReceiver() const {
         *isolate_->factory()->this_string());
     if (slot_index < 0) return v8::MaybeLocal<v8::Value>();
     DirectHandle<Object> value(context->GetNoCell(slot_index), isolate_);
-    if (IsTdzHole(*value)) return v8::MaybeLocal<v8::Value>();
+    if (IsTheHole(*value, isolate_)) return v8::MaybeLocal<v8::Value>();
     return Utils::ToLocal(value);
   }
 
   DirectHandle<Object> value = frame_inspector_->GetReceiver();
-#ifdef V8_ENABLE_TDZ_HOLE
-  DCHECK(value.is_null() || !IsTheHole(*value));
-#endif
-  if (value.is_null() || (IsSmi(*value) || !IsTdzHole(*value))) {
+  if (value.is_null() || (IsSmi(*value) || !IsTheHole(*value, isolate_))) {
     return Utils::ToLocal(value);
   }
   return v8::MaybeLocal<v8::Value>();
@@ -165,18 +162,16 @@ debug::Location DebugStackTraceIterator::GetFunctionLocation() const {
 #if V8_ENABLE_DRUMBRAKE
   if (iterator_.frame()->is_wasm_interpreter_entry()) {
     auto frame = WasmInterpreterEntryFrame::cast(iterator_.frame());
-    const wasm::WasmModule* module = frame->trusted_instance_data()->module();
-    auto offset = module->functions[frame->function_index(0)].code.offset();
+    Handle<WasmInstanceObject> instance(frame->wasm_instance(), isolate_);
+    auto offset =
+        instance->module()->functions[frame->function_index(0)].code.offset();
     return v8::debug::Location(inlined_frame_index_, offset);
   }
 #endif  // V8_ENABLE_DRUMBRAKE
   if (iterator_.frame()->is_wasm()) {
     auto frame = WasmFrame::cast(iterator_.frame());
     const wasm::WasmModule* module = frame->trusted_instance_data()->module();
-    uint32_t func_index = FrameSummary::Get(frame, inlined_frame_index_)
-                              .AsWasm()
-                              .function_index();
-    auto offset = module->functions[func_index].code.offset();
+    auto offset = module->functions[frame->function_index()].code.offset();
     return v8::debug::Location(0, offset);
   }
 #endif
@@ -261,14 +256,14 @@ void DebugStackTraceIterator::UpdateInlineFrameIndexAndResumableFnOnStack() {
 }
 
 v8::MaybeLocal<v8::Value> DebugStackTraceIterator::Evaluate(
-    v8::Local<v8::String> source, bool throw_on_side_effect, int scope_index) {
+    v8::Local<v8::String> source, bool throw_on_side_effect) {
   DCHECK(!Done());
   DirectHandle<Object> value;
 
   i::SafeForInterruptsScope safe_for_interrupt_scope(isolate_);
   if (!DebugEvaluate::Local(
            isolate_, iterator_.frame()->id(), inlined_frame_index_,
-           Utils::OpenDirectHandle(*source), throw_on_side_effect, scope_index)
+           Utils::OpenDirectHandle(*source), throw_on_side_effect)
            .ToHandle(&value)) {
     return v8::MaybeLocal<v8::Value>();
   }

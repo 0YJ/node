@@ -225,13 +225,13 @@ class WasmModuleVerifyTest : public TestWithPlatform {
     WasmDetectedFeatures unused_detected_features;
     ModuleResult result =
         DecodeWasmModule(enabled_features_, base::VectorOf(temp, total), false,
-                         &unused_detected_features);
+                         kWasmOrigin, &unused_detected_features);
     delete[] temp;
     return result;
   }
   ModuleResult DecodeModuleNoHeader(base::Vector<const uint8_t> bytes) {
     WasmDetectedFeatures unused_detected_features;
-    return DecodeWasmModule(enabled_features_, bytes, false,
+    return DecodeWasmModule(enabled_features_, bytes, false, kWasmOrigin,
                             &unused_detected_features);
   }
 };
@@ -284,7 +284,7 @@ TEST_F(WasmModuleVerifyTest, OneGlobal) {
     const WasmGlobal* global = &result.value()->globals.back();
 
     EXPECT_EQ(kWasmI32, global->type);
-    EXPECT_EQ(0u, global->index_in_buffer);
+    EXPECT_EQ(0u, global->offset);
     EXPECT_FALSE(global->mutability);
   }
 
@@ -307,7 +307,7 @@ TEST_F(WasmModuleVerifyTest, S128Global) {
     EXPECT_OK(result);
     const WasmGlobal* global = &result.value()->globals.back();
     EXPECT_EQ(kWasmS128, global->type);
-    EXPECT_EQ(0u, global->index_in_buffer);
+    EXPECT_EQ(0u, global->offset);
     EXPECT_FALSE(global->mutability);
   }
 }
@@ -441,11 +441,9 @@ TEST_F(WasmModuleVerifyTest, ExactFuncRefGlobal) {
 
     ModuleTypeIndex index{0};
     ValueType null_type =
-        ValueType::RefNull(index, SharedFlag{false}, RefTypeKind::kFunction)
-            .AsExact();
+        ValueType::RefNull(index, false, RefTypeKind::kFunction).AsExact();
     ValueType non_null_type =
-        ValueType::Ref(index, SharedFlag{false}, RefTypeKind::kFunction)
-            .AsExact();
+        ValueType::Ref(index, false, RefTypeKind::kFunction).AsExact();
 
     const WasmGlobal* global = &result.value()->globals[0];
     EXPECT_EQ(null_type, global->type);
@@ -801,13 +799,13 @@ TEST_F(WasmModuleVerifyTest, TwoGlobals) {
     const WasmGlobal* g0 = &result.value()->globals[0];
 
     EXPECT_EQ(kWasmF32, g0->type);
-    EXPECT_EQ(0u, g0->index_in_buffer);
+    EXPECT_EQ(0u, g0->offset);
     EXPECT_FALSE(g0->mutability);
 
     const WasmGlobal* g1 = &result.value()->globals[1];
 
     EXPECT_EQ(kWasmF64, g1->type);
-    EXPECT_EQ(8u, g1->index_in_buffer);
+    EXPECT_EQ(8u, g1->offset);
     EXPECT_TRUE(g1->mutability);
   }
 
@@ -2120,9 +2118,8 @@ TEST_F(WasmModuleVerifyTest, TypedFunctionTable) {
 
   ModuleResult result = DecodeModule(base::ArrayVector(data));
   EXPECT_OK(result);
-  EXPECT_EQ(
-      ValueType::RefNull(Idx{0}, SharedFlag{false}, RefTypeKind::kFunction),
-      result.value()->tables[0].type);
+  EXPECT_EQ(ValueType::RefNull(Idx{0}, false, RefTypeKind::kFunction),
+            result.value()->tables[0].type);
 }
 
 TEST_F(WasmModuleVerifyTest, NullableTableIllegalInitializer) {
@@ -2177,9 +2174,8 @@ TEST_F(WasmModuleVerifyTest, TableWithInitializer) {
       SECTION(Code, ENTRY_COUNT(1), NOP_BODY)};
   ModuleResult result = DecodeModule(base::ArrayVector(data));
   EXPECT_OK(result);
-  EXPECT_EQ(
-      ValueType::RefNull(Idx{0}, SharedFlag{false}, RefTypeKind::kFunction),
-      result.value()->tables[0].type);
+  EXPECT_EQ(ValueType::RefNull(Idx{0}, false, RefTypeKind::kFunction),
+            result.value()->tables[0].type);
 }
 
 TEST_F(WasmModuleVerifyTest, NonNullableTable) {
@@ -2196,7 +2192,7 @@ TEST_F(WasmModuleVerifyTest, NonNullableTable) {
       SECTION(Code, ENTRY_COUNT(1), NOP_BODY)};
   ModuleResult result = DecodeModule(base::ArrayVector(data));
   EXPECT_OK(result);
-  EXPECT_EQ(ValueType::Ref(Idx{0}, SharedFlag{false}, RefTypeKind::kFunction),
+  EXPECT_EQ(ValueType::Ref(Idx{0}, false, RefTypeKind::kFunction),
             result.value()->tables[0].type);
 }
 
@@ -2215,6 +2211,7 @@ TEST_F(WasmModuleVerifyTest, NonNullableTableNoInitializer) {
 }
 
 TEST_F(WasmModuleVerifyTest, BranchHinting) {
+  WASM_FEATURE_SCOPE(branch_hinting);
   static const uint8_t data[] = {
       TYPE_SECTION(1, SIG_ENTRY_v_v), FUNCTION_SECTION(2, 0, 0),
       SECTION_BRANCH_HINTS(ENTRY_COUNT(2), 0 /*func_index*/, ENTRY_COUNT(1),
@@ -2236,6 +2233,7 @@ TEST_F(WasmModuleVerifyTest, BranchHinting) {
 }
 
 TEST_F(WasmModuleVerifyTest, BranchHintingBad) {
+  WASM_FEATURE_SCOPE(branch_hinting);
   {
     // Section is present but has no entries.
     static const uint8_t data[] = {
@@ -2891,6 +2889,7 @@ TEST_F(WasmSignatureDecodeTest, Ok_v_v) {
 
 TEST_F(WasmSignatureDecodeTest, Ok_t_v) {
   WASM_FEATURE_SCOPE(stringref);
+  WASM_FEATURE_SCOPE(exnref);
   WASM_FEATURE_SCOPE(wasmfx);
   for (size_t i = 0; i < arraysize(kValueTypes); i++) {
     ValueTypePair ret_type = kValueTypes[i];
@@ -2907,6 +2906,7 @@ TEST_F(WasmSignatureDecodeTest, Ok_t_v) {
 
 TEST_F(WasmSignatureDecodeTest, Ok_v_t) {
   WASM_FEATURE_SCOPE(stringref);
+  WASM_FEATURE_SCOPE(exnref);
   WASM_FEATURE_SCOPE(wasmfx);
   for (size_t i = 0; i < arraysize(kValueTypes); i++) {
     ValueTypePair param_type = kValueTypes[i];
@@ -2923,6 +2923,7 @@ TEST_F(WasmSignatureDecodeTest, Ok_v_t) {
 
 TEST_F(WasmSignatureDecodeTest, Ok_t_t) {
   WASM_FEATURE_SCOPE(stringref);
+  WASM_FEATURE_SCOPE(exnref);
   WASM_FEATURE_SCOPE(wasmfx);
   for (size_t i = 0; i < arraysize(kValueTypes); i++) {
     ValueTypePair ret_type = kValueTypes[i];
@@ -2943,6 +2944,7 @@ TEST_F(WasmSignatureDecodeTest, Ok_t_t) {
 
 TEST_F(WasmSignatureDecodeTest, Ok_i_tt) {
   WASM_FEATURE_SCOPE(stringref);
+  WASM_FEATURE_SCOPE(exnref);
   WASM_FEATURE_SCOPE(wasmfx);
   for (size_t i = 0; i < arraysize(kValueTypes); i++) {
     ValueTypePair p0_type = kValueTypes[i];
@@ -2965,6 +2967,7 @@ TEST_F(WasmSignatureDecodeTest, Ok_i_tt) {
 
 TEST_F(WasmSignatureDecodeTest, Ok_tt_tt) {
   WASM_FEATURE_SCOPE(stringref);
+  WASM_FEATURE_SCOPE(exnref);
   WASM_FEATURE_SCOPE(wasmfx);
   for (size_t i = 0; i < arraysize(kValueTypes); i++) {
     ValueTypePair p0_type = kValueTypes[i];
@@ -3169,7 +3172,7 @@ TEST_F(WasmModuleVerifyTest, UnknownSectionSkipped) {
   const WasmGlobal* global = &result.value()->globals.back();
 
   EXPECT_EQ(kWasmI32, global->type);
-  EXPECT_EQ(0u, global->index_in_buffer);
+  EXPECT_EQ(0u, global->offset);
 }
 
 TEST_F(WasmModuleVerifyTest, ImportTable_empty) {
@@ -4018,8 +4021,7 @@ TEST_F(WasmModuleVerifyTest, OutOfBoundsTypeInGlobal) {
 }
 
 TEST_F(WasmModuleVerifyTest, OutOfBoundsTypeInType) {
-  ValueType oob =
-      ValueType::Ref(Idx{1}, SharedFlag{false}, RefTypeKind::kStruct);
+  ValueType oob = ValueType::Ref(Idx{1}, false, RefTypeKind::kStruct);
   static const uint8_t data[] = {SECTION(
       Type, ENTRY_COUNT(1),
       WASM_STRUCT_DEF(FIELD_COUNT(1), STRUCT_FIELD(WASM_REF_TYPE(oob), true)))};
@@ -4028,8 +4030,7 @@ TEST_F(WasmModuleVerifyTest, OutOfBoundsTypeInType) {
 }
 
 TEST_F(WasmModuleVerifyTest, RecursiveTypeOutsideRecursiveGroup) {
-  ValueType struct0 =
-      ValueType::Ref(Idx{0}, SharedFlag{false}, RefTypeKind::kStruct);
+  ValueType struct0 = ValueType::Ref(Idx{0}, false, RefTypeKind::kStruct);
   static const uint8_t data[] = {
       SECTION(Type, ENTRY_COUNT(1),
               WASM_STRUCT_DEF(FIELD_COUNT(1),
@@ -4115,7 +4116,8 @@ TEST_F(WasmModuleVerifyTest, InvalidSharedType) {
 
   ModuleResult result = DecodeModule(base::ArrayVector(data));
 
-  EXPECT_NOT_OK(result, "invalid heap type 0x65, enable with --wasm-shared");
+  EXPECT_NOT_OK(
+      result, "invalid heap type 0x65, enable with --experimental-wasm-shared");
 }
 
 TEST_F(WasmModuleVerifyTest, InvalidSharedGlobal) {

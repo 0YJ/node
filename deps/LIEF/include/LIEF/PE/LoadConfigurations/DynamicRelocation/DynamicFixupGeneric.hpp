@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,7 @@ class LIEF_API DynamicFixupGeneric : public DynamicFixup {
   public:
   using relocations_t = std::vector<std::unique_ptr<Relocation>>;
   using it_relocations = ref_iterator<relocations_t&, Relocation*>;
-  using it_const_relocations =
-      const_ref_iterator<const relocations_t&, Relocation*>;
+  using it_const_relocations = const_ref_iterator<const relocations_t&, Relocation*>;
 
   DynamicFixupGeneric();
 
@@ -45,11 +44,11 @@ class LIEF_API DynamicFixupGeneric : public DynamicFixup {
   }
 
   /// Iterator over the relocations
-  it_relocations relocations() LIEF_LIFETIMEBOUND {
+  it_relocations relocations() {
     return relocations_;
   }
 
-  it_const_relocations relocations() const LIEF_LIFETIMEBOUND {
+  it_const_relocations relocations() const {
     return relocations_;
   }
 
@@ -61,9 +60,9 @@ class LIEF_API DynamicFixupGeneric : public DynamicFixup {
 
   ~DynamicFixupGeneric() override;
 
-  /// @private
-  LIEF_LOCAL static std::unique_ptr<DynamicFixupGeneric> parse(Parser& ctx,
-                                                               SpanStream& strm);
+  /// \private
+  LIEF_LOCAL static
+    std::unique_ptr<DynamicFixupGeneric> parse(Parser& ctx, SpanStream& strm);
 
   private:
   relocations_t relocations_;

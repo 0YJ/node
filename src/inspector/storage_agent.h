@@ -1,9 +1,6 @@
 #ifndef SRC_INSPECTOR_STORAGE_AGENT_H_
 #define SRC_INSPECTOR_STORAGE_AGENT_H_
 
-#include <filesystem>
-#include <optional>
-#include <string>
 #include "env.h"
 #include "node/inspector/protocol/Storage.h"
 
@@ -25,8 +22,7 @@ class StorageAgent : public protocol::Storage::Backend {
   StorageAgent& operator=(const StorageAgent&) = delete;
 
  private:
-  std::optional<std::string> to_absolute_path(
-      const std::filesystem::path& input);
+  std::string to_absolute_path(const std::filesystem::path& input);
   std::unique_ptr<protocol::Storage::Frontend> frontend_;
   Environment* env_;
 };

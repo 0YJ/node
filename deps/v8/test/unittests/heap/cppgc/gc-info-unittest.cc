@@ -9,15 +9,14 @@
 #include "include/cppgc/platform.h"
 #include "src/base/page-allocator.h"
 #include "src/base/platform/platform.h"
-#include "src/heap/cppgc-internal/gc-info-table.h"
-#include "src/heap/cppgc-internal/platform.h"
+#include "src/heap/cppgc/gc-info-table.h"
+#include "src/heap/cppgc/platform.h"
 #include "test/unittests/heap/cppgc/tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cppgc {
 namespace internal {
 
-#if !defined(CPPGC_ENABLE_OBJECT_SECTION_GCINFO)
 namespace {
 
 constexpr GCInfo GetEmptyGCInfo() { return {nullptr, nullptr, nullptr}; }
@@ -140,7 +139,6 @@ TEST_F(GCInfoTableTest, MultiThreadedResizeToMaxIndex) {
     delete threads[i];
   }
 }
-#endif  // !defined(CPPGC_ENABLE_OBJECT_SECTION_GCINFO)
 
 // Tests using the global table and GCInfoTrait.
 
@@ -161,8 +159,8 @@ class OtherBasicType final {
 
 TEST_F(GCInfoTraitTest, IndexInBounds) {
   const GCInfoIndex index = GCInfoTrait<BasicType>::Index();
-  EXPECT_GT(kMaxGCInfoIndex, index);
-  EXPECT_LE(kMinGCInfoIndex, index);
+  EXPECT_GT(GCInfoTable::kMaxIndex, index);
+  EXPECT_LE(GCInfoTable::kMinIndex, index);
 }
 
 TEST_F(GCInfoTraitTest, TraitReturnsSameIndexForSameType) {
@@ -176,21 +174,6 @@ TEST_F(GCInfoTraitTest, TraitReturnsDifferentIndexForDifferentTypes) {
   const GCInfoIndex index2 = GCInfoTrait<OtherBasicType>::Index();
   EXPECT_NE(index1, index2);
 }
-
-#if defined(CPPGC_ENABLE_OBJECT_SECTION_GCINFO)
-TEST_F(GCInfoTraitTest, SectionBoundaries) {
-  EXPECT_LT(__start_gc_info_section, __stop_gc_info_section);
-  size_t num_infos = __stop_gc_info_section - __start_gc_info_section;
-  EXPECT_GT(num_infos, 0u);
-
-  GCInfoIndex basic_index = GCInfoTrait<BasicType>::Index();
-  EXPECT_GT(basic_index, 0u);
-  EXPECT_LE(basic_index, num_infos);
-
-  const GCInfo& basic_info = __start_gc_info_section[basic_index - 1];
-  EXPECT_EQ(TraceTrait<BasicType>::Trace, basic_info.trace);
-}
-#endif
 
 namespace {
 
@@ -334,18 +317,6 @@ static_assert(
 #endif  // !CPPGC_SUPPORTS_OBJECT_NAMES
 
 }  // namespace
-
-#if defined(CPPGC_ENABLE_OBJECT_SECTION_GCINFO)
-TEST_F(GCInfoTraitTest, FoldingMatches) {
-#if !defined(CPPGC_SUPPORTS_OBJECT_NAMES)
-  EXPECT_EQ(GCInfoTrait<BaseWithVirtualDestructor>::Index(),
-            GCInfoTrait<ChildOfBaseWithVirtualDestructor>::Index());
-#else
-  EXPECT_NE(GCInfoTrait<BaseWithVirtualDestructor>::Index(),
-            GCInfoTrait<ChildOfBaseWithVirtualDestructor>::Index());
-#endif
-}
-#endif
 
 }  // namespace internal
 }  // namespace cppgc

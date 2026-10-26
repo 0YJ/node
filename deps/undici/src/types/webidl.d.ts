@@ -248,22 +248,13 @@ type WebidlIsFunction<T> = (arg: any) => arg is T
 interface WebidlIs {
   Request: WebidlIsFunction<undici.Request>
   Response: WebidlIsFunction<undici.Response>
-  Headers: WebidlIsFunction<undici.Headers>
-  FormData: WebidlIsFunction<undici.FormData>
-  WebSocket: WebidlIsFunction<undici.WebSocket>
-  WebSocketError: WebidlIsFunction<undici.WebSocketError>
-  Cache: WebidlIsFunction<undici.Cache>
-  CacheStorage: WebidlIsFunction<undici.CacheStorage>
-  EventSource: WebidlIsFunction<undici.EventSource>
-  MessageEvent: WebidlIsFunction<undici.MessageEvent>
-  CloseEvent: WebidlIsFunction<undici.CloseEvent>
-  ErrorEvent: WebidlIsFunction<undici.ErrorEvent>
-
   ReadableStream: WebidlIsFunction<ReadableStream>
   Blob: WebidlIsFunction<Blob>
   URLSearchParams: WebidlIsFunction<URLSearchParams>
   File: WebidlIsFunction<File>
+  FormData: WebidlIsFunction<undici.FormData>
   URL: WebidlIsFunction<URL>
+  WebSocketError: WebidlIsFunction<undici.WebSocketError>
   AbortSignal: WebidlIsFunction<AbortSignal>
   MessagePort: WebidlIsFunction<MessagePort>
   USVString: WebidlIsFunction<string>
@@ -281,9 +272,12 @@ export interface Webidl {
   attributes: WebIDLExtendedAttributes
 
   /**
-   * @description Performs a brand-check on {@param V}.
+   * @description Performs a brand-check on {@param V} to ensure it is a
+   * {@param cls} object.
    */
-  brandCheck <T>(V: unknown, assertion: WebidlIsFunction<T>): asserts V is T
+  brandCheck <Interface extends new () => unknown>(V: unknown, cls: Interface): asserts V is Interface
+
+  brandCheckMultiple <Interfaces extends (new () => unknown)[]> (list: Interfaces): (V: any) => asserts V is Interfaces[number]
 
   /**
    * @see https://webidl.spec.whatwg.org/#es-sequence

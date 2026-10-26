@@ -32,6 +32,9 @@ class FieldIndex final {
   static inline FieldIndex ForSmiLoadHandler(Tagged<Map> map, int32_t handler);
   static inline FieldIndex ForDescriptor(Tagged<Map> map,
                                          InternalIndex descriptor_index);
+  static inline FieldIndex ForDescriptor(PtrComprCageBase cage_base,
+                                         Tagged<Map> map,
+                                         InternalIndex descriptor_index);
   static inline FieldIndex ForDetails(Tagged<Map> map, PropertyDetails details);
 
   inline int GetLoadByFieldIndex() const;
@@ -40,37 +43,29 @@ class FieldIndex final {
 
   bool is_double() const { return EncodingBits::decode(bit_field_) == kDouble; }
 
-  // Offset from beginning of the storage object. This is the JSObject for
-  // in-object properties (is_inobject == true) and the PropertyArray for
-  // out-of-object properties (is_inobject == false).
   int offset() const { return OffsetBits::decode(bit_field_); }
 
   uint64_t bit_field() const { return bit_field_; }
 
-  // Zero-indexed from beginning of the storage object. Matches the
-  // field_offset() in the PropertyDetails.
-  int offset_in_words() const {
+  // Zero-indexed from beginning of the object.
+  int index() const {
     DCHECK(IsAligned(offset(), kTaggedSize));
     return offset() / kTaggedSize;
   }
 
   int outobject_array_index() const {
     DCHECK(!is_inobject());
-    DCHECK_EQ(
-        first_field_offset_in_storage(),
-        FieldStorageLocation::kFirstOutOfObjectOffsetInWords * kTaggedSize);
-    return offset() / kTaggedSize -
-           FieldStorageLocation::kFirstOutOfObjectOffsetInWords;
+    return index() - first_inobject_property_offset() / kTaggedSize;
   }
 
-  // Zero-based from the first in-object property. Overflows to out-of-object
+  // Zero-based from the first inobject property. Overflows to out-of-object
   // properties.
   int property_index() const {
-    int index = (offset() - first_field_offset_in_storage()) / kTaggedSize;
+    int result = index() - first_inobject_property_offset() / kTaggedSize;
     if (!is_inobject()) {
-      index += InObjectPropertyCountBits::decode(bit_field_);
+      result += InObjectPropertyBits::decode(bit_field_);
     }
-    return index;
+    return result;
   }
 
   int GetFieldAccessStubKey() const {
@@ -85,13 +80,14 @@ class FieldIndex final {
 
  private:
   FieldIndex(bool is_inobject, int offset, Encoding encoding,
-             int inobject_property_count, int first_field_offset_in_storage) {
-    DCHECK(IsAligned(first_field_offset_in_storage, kTaggedSize));
-    bit_field_ =
-        IsInObjectBits::encode(is_inobject) | EncodingBits::encode(encoding) |
-        FirstFieldOffsetInStorageBits::encode(first_field_offset_in_storage) |
-        OffsetBits::encode(offset) |
-        InObjectPropertyCountBits::encode(inobject_property_count);
+             int inobject_properties, int first_inobject_property_offset) {
+    DCHECK(IsAligned(first_inobject_property_offset, kTaggedSize));
+    bit_field_ = IsInObjectBits::encode(is_inobject) |
+                 EncodingBits::encode(encoding) |
+                 FirstInobjectPropertyOffsetBits::encode(
+                     first_inobject_property_offset) |
+                 OffsetBits::encode(offset) |
+                 InObjectPropertyBits::encode(inobject_properties);
   }
 
   static Encoding FieldEncoding(Representation representation) {
@@ -108,29 +104,27 @@ class FieldIndex final {
     }
     PrintF("%s\n", representation.Mnemonic());
     UNREACHABLE();
+    return kTagged;
   }
 
-  int first_field_offset_in_storage() const {
-    return FirstFieldOffsetInStorageBits::decode(bit_field_);
+  int first_inobject_property_offset() const {
+    return FirstInobjectPropertyOffsetBits::decode(bit_field_);
   }
 
-  static constexpr int kOffsetBitsSize =
+  static const int kOffsetBitsSize =
       (kDescriptorIndexBitCount + 1 + kTaggedSizeLog2);
-
-  static constexpr int kPropertyArrayDataStartBitCount = 2 + kTaggedSizeLog2;
 
   // Index from beginning of object.
   using OffsetBits = base::BitField64<int, 0, kOffsetBitsSize>;
   using IsInObjectBits = OffsetBits::Next<bool, 1>;
   using EncodingBits = IsInObjectBits::Next<Encoding, 2>;
   // Number of inobject properties.
-  using InObjectPropertyCountBits =
+  using InObjectPropertyBits =
       EncodingBits::Next<int, kDescriptorIndexBitCount>;
-  // Offset of first inobject property from beginning of the storage object.
-  using FirstFieldOffsetInStorageBits = InObjectPropertyCountBits::Next<
-      int, std::max(kPropertyArrayDataStartBitCount,
-                    kFirstInobjectPropertyOffsetBitCount)>;
-  static_assert(FirstFieldOffsetInStorageBits::kLastUsedBit < 64);
+  // Offset of first inobject property from beginning of object.
+  using FirstInobjectPropertyOffsetBits =
+      InObjectPropertyBits::Next<int, kFirstInobjectPropertyOffsetBitCount>;
+  static_assert(FirstInobjectPropertyOffsetBits::kLastUsedBit < 64);
 
   uint64_t bit_field_;
 };

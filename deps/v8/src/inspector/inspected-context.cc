@@ -126,26 +126,23 @@ bool InspectedContext::isReported(int sessionId) const {
 }
 
 void InspectedContext::setReported(int sessionId, bool reported) {
-  if (reported) {
+  if (reported)
     m_reportedSessionIds.insert(sessionId);
-  } else {
+  else
     m_reportedSessionIds.erase(sessionId);
-  }
 }
 
-std::shared_ptr<InjectedScript> InspectedContext::getInjectedScript(
-    int sessionId) {
+InjectedScript* InspectedContext::getInjectedScript(int sessionId) {
   auto it = m_injectedScripts.find(sessionId);
-  return it == m_injectedScripts.end() ? nullptr : it->second;
+  return it == m_injectedScripts.end() ? nullptr : it->second.get();
 }
 
-std::shared_ptr<InjectedScript> InspectedContext::createInjectedScript(
-    int sessionId) {
-  std::shared_ptr<InjectedScript> injectedScript =
-      std::make_shared<InjectedScript>(this, sessionId);
+InjectedScript* InspectedContext::createInjectedScript(int sessionId) {
+  std::unique_ptr<InjectedScript> injectedScript =
+      std::make_unique<InjectedScript>(this, sessionId);
   CHECK(m_injectedScripts.find(sessionId) == m_injectedScripts.end());
-  m_injectedScripts[sessionId] = injectedScript;
-  return injectedScript;
+  m_injectedScripts[sessionId] = std::move(injectedScript);
+  return getInjectedScript(sessionId);
 }
 
 void InspectedContext::discardInjectedScript(int sessionId) {

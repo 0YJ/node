@@ -6,6 +6,7 @@
 #define V8_REGEXP_REGEXP_CODE_GENERATOR_H_
 
 #include "src/handles/handles.h"
+#include "src/objects/fixed-array.h"
 #include "src/regexp/regexp-bytecode-iterator.h"
 #include "src/regexp/regexp-bytecodes.h"
 #include "src/regexp/regexp-error.h"
@@ -14,32 +15,31 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-class CodeGenerator final {
+class RegExpCodeGenerator final {
  public:
-  CodeGenerator(Isolate* isolate, RegExpMacroAssembler* masm,
-                DirectHandle<TrustedByteArray> bytecode);
+  RegExpCodeGenerator(Isolate* isolate, RegExpMacroAssembler* masm,
+                      DirectHandle<TrustedByteArray> bytecode);
 
   struct Result final {
     explicit Result(DirectHandle<Code> code) : code_(code) {}
 
     static Result UnsupportedBytecode() {
-      return Result(Error::kUnsupportedBytecode);
+      return Result(RegExpError::kUnsupportedBytecode);
     }
 
-    bool Succeeded() const { return error_ == Error::kNone; }
-    Error error() const { return error_; }
+    bool Succeeded() const { return error_ == RegExpError::kNone; }
+    RegExpError error() const { return error_; }
     DirectHandle<Code> code() const { return code_; }
 
    private:
-    explicit Result(Error err) : error_(err) {}
+    explicit Result(RegExpError err) : error_(err) {}
 
-    Error error_ = Error::kNone;
+    RegExpError error_ = RegExpError::kNone;
     DirectHandle<Code> code_;
   };
 
-  V8_NODISCARD Result Assemble(DirectHandle<RegExpData> re_data, Flags flags);
+  V8_NODISCARD Result Assemble(DirectHandle<String> source, RegExpFlags flags);
 
  private:
   // Returns the value for |operand_id| of the current bytecode in the format
@@ -56,7 +56,7 @@ class CodeGenerator final {
   // Allocates labels for all jump targets to support forward jumps.
   void PreVisitBytecodes();
   void VisitBytecodes();
-  template <Bytecode bc>
+  template <RegExpBytecode bc>
   void Visit();
   Label* GetLabel(uint32_t offset) const;
   MacroAssembler* NativeMasm();
@@ -65,7 +65,7 @@ class CodeGenerator final {
   Zone zone_;
   RegExpMacroAssembler* masm_;
   DirectHandle<TrustedByteArray> bytecode_;
-  BytecodeIterator iter_;
+  RegExpBytecodeIterator iter_;
   // Zone allocated Array of Labels for each offset. Access is only valid for
   // offsets that are jump targets (indicated by jump_targets_).
   Label* labels_;
@@ -79,7 +79,6 @@ class CodeGenerator final {
   bool has_unsupported_bytecode_;
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

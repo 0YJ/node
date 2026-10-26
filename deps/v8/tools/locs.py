@@ -32,7 +32,7 @@ except NameError:
 
 ARGPARSE = argparse.ArgumentParser(
     description=("A script that computes LoC for a build dir"),
-    epilog=r"""Examples:
+    epilog="""Examples:
  Count with default settings for build in out/Default:
    locs.py --build-dir out/Default
  Count only a custom group of files settings for build in out/Default:

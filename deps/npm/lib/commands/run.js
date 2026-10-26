@@ -101,7 +101,8 @@ class RunScript extends BaseCommand {
     pkg.scripts = scripts
 
     if (
-      !Object.prototype.hasOwnProperty.call(scripts, event)
+      !Object.prototype.hasOwnProperty.call(scripts, event) &&
+      !(event === 'start' && (await runScript.isServerPackage(path)))
     ) {
       if (this.npm.config.get('if-present')) {
         return

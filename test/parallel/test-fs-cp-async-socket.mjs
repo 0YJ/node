@@ -2,8 +2,9 @@
 
 import * as common from '../common/index.mjs';
 import assert from 'node:assert';
-import { cp } from 'node:fs';
+import { cp, mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
+import { join } from 'node:path';
 import { nextdir } from '../common/fs.js';
 import tmpdir from '../common/tmpdir.js';
 
@@ -20,10 +21,13 @@ if (common.isInsideDirWithUnusualChars) {
 tmpdir.refresh();
 
 {
+  const src = nextdir();
+  mkdirSync(src);
   const dest = nextdir();
+  const sock = join(src, `${process.pid}.sock`);
   const server = createServer();
-  server.listen(common.PIPE);
-  cp(common.PIPE, dest, common.mustCall((err) => {
+  server.listen(sock);
+  cp(sock, dest, common.mustCall((err) => {
     assert.strictEqual(err.code, 'ERR_FS_CP_SOCKET');
     server.close();
   }));

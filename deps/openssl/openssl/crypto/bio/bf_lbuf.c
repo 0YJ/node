@@ -134,15 +134,14 @@ static int linebuffer_write(BIO *b, const char *in, int inl)
         while ((foundnl || p - in > ctx->obuf_size - ctx->obuf_len)
             && ctx->obuf_len > 0) {
             int orig_olen = ctx->obuf_len;
-            int llen = (int)(p - in);
 
             i = ctx->obuf_size - ctx->obuf_len;
-            if (llen > 0) {
-                if (i >= llen) {
-                    memcpy(&(ctx->obuf[ctx->obuf_len]), in, llen);
-                    ctx->obuf_len += llen;
-                    inl -= llen;
-                    num += llen;
+            if (p - in > 0) {
+                if (i >= p - in) {
+                    memcpy(&(ctx->obuf[ctx->obuf_len]), in, p - in);
+                    ctx->obuf_len += p - in;
+                    inl -= p - in;
+                    num += p - in;
                     in = p;
                 } else {
                     memcpy(&(ctx->obuf[ctx->obuf_len]), in, i);
@@ -172,7 +171,7 @@ static int linebuffer_write(BIO *b, const char *in, int inl)
          * if a NL was found and there is anything to write.
          */
         if ((foundnl || p - in > ctx->obuf_size) && p - in > 0) {
-            i = BIO_write(b->next_bio, in, (int)(p - in));
+            i = BIO_write(b->next_bio, in, p - in);
             if (i <= 0) {
                 BIO_copy_next_retry(b);
                 if (i < 0)
@@ -307,15 +306,6 @@ static long linebuffer_ctrl(BIO *b, int cmd, long num, void *ptr)
         if (BIO_set_write_buffer_size(dbio, ctx->obuf_size) <= 0)
             ret = 0;
         break;
-    case BIO_CTRL_EOF:
-        /*
-         * If there is no next BIO, BIO_read() returns 0, which means EOF.
-         * BIO_eof() should return 1 in this case.
-         */
-        if (b->next_bio == NULL)
-            return 1;
-        ret = BIO_ctrl(b->next_bio, cmd, num, ptr);
-        break;
     default:
         if (b->next_bio == NULL)
             return 0;
@@ -334,21 +324,12 @@ static long linebuffer_callback_ctrl(BIO *b, int cmd, BIO_info_cb *fp)
 
 static int linebuffer_gets(BIO *b, char *buf, int size)
 {
-    int ret = 0;
-
     if (b->next_bio == NULL)
         return 0;
-    ret = BIO_gets(b->next_bio, buf, size);
-    BIO_clear_retry_flags(b);
-    BIO_copy_next_retry(b);
-    return ret;
+    return BIO_gets(b->next_bio, buf, size);
 }
 
 static int linebuffer_puts(BIO *b, const char *str)
 {
-    size_t len = strlen(str);
-
-    if (len > INT_MAX)
-        return -1;
-    return linebuffer_write(b, str, (int)len);
+    return linebuffer_write(b, str, strlen(str));
 }

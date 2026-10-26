@@ -10,7 +10,6 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
 class V8_EXPORT_PRIVATE RegExpMacroAssemblerMIPS
     : public NativeRegExpMacroAssembler {
@@ -54,8 +53,7 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerMIPS
   void CheckBitInTable(Handle<ByteArray> table, Label* on_bit_set) override;
   void SkipUntilBitInTable(int cp_offset, Handle<ByteArray> table,
                            Handle<ByteArray> nibble_table, int advance_by,
-                           int bounds_check_offset, Label* on_match,
-                           Label* on_no_match) override;
+                           Label* on_match, Label* on_no_match) override;
 
   // Checks whether the given offset from the current position is before
   // the end of the string.
@@ -63,9 +61,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerMIPS
   void CheckSpecialClassRanges(StandardCharacterSet type,
                                Label* on_no_match) override;
   void Fail() override;
-  bool prologue_pushes_fail_label() const override { return true; }
-  DirectHandle<HeapObject> GetCode(DirectHandle<RegExpData> re_data,
-                                   Flags flags) override;
+  DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                   RegExpFlags flags) override;
   void GoTo(Label* label) override;
   void IfRegisterGE(int reg, int comparand, Label* if_ge) override;
   void IfRegisterLT(int reg, int comparand, Label* if_lt) override;
@@ -201,12 +198,6 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerMIPS
   // Register holding pointer to the current code object.
   static constexpr Register code_pointer() { return s1; }
 
-  // The real backtrack dispatch (pop a code offset and jump to it), emitted
-  // once in GetCode at backtrack_label_ when the backtrack stack is used.
-  // Backtrack() itself only jumps there, so emitting it does not by itself
-  // mark the backtrack stack as used.
-  void EmitBacktrack();
-
   // Equivalent to a conditional branch to the label, unless the label
   // is nullptr, in which case it is a conditional Backtrack.
   void BranchOrBacktrack(Label* to,
@@ -260,7 +251,6 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerMIPS
   Label fallback_label_;
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

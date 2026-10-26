@@ -19,8 +19,7 @@
 #include <cstring>
 
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
-#include "absl/base/internal/endian.h"  // IWYU pragma: keep
+#include "absl/base/internal/endian.h"
 #include "absl/numeric/int128.h"
 #include "absl/random/internal/platform.h"
 #include "absl/random/internal/randen_traits.h"

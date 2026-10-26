@@ -1,8 +1,7 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
-const { completeSample } = require('../common/bench');
 const assert = require('assert');
 const { setImmediate } = require('timers/promises');
 const {
@@ -14,6 +13,12 @@ const {
   run,
   suite,
 } = require('node:bench');
+
+function complete(b) {
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
+}
 
 suite('before failure', () => {
   before(() => { throw new Error('before failure'); });
@@ -29,7 +34,7 @@ suite('beforeEach failure', () => {
 
 suite('after failure', () => {
   after(() => { throw new Error('after failure'); });
-  bench('completes before after', { samples: 1 }, completeSample);
+  bench('completes before after', { samples: 1 }, complete);
 });
 
 suite('build failure', async () => {
@@ -37,7 +42,7 @@ suite('build failure', async () => {
   throw new Error('build failure');
 });
 
-bench('continues after suite failures', { samples: 1 }, completeSample);
+bench('continues after suite failures', { samples: 1 }, complete);
 
 const completions = [];
 const diagnostics = [];
@@ -57,9 +62,6 @@ stream.on('end', common.mustCall(() => {
     total: 4,
   });
   assert.strictEqual(summary.success, false);
-  // The failed run sets the exit code; reset it so the test itself passes.
-  assert.strictEqual(process.exitCode, 1);
-  process.exitCode = 0;
 
   const byName = new Map(completions.map((result) => [result.name, result]));
   assert.strictEqual(byName.get('blocked by before').error.message,

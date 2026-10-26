@@ -68,12 +68,13 @@ class Rebuild extends ArboristWorkspaceCmd {
       await arb.rebuild()
     }
 
-    // Rebuild skips reifyFinish, so run the walker here to list any
-    // packages whose install scripts were blocked.
+    // Phase 1 advisory: list any packages whose install scripts ran (or
+    // would have run) and are not yet covered by allowScripts. Rebuild
+    // doesn't go through reifyFinish, so the walker is invoked here.
     const unreviewed = await checkAllowScripts({ arb, npm: this.npm })
     if (unreviewed.length > 0) {
       const count = unreviewed.length
-      const noun = count === 1 ? 'package had' : 'packages had'
+      const noun = count === 1 ? 'package has' : 'packages have'
       // `npm install-scripts` writes to a project package.json, which doesn't
       // exist for global rebuilds. Point global users at `npm config set`,
       // which writes the `allow-scripts` setting to their user .npmrc.
@@ -83,7 +84,7 @@ class Rebuild extends ArboristWorkspaceCmd {
         : 'Run `npm install-scripts ls` to review.'
       log.warn(
         'rebuild',
-        `${count} ${noun} install scripts blocked because they are not covered by allowScripts. ` +
+        `${count} ${noun} install scripts not yet covered by allowScripts. ` +
         remediation
       )
     }

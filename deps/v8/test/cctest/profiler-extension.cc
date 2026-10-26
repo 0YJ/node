@@ -30,7 +30,6 @@
 #include "test/cctest/profiler-extension.h"
 
 #include "include/v8-template.h"
-#include "src/api/api.h"
 #include "test/cctest/cctest.h"
 
 namespace v8 {

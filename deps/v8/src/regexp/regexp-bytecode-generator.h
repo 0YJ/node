@@ -12,21 +12,20 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-class V8_EXPORT_PRIVATE BytecodeWriter {
+class V8_EXPORT_PRIVATE RegExpBytecodeWriter {
  public:
-  explicit BytecodeWriter(Zone* zone);
-  virtual ~BytecodeWriter() = default;
+  explicit RegExpBytecodeWriter(Zone* zone);
+  virtual ~RegExpBytecodeWriter() = default;
 
   // Helpers for peephole optimization.
   template <typename T>
   void OverwriteValue(T value, int absolute_offset);
   // MUST start and end at a bytecode boundary.
   void EmitRawBytecodeStream(const uint8_t* data, int length);
-  void EmitRawBytecodeStream(const BytecodeWriter* src_writer, int src_offset,
-                             int length);
-  void Finalize(Bytecode bc);
+  void EmitRawBytecodeStream(const RegExpBytecodeWriter* src_writer,
+                             int src_offset, int length);
+  void Finalize(RegExpBytecode bc);
 
   // Bytecode buffer access.
   // TODO(jgruber): Remove access to details, at least the non-const accessors.
@@ -37,27 +36,26 @@ class V8_EXPORT_PRIVATE BytecodeWriter {
   // Code and bitmap emission.
   template <typename T>
   inline void Emit(T value, int offset);
-  inline void EmitBytecode(Bytecode bc);
+  inline void EmitBytecode(RegExpBytecode bc);
 
   // Update bookkeeping at bytecode boundaries.
   inline void ResetPc(int new_pc);
+  // Reset all state.
+  void Reset();
 
   // Templated code emission.
-  template <Bytecode bytecode, typename... Args>
+  template <RegExpBytecode bytecode, typename... Args>
   void Emit(Args... args);
-  template <BytecodeOperandType OperandType, typename T>
+  template <RegExpBytecodeOperandType OperandType, typename T>
   void EmitOperand(T value, int offset);
-  template <BytecodeOperandType OperandType, typename T>
+  template <RegExpBytecodeOperandType OperandType, typename T>
   auto GetCheckedBasicOperandValue(T value);
 
   // Runtime versions.
   template <typename T>
-  void EmitOperand(BytecodeOperandType type, T value, int offset);
+  void EmitOperand(RegExpBytecodeOperandType type, T value, int offset);
 
-  uint32_t length() const {
-    DCHECK_GE(pc_, 0);
-    return static_cast<uint32_t>(pc_);
-  }
+  int length() const { return pc_; }
   void CopyBufferTo(uint8_t* a) const;
 
   ZoneMap<int, int>& jump_edges() { return jump_edges_; }
@@ -85,7 +83,7 @@ class V8_EXPORT_PRIVATE BytecodeWriter {
 
  private:
   // Stores jump edges emitted for the bytecode (used by
-  // BytecodePeepholeOptimization).
+  // RegExpBytecodePeepholeOptimization).
   // Key: jump source (offset in buffer_ where jump destination is stored).
   // Value: jump destination (offset in buffer_ to jump to).
   ZoneMap<int, int> jump_edges_;
@@ -106,8 +104,8 @@ class V8_EXPORT_PRIVATE BytecodeWriter {
 };
 
 // An assembler/generator for the Irregexp byte code.
-class V8_EXPORT_PRIVATE BytecodeGenerator : public RegExpMacroAssembler,
-                                            public BytecodeWriter {
+class V8_EXPORT_PRIVATE RegExpBytecodeGenerator : public RegExpMacroAssembler,
+                                                  public RegExpBytecodeWriter {
  public:
   // Create an assembler. Instructions and relocation information are emitted
   // into a buffer, with the instructions starting from the beginning and the
@@ -117,8 +115,8 @@ class V8_EXPORT_PRIVATE BytecodeGenerator : public RegExpMacroAssembler,
   // The assembler allocates and grows its own buffer, and buffer_size
   // determines the initial buffer size. The buffer is owned by the assembler
   // and deallocated upon destruction of the assembler.
-  BytecodeGenerator(Isolate* isolate, Zone* zone, Mode mode);
-  ~BytecodeGenerator() override;
+  RegExpBytecodeGenerator(Isolate* isolate, Zone* zone, Mode mode);
+  ~RegExpBytecodeGenerator() override;
   void Bind(Label* label) override;
   void AdvanceCurrentPosition(int by) override;  // Signed cp change.
   void PopCurrentPosition() override;
@@ -145,7 +143,7 @@ class V8_EXPORT_PRIVATE BytecodeGenerator : public RegExpMacroAssembler,
                                Label* on_no_match) override;
   void LoadCurrentCharacterImpl(int cp_offset, Label* on_end_of_input,
                                 bool check_bounds, int characters,
-                                int bounds_check_offset) override;
+                                int eats_at_least) override;
   void CheckCharacter(unsigned c, Label* on_equal) override;
   void CheckCharacterAfterAnd(unsigned c, unsigned mask,
                               Label* on_equal) override;
@@ -182,21 +180,21 @@ class V8_EXPORT_PRIVATE BytecodeGenerator : public RegExpMacroAssembler,
   void CheckBitInTable(Handle<ByteArray> table, Label* on_bit_set) override;
   void SkipUntilBitInTable(int cp_offset, Handle<ByteArray> table,
                            Handle<ByteArray> nibble_table, int advance_by,
-                           int bounds_check_offset, Label* on_match,
-                           Label* on_no_match) override;
+                           Label* on_match, Label* on_no_match) override;
   void SkipUntilCharAnd(int cp_offset, int advance_by, unsigned character,
-                        unsigned mask, int bounds_check_offset, Label* on_match,
+                        unsigned mask, int eats_at_least, Label* on_match,
                         Label* on_no_match) override;
   void SkipUntilChar(int cp_offset, int advance_by, unsigned character,
-                     int bounds_check_offset, Label* on_match,
-                     Label* on_no_match) override;
+                     Label* on_match, Label* on_no_match) override;
+  void SkipUntilCharPosChecked(int cp_offset, int advance_by,
+                               unsigned character, int eats_at_least,
+                               Label* on_match, Label* on_no_match) override;
   void SkipUntilCharOrChar(int cp_offset, int advance_by, unsigned char1,
-                           unsigned char2, int bounds_check_offset,
-                           Label* on_match, Label* on_no_match) override;
+                           unsigned char2, Label* on_match,
+                           Label* on_no_match) override;
   void SkipUntilGtOrNotBitInTable(int cp_offset, int advance_by,
                                   unsigned character, Handle<ByteArray> table,
-                                  int bounds_check_offset, Label* on_match,
-                                  Label* on_no_match) override;
+                                  Label* on_match, Label* on_no_match) override;
   void SkipUntilOneOfMasked(int cp_offset, int advance_by, unsigned both_chars,
                             unsigned both_mask, int max_offset, unsigned chars1,
                             unsigned mask1, unsigned chars2, unsigned mask2,
@@ -217,31 +215,23 @@ class V8_EXPORT_PRIVATE BytecodeGenerator : public RegExpMacroAssembler,
   MacroAssembler* masm() override { return nullptr; }
 
   IrregexpImplementation Implementation() override;
-  DirectHandle<HeapObject> GetCode(DirectHandle<RegExpData> re_data,
-                                   Flags flags) override;
+  DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                   RegExpFlags flags) override;
 
  private:
-  template <Bytecode bytecode, typename... Args>
+  template <RegExpBytecode bytecode, typename... Args>
   void Emit(Args... args);
-  using BytecodeWriter::Emit;
+  using RegExpBytecodeWriter::Emit;
 
   void EmitSkipTable(DirectHandle<ByteArray> table);
 
   Label backtrack_;
 
-  // Tracks a just-emitted AdvanceCurrentPosition so the next GoTo can fuse
-  // both into a single kAdvanceCpAndGoto bytecode.
-  static const int kInvalidPC = -1;
-  int advance_current_start_ = 0;
-  int advance_current_offset_ = 0;
-  int advance_current_end_ = kInvalidPC;
-
   Isolate* isolate_;
 
-  DISALLOW_IMPLICIT_CONSTRUCTORS(BytecodeGenerator);
+  DISALLOW_IMPLICIT_CONSTRUCTORS(RegExpBytecodeGenerator);
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

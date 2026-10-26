@@ -15,8 +15,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <ctime>
-#include <iterator>
-#include <limits>
 #include <string>
 
 #include "absl/base/attributes.h"
@@ -573,7 +571,7 @@ const char* const kDurations[] = {
     "-2h3m4.005006007s",                   // 3
     "2562047788015215h30m7.99999999975s",  // 4
 };
-const int kNumDurations = std::size(kDurations);
+const int kNumDurations = sizeof(kDurations) / sizeof(kDurations[0]);
 
 void BM_Duration_FormatDuration(benchmark::State& state) {
   const std::string s = kDurations[state.range(0)];

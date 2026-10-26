@@ -11,7 +11,6 @@ const {
 const bench = common.createBenchmark(main, {
   n: [1e6],
   events: [1, 1000, 10000],
-  api: ['number', 'bigint'],
 });
 
 async function runEvents(events) {
@@ -20,19 +19,11 @@ async function runEvents(events) {
   }
 }
 
-async function main({ n, events, api }) {
+async function main({ n, events }) {
   await runEvents(events);
-  if (api === 'bigint') {
-    bench.start();
-    for (let i = 0; i < n; i++) {
-      assert.ok(performance.nodeTiming.uvMetricsInfoBigInt);
-    }
-    bench.end(n);
-  } else {
-    bench.start();
-    for (let i = 0; i < n; i++) {
-      assert.ok(performance.nodeTiming.uvMetricsInfo);
-    }
-    bench.end(n);
+  bench.start();
+  for (let i = 0; i < n; i++) {
+    assert.ok(performance.nodeTiming.uvMetricsInfo);
   }
+  bench.end(n);
 }

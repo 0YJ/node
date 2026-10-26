@@ -14,7 +14,6 @@
 #include "src/codegen/code-stub-assembler-inl.h"
 #include "src/compiler/code-assembler.h"
 #include "src/heap/factory-inl.h"
-#include "src/objects/oddball.h"
 
 namespace v8 {
 namespace internal {
@@ -68,9 +67,6 @@ TNode<JSReceiver> IteratorBuiltinsAssembler::IteratorStep(
     TNode<Context> context, const IteratorRecord& iterator, Label* if_done,
     std::optional<TNode<Map>> fast_iterator_result_map) {
   DCHECK_NOT_NULL(if_done);
-  // IteratorStep is used at the top of iterator loops, so check for stack
-  // overflow and process pending interrupts here.
-  PerformStackCheck(context);
   // 1. a. Let result be ? Invoke(iterator, "next", « »).
   TNode<JSAny> result = Call(context, iterator.next, iterator.object);
 
@@ -166,17 +162,7 @@ void IteratorBuiltinsAssembler::Iterate(
     TNode<Context> context, TNode<JSAny> iterable, TNode<Object> iterable_fn,
     std::function<void(TNode<Object>)> func,
     std::initializer_list<compiler::CodeAssemblerVariable*> merged_variables) {
-  Iterate(
-      context, iterable, iterable_fn, [this]() { return Int32TrueConstant(); },
-      func, merged_variables);
-}
-
-void IteratorBuiltinsAssembler::Iterate(
-    TNode<Context> context, TNode<JSAny> iterable, TNode<Object> iterable_fn,
-    std::function<TNode<BoolT>()> condition,
-    std::function<void(TNode<Object>)> func,
-    std::initializer_list<compiler::CodeAssemblerVariable*> merged_variables) {
-  Label done(this), early_break(this);
+  Label done(this);
 
   IteratorRecord iterator_record = GetIterator(context, iterable, iterable_fn);
 
@@ -188,8 +174,6 @@ void IteratorBuiltinsAssembler::Iterate(
 
   BIND(&loop_start);
   {
-    GotoIfNot(condition(), &early_break);
-
     TNode<JSReceiver> next = IteratorStep(context, iterator_record, &done);
     TNode<Object> next_value = IteratorValue(context, next);
 
@@ -202,14 +186,8 @@ void IteratorBuiltinsAssembler::Iterate(
     Goto(&loop_start);
   }
 
-  if (early_break.is_used()) {
-    BIND(&early_break);
-    IteratorClose(context, iterator_record);
-    Goto(&done);
-  }
-
-  if (if_exception.is_used()) {
-    BIND(&if_exception);
+  BIND(&if_exception);
+  {
     TNode<HeapObject> message = GetPendingMessage();
     SetPendingMessage(TheHoleConstant());
     IteratorCloseOnException(context, iterator_record.object);
@@ -261,7 +239,6 @@ void IteratorBuiltinsAssembler::FillFixedArrayFromIterable(
           {values->var_array(), values->var_capacity(), values->var_length()});
 }
 
-// https://tc39.es/ecma262/#sec-iterabletolist
 TF_BUILTIN(IterableToList, IteratorBuiltinsAssembler) {
   auto context = Parameter<Context>(Descriptor::kContext);
   auto iterable = Parameter<JSAny>(Descriptor::kIterable);
@@ -359,7 +336,6 @@ TNode<FixedArray> IteratorBuiltinsAssembler::StringListFromIterable(
   return list.ToFixedArray();
 }
 
-// https://tc39.es/ecma262/#sec-createstringlistfromiterable
 TF_BUILTIN(StringListFromIterable, IteratorBuiltinsAssembler) {
   auto context = Parameter<Context>(Descriptor::kContext);
   auto iterable = Parameter<JSAny>(Descriptor::kIterable);
@@ -417,100 +393,64 @@ TF_BUILTIN(IterableToListConvertHoles, IteratorBuiltinsAssembler) {
 }
 
 void IteratorBuiltinsAssembler::FastIterableToList(
-    TNode<Context> context, TNode<JSAny> maybe_iterable,
+    TNode<Context> context, TNode<JSAny> iterable,
     TVariable<JSArray>* var_result, Label* slow) {
-  Label done(this);
-
-  GotoIfForceSlowPath(slow);
+  Label done(this), check_string(this), check_map(this), check_set(this);
 
   // Always call the `next()` builtins when the debugger is
   // active, to ensure we capture side-effects correctly.
   GotoIf(IsDebugActive(), slow);
 
-  GotoIf(TaggedIsSmi(maybe_iterable), slow);
-  TNode<JSAnyNotSmi> iterable = CAST(maybe_iterable);
+  GotoIfNot(
+      Word32Or(IsFastJSArrayWithNoCustomIteration(context, iterable),
+               IsFastJSArrayForReadWithNoCustomIteration(context, iterable)),
+      &check_string);
 
-  // Check FastJSArrayForReadWithNoCustomIteration case.
+  // Fast path for fast JSArray.
+  *var_result = CAST(
+      CallBuiltin(Builtin::kCloneFastJSArrayFillingHoles, context, iterable));
+  Goto(&done);
+
+  BIND(&check_string);
   {
-    Label check_next(this);
-    GotoIfNot(IsFastJSArrayForReadWithNoCustomIteration(context, iterable),
-              &check_next);
-
-    // Fast path for fast JSArray.
-    *var_result = CAST(
-        CallBuiltin(Builtin::kCloneFastJSArrayFillingHoles, context, iterable));
-    Goto(&done);
-
-    BIND(&check_next);
-  }
-  // Check StringPrimitiveWithNoCustomIteration case.
-  {
-    Label if_fast(this), check_next(this);
+    Label string_maybe_fast_call(this);
     StringBuiltinsAssembler string_assembler(state());
     string_assembler.BranchIfStringPrimitiveWithNoCustomIteration(
-        iterable, &if_fast, &check_next);
+        iterable, context, &string_maybe_fast_call, &check_map);
 
-    BIND(&if_fast);
-    {
-      const TNode<Uint32T> length = LoadStringLengthAsWord32(CAST(iterable));
-      // Use string length as conservative approximation of number of
-      // codepoints.
-      GotoIf(Uint32GreaterThan(length,
-                               Uint32Constant(JSArray::kMaxFastArrayLength)),
-             slow);
-      *var_result =
-          CAST(CallBuiltin(Builtin::kStringToList, context, iterable));
-      Goto(&done);
-    }
-
-    BIND(&check_next);
+    BIND(&string_maybe_fast_call);
+    const TNode<Uint32T> length = LoadStringLengthAsWord32(CAST(iterable));
+    // Use string length as conservative approximation of number of codepoints.
+    GotoIf(
+        Uint32GreaterThan(length, Uint32Constant(JSArray::kMaxFastArrayLength)),
+        slow);
+    *var_result = CAST(CallBuiltin(Builtin::kStringToList, context, iterable));
+    Goto(&done);
   }
-  // Check FastIterableToListInterceptor case.
-  {
-    Label if_fast(this), check_next(this);
-    BranchIfFastIterableToListInterceptor(iterable, &if_fast, &check_next);
 
-    BIND(&if_fast);
-    {
-      TNode<Object> result = CallRuntime(
-          Runtime::kIterableToListWithInterceptor, context, iterable);
-      *var_result = CAST(result);
-      Goto(&done);
-    }
-
-    BIND(&check_next);
-  }
-  // Check IterableWithOriginalKeyOrValueMapIterator case.
+  BIND(&check_map);
   {
-    Label if_fast(this), check_next(this);
+    Label map_fast_call(this);
     BranchIfIterableWithOriginalKeyOrValueMapIterator(
-        state(), iterable, context, &if_fast, &check_next);
+        state(), iterable, context, &map_fast_call, &check_set);
 
-    BIND(&if_fast);
-    {
-      *var_result =
-          CAST(CallBuiltin(Builtin::kMapIteratorToList, context, iterable));
-      Goto(&done);
-    }
-
-    BIND(&check_next);
+    BIND(&map_fast_call);
+    *var_result =
+        CAST(CallBuiltin(Builtin::kMapIteratorToList, context, iterable));
+    Goto(&done);
   }
-  // Check IterableWithOriginalValueSetIterator case.
+
+  BIND(&check_set);
   {
-    Label if_fast(this), check_next(this);
+    Label set_fast_call(this);
     BranchIfIterableWithOriginalValueSetIterator(state(), iterable, context,
-                                                 &if_fast, &check_next);
+                                                 &set_fast_call, slow);
 
-    BIND(&if_fast);
-    {
-      *var_result = CAST(
-          CallBuiltin(Builtin::kSetOrSetIteratorToList, context, iterable));
-      Goto(&done);
-    }
-
-    BIND(&check_next);
+    BIND(&set_fast_call);
+    *var_result =
+        CAST(CallBuiltin(Builtin::kSetOrSetIteratorToList, context, iterable));
+    Goto(&done);
   }
-  Goto(slow);
 
   BIND(&done);
 }
@@ -576,74 +516,6 @@ TF_BUILTIN(CallIteratorWithFeedbackLazyDeoptContinuation,
   ThrowIfNotJSReceiver(context, iterator,
                        MessageTemplate::kSymbolIteratorInvalid, "");
   Return(iterator);
-}
-
-TF_BUILTIN(ForOfNextResultDeoptContinuation, IteratorBuiltinsAssembler) {
-  auto context = Parameter<Context>(Descriptor::kContext);
-  auto result_object = Parameter<Object>(Descriptor::kResultObject);
-
-  Label is_jsreceiver(this), if_notjsreceiver(this, Label::kDeferred);
-  BranchIfJSReceiver(result_object, &is_jsreceiver, &if_notjsreceiver);
-  BIND(&is_jsreceiver);
-
-  TNode<Object> var_done =
-      GetProperty(context, CAST(result_object), factory()->done_string());
-
-  Label if_done(this), if_not_done(this);
-  BranchIfToBooleanIsTrue(var_done, &if_done, &if_not_done);
-
-  BIND(&if_done);
-  {
-    Return(TheHoleConstant());
-  }
-
-  BIND(&if_not_done);
-  {
-    TNode<Object> value =
-        GetProperty(context, CAST(result_object), factory()->value_string());
-    Return(value);
-  }
-
-  BIND(&if_notjsreceiver);
-  CallRuntime(Runtime::kThrowIteratorResultNotAnObject, context, result_object);
-  Unreachable();
-}
-
-TF_BUILTIN(ForOfNextLoadDoneLazyDeoptContinuation, IteratorBuiltinsAssembler) {
-  auto context = Parameter<Context>(Descriptor::kContext);
-  auto result_object = Parameter<Object>(Descriptor::kResultObject);
-  auto done = Parameter<Object>(Descriptor::kDone);
-
-  Label if_done(this), if_not_done(this);
-  BranchIfToBooleanIsTrue(done, &if_done, &if_not_done);
-
-  BIND(&if_done);
-  {
-    Return(TheHoleConstant());
-  }
-
-  BIND(&if_not_done);
-  {
-    TNode<Object> value =
-        GetProperty(context, CAST(result_object), factory()->value_string());
-    Return(value);
-  }
-}
-
-TF_BUILTIN(ForOfNextLoadValueEagerDeoptContinuation,
-           IteratorBuiltinsAssembler) {
-  auto context = Parameter<Context>(Descriptor::kContext);
-  auto result_object = Parameter<Object>(Descriptor::kResultObject);
-
-  TNode<Object> value =
-      GetProperty(context, CAST(result_object), factory()->value_string());
-
-  Return(value);
-}
-
-TF_BUILTIN(ForOfNextLoadValueLazyDeoptContinuation, IteratorBuiltinsAssembler) {
-  auto value = Parameter<Object>(Descriptor::kValue);
-  Return(value);
 }
 
 // This builtin creates a FixedArray based on an Iterable and doesn't have a

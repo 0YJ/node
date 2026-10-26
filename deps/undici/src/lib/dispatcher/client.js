@@ -54,8 +54,7 @@ const {
   kMaxConcurrentStreams,
   kHostAuthority,
   kResume,
-  kHTTP2Options,
-  kUseMilo
+  kHTTP2Options
 } = require('../core/symbols.js')
 const connectH1 = require('./client-h1.js')
 const connectH2 = require('./client-h2.js')
@@ -137,10 +136,8 @@ class Client extends DispatcherBase {
     initialWindowSize,
     connectionWindowSize,
     pingInterval,
-    useMilo,
     webSocket,
-    h2Options,
-    eventSource
+    h2Options
   } = {}) {
     if (keepAlive !== undefined) {
       throw new InvalidArgumentError('unsupported keepAlive, use pipelining=0 instead')
@@ -240,7 +237,7 @@ class Client extends DispatcherBase {
           throw new InvalidArgumentError('h2Options.settings.initialWindowSize must be a positive integer, greater than 0')
         }
 
-        if (h2Options.maxConcurrentStreams != null && (!Number.isInteger(h2Options.maxConcurrentStreams) || h2Options.maxConcurrentStreams < 1)) {
+        if (h2Options.maxConcurrentStreams != null && (!Number.isInteger(h2Options.connectionWindowSize) || h2Options.maxConcurrentStreams < 1)) {
           throw new InvalidArgumentError('h2Options.maxConcurrentStreams must be a positive integer, greater than 0')
         }
 
@@ -279,7 +276,7 @@ class Client extends DispatcherBase {
       }
     }
 
-    super({ webSocket, eventSource })
+    super({ webSocket })
 
     if (typeof connect !== 'function') {
       connect = buildConnector({
@@ -337,7 +334,6 @@ class Client extends DispatcherBase {
         initialWindowSize: h2Options?.initialWindowSize ?? initialWindowSize ?? 262144
       }
     }
-    this[kUseMilo] = useMilo
 
     // kQueue is built up of 3 sections separated by
     // the kRunningIdx and kPendingIdx indices.
@@ -701,11 +697,6 @@ function _resume (client, sync) {
 
     if (request === null) {
       return
-    }
-
-    if (request.aborted) {
-      client[kQueue].splice(client[kPendingIdx], 1)
-      continue
     }
 
     if (client[kUrl].protocol === 'https:' && client[kServerName] !== request.servername) {

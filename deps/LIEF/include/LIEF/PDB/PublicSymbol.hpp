@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,8 +19,6 @@
 #include <string>
 #include <ostream>
 
-#include "LIEF/compiler_attributes.hpp"
-#include "LIEF/iterators.hpp"
 #include "LIEF/visibility.h"
 
 namespace LIEF {
@@ -35,59 +33,65 @@ class PublicSymbolIt;
 /// from the PDB's public symbol stream (or Public symbol hash stream)
 class LIEF_API PublicSymbol {
   public:
-  class Iterator final
-    : public iterator_facade_base<Iterator, std::forward_iterator_tag,
-                                  PublicSymbol, std::ptrdiff_t,
-                                  const PublicSymbol*, const PublicSymbol&> {
+  class LIEF_API Iterator {
     public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = std::unique_ptr<PublicSymbol>;
+    using difference_type = std::ptrdiff_t;
+    using pointer = PublicSymbol*;
+    using reference = PublicSymbol&;
     using implementation = details::PublicSymbolIt;
-    using iterator_facade_base::operator++;
 
-    LIEF_API Iterator();
+    class LIEF_API PointerProxy {
+      // Inspired from LLVM's iterator_facade_base
+      friend class Iterator;
+      public:
+      pointer operator->() const { return R.get(); }
 
-    LIEF_API Iterator(std::unique_ptr<details::PublicSymbolIt> impl);
+      private:
+      value_type R;
 
-    LIEF_API Iterator(const Iterator&);
-    LIEF_API Iterator& operator=(const Iterator&);
+      template <typename RefT>
+      PointerProxy(RefT &&R) : R(std::forward<RefT>(R)) {} // NOLINT(bugprone-forwarding-reference-overload)
+    };
 
-    LIEF_API Iterator(Iterator&&) noexcept;
-    LIEF_API Iterator& operator=(Iterator&&) noexcept;
-
-    LIEF_API ~Iterator();
-
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
-    LIEF_API Iterator& operator++();
+    Iterator(const Iterator&);
+    Iterator(Iterator&&);
+    Iterator(std::unique_ptr<details::PublicSymbolIt> impl);
+    ~Iterator();
 
     friend LIEF_API bool operator==(const Iterator& LHS, const Iterator& RHS);
 
-    friend bool operator!=(const Iterator& LHS, const Iterator& RHS) {
+    friend LIEF_API bool operator!=(const Iterator& LHS, const Iterator& RHS) {
       return !(LHS == RHS);
     }
 
-    LIEF_API const PublicSymbol& operator*() const LIEF_LIFETIMEBOUND;
+    Iterator& operator++();
 
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
-    LIEF_API const PublicSymbol* operator->() const LIEF_LIFETIMEBOUND;
+    Iterator operator++(int) {
+      Iterator tmp = *static_cast<Iterator*>(this);
+      ++*static_cast<Iterator *>(this);
+      return tmp;
+    }
 
-    /// Transfer ownership of the public symbol at the current position to
-    /// the caller. Returns `nullptr` if the iterator is past-the-end.
-    LIEF_API std::unique_ptr<PublicSymbol> yield();
+    std::unique_ptr<PublicSymbol> operator*() const;
+
+    PointerProxy operator->() const {
+      return static_cast<const Iterator*>(this)->operator*();
+    }
 
     private:
-    void load() const;
-
     std::unique_ptr<details::PublicSymbolIt> impl_;
-    mutable std::unique_ptr<PublicSymbol> cached_;
   };
   PublicSymbol(std::unique_ptr<details::PublicSymbol> impl);
   ~PublicSymbol();
 
   enum class FLAGS : uint32_t {
-    NONE = 0,
-    CODE = 1 << 0,
+    NONE     = 0,
+    CODE     = 1 << 0,
     FUNCTION = 1 << 1,
-    MANAGED = 1 << 2,
-    MSIL = 1 << 3,
+    MANAGED  = 1 << 2,
+    MSIL     = 1 << 3,
   };
 
   /// Name of the symbol
@@ -108,8 +112,9 @@ class LIEF_API PublicSymbol {
 
   std::string to_string() const;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const PublicSymbol& sym) {
+  LIEF_API friend
+    std::ostream& operator<<(std::ostream& os, const PublicSymbol& sym)
+  {
     os << sym.to_string();
     return os;
   }
@@ -121,3 +126,4 @@ class LIEF_API PublicSymbol {
 }
 }
 #endif
+

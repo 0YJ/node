@@ -7,8 +7,6 @@ import tmpdir from '../common/tmpdir.js';
 import { spawnSyncAndAssert } from '../common/child_process.js';
 import fixtures from '../common/fixtures.js';
 
-// The dynamic tracing case below records nothing on a perfetto build: a
-// category enabled after the tracing session started stays off.
 skipIfPerfettoEnabled();
 tmpdir.refresh();
 

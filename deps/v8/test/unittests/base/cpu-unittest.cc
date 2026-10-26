@@ -2,10 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/base/cpu/cpu.h"
-
-#include "src/heap/base/memory-tagging.h"
+#include "src/base/cpu.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "src/heap/base/memory-tagging.h"
 
 namespace v8 {
 namespace base {
@@ -47,7 +46,6 @@ TEST(CPUTest, FeatureImplications) {
   EXPECT_TRUE(!cpu.has_avx() || cpu.has_sse2());
   EXPECT_TRUE(!cpu.has_fma3() || cpu.has_avx());
   EXPECT_TRUE(!cpu.has_avx2() || cpu.has_avx());
-  EXPECT_TRUE(!cpu.has_avx10_1() || cpu.has_avx2());
 
   // arm features
   EXPECT_TRUE(!cpu.has_vfp3_d32() || cpu.has_vfp3());

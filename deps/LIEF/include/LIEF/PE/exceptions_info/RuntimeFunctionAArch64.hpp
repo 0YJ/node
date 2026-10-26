@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,8 +34,7 @@ class Parser;
 /// format, this class is inherited by LIEF::PE::unwind_aarch64::PackedFunction
 /// and LIEF::PE::unwind_aarch64::UnpackedFunction
 ///
-/// Reference:
-/// https://learn.microsoft.com/en-us/cpp/build/arm64-exception-handling#arm64-exception-handling-information
+/// Reference: https://learn.microsoft.com/en-us/cpp/build/arm64-exception-handling#arm64-exception-handling-information
 class LIEF_API RuntimeFunctionAArch64 : public ExceptionInfo {
   public:
   enum class PACKED_FLAGS {
@@ -45,13 +44,14 @@ class LIEF_API RuntimeFunctionAArch64 : public ExceptionInfo {
     RESERVED = 3,
   };
 
-  static std::unique_ptr<RuntimeFunctionAArch64> parse(Parser& ctx,
-                                                       BinaryStream& strm);
+  static std::unique_ptr<RuntimeFunctionAArch64>
+    parse(Parser& ctx, BinaryStream& strm);
 
   RuntimeFunctionAArch64(uint64_t RVA, uint32_t length, PACKED_FLAGS flag) :
     ExceptionInfo(ARCH::ARM64, RVA),
     length_(length),
-    flag_(flag) {}
+    flag_(flag)
+  {}
 
   RuntimeFunctionAArch64(const RuntimeFunctionAArch64&) = default;
   RuntimeFunctionAArch64& operator=(const RuntimeFunctionAArch64&) = default;
@@ -60,9 +60,7 @@ class LIEF_API RuntimeFunctionAArch64 : public ExceptionInfo {
   RuntimeFunctionAArch64& operator=(RuntimeFunctionAArch64&&) = default;
 
   std::unique_ptr<ExceptionInfo> clone() const override {
-    return std::unique_ptr<RuntimeFunctionAArch64>(
-        new RuntimeFunctionAArch64(*this)
-    );
+    return std::unique_ptr<RuntimeFunctionAArch64>(new RuntimeFunctionAArch64(*this));
   }
 
   /// Length of the function in bytes
@@ -87,7 +85,7 @@ class LIEF_API RuntimeFunctionAArch64 : public ExceptionInfo {
     return info->arch() == ExceptionInfo::ARCH::ARM64;
   }
 
-  ~RuntimeFunctionAArch64() override = default;
+  ~RuntimeFunctionAArch64() = default;
 
   protected:
   uint32_t length_ = 0;

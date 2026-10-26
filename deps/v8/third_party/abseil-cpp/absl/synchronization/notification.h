@@ -114,11 +114,12 @@ class Notification {
 
  private:
   // Convenience helper to reduce verbosity at call sites.
-  static constexpr base_internal::ObjectKind TraceObjectKind() {
+  static inline constexpr base_internal::ObjectKind TraceObjectKind() {
     return base_internal::ObjectKind::kNotification;
   }
 
-  static bool HasBeenNotifiedInternal(const std::atomic<bool>* notified_yet) {
+  static inline bool HasBeenNotifiedInternal(
+      const std::atomic<bool>* notified_yet) {
     return notified_yet->load(std::memory_order_acquire);
   }
 

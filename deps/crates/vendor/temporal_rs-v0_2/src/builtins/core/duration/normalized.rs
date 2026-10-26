@@ -707,7 +707,7 @@ impl InternalDurationRecord {
                 || (sign == NonZeroSign::Negative && r1 <= 0 && r1 > r2)
         );
 
-        let start_epoch_ns = if start_duration.sign() == Sign::Zero {
+        let start_epoch_ns = if r1 == 0 {
             origin_epoch_ns
         } else {
             // 7. Let start be ? CalendarDateAdd(calendar, isoDateTime.[[ISODate]], startDuration, constrain).

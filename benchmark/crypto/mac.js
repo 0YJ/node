@@ -1,7 +1,7 @@
 'use strict';
 
 const common = require('../common.js');
-const { isBoringSSL } = require('../../test/common/crypto.js');
+const { hasOpenSSL, isBoringSSL } = require('../../test/common/crypto.js');
 const assert = require('node:assert');
 const {
   createHmac,
@@ -9,10 +9,11 @@ const {
   getMacs,
 } = require('node:crypto');
 
-if (isBoringSSL ||
+if (!hasOpenSSL(3) ||
+    isBoringSSL ||
     typeof createMac !== 'function' ||
     typeof getMacs !== 'function') {
-  console.log('Skipping: generic MAC API requires OpenSSL EVP_MAC support');
+  console.log('Skipping: generic MAC API requires OpenSSL >= 3');
   process.exit(0);
 }
 

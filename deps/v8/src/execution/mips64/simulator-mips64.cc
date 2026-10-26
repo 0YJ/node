@@ -2373,6 +2373,7 @@ void Simulator::CallAnyCTypeFunction(Address target_address,
   static_assert(20 == kMaxCParameters,
                 "If you've changed kMaxCParameters, please change the "
                 "GEN_MAX_PARAM_COUNT macro.");
+  printf("CallAnyCTypeFunction end result \n");
 
 #undef CALL_TARGET_VARARG
 #undef CALL_ARGS
@@ -4027,22 +4028,23 @@ void Simulator::DecodeTypeRegisterSPECIAL() {
       SetResult(rd_reg(), rt() >> sa() >> 32);
       break;
     case SLLV:
-      SetResult(rd_reg(), (int32_t)rt() << shift_amount_w());
+      SetResult(rd_reg(), (int32_t)rt() << rs());
       break;
     case DSLLV:
-      SetResult(rd_reg(), rt() << shift_amount_d());
+      SetResult(rd_reg(), rt() << rs());
       break;
     case SRLV:
       if (sa() == 0) {
         // Regular logical right-shift of a word by a variable number of
         // bits instruction. SA field is always equal to 0.
-        alu_out = static_cast<int32_t>((uint32_t)rt_u() >> shift_amount_w());
+        alu_out = static_cast<int32_t>((uint32_t)rt_u() >> rs());
       } else {
         // Logical right-rotate of a word by a variable number of bits.
         // This is special case od SRLV instruction, added in MIPS32
         // Release 2. SA field is equal to 00001.
-        alu_out = static_cast<int32_t>(base::bits::RotateRight32(
-            static_cast<const uint32_t>(rt_u()), shift_amount_w()));
+        alu_out = static_cast<int32_t>(
+            base::bits::RotateRight32(static_cast<const uint32_t>(rt_u()),
+                                      static_cast<const uint32_t>(rs_u())));
       }
       SetResult(rd_reg(), alu_out);
       break;
@@ -4050,21 +4052,21 @@ void Simulator::DecodeTypeRegisterSPECIAL() {
       if (sa() == 0) {
         // Regular logical right-shift of a word by a variable number of
         // bits instruction. SA field is always equal to 0.
-        alu_out = static_cast<int64_t>(rt_u() >> shift_amount_d());
+        alu_out = static_cast<int64_t>(rt_u() >> rs());
       } else {
         // Logical right-rotate of a word by a variable number of bits.
         // This is special case od SRLV instruction, added in MIPS32
         // Release 2. SA field is equal to 00001.
-        alu_out = static_cast<int64_t>(
-            base::bits::RotateRight64(rt_u(), shift_amount_d()));
+        alu_out =
+            static_cast<int64_t>(base::bits::RotateRight64(rt_u(), rs_u()));
       }
       SetResult(rd_reg(), alu_out);
       break;
     case SRAV:
-      SetResult(rd_reg(), (int32_t)rt() >> shift_amount_w());
+      SetResult(rd_reg(), (int32_t)rt() >> rs());
       break;
     case DSRAV:
-      SetResult(rd_reg(), rt() >> shift_amount_d());
+      SetResult(rd_reg(), rt() >> rs());
       break;
     case LSA: {
       DCHECK_EQ(kArchVariant, kMips64r6);

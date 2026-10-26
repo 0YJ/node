@@ -28,8 +28,8 @@ struct AsyncContext {
 
 class AsyncHooksWrap {
  public:
-  static constexpr internal::ManagedTypeId kTypeID =
-      internal::ManagedTypeId::kD8AsyncHooksWrap;
+  static constexpr internal::ExternalPointerTag kManagedTag =
+      internal::kGenericManagedTag;
 
   explicit AsyncHooksWrap(Isolate* isolate)
       : isolate_(isolate), enabled_(false) {}

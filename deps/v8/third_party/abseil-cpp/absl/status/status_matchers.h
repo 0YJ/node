@@ -28,9 +28,12 @@
 //   Convenience macros for `EXPECT_THAT(s, IsOk())`, where `s` is either
 //   a `Status` or a `StatusOr<T>`.
 //
-//   There are no EXPECT_NOT_OK/ASSERT_NOT_OK macros.
-//   Prefer to check for the specific expected error:
+//   There are no EXPECT_NOT_OK/ASSERT_NOT_OK macros since they would not
+//   provide much value (when they fail, they would just print the OK status
+//   which conveys no more information than `EXPECT_FALSE(s.ok())`. You can
+//   of course use `EXPECT_THAT(s, Not(IsOk()))` if you prefer _THAT style.
 //
+//   If you want to check for particular errors, better alternatives are:
 //   EXPECT_THAT(s, StatusIs(expected_error));
 //   EXPECT_THAT(s, StatusIs(_, _, HasSubstr("expected error")));
 //
@@ -76,9 +79,6 @@
 //   Status s = ...;
 //   EXPECT_THAT(s, IsOk());
 //   ```
-//
-//   There is no NotOk() matcher. Prefer to check for the specific expected
-//   error.
 
 #ifndef ABSL_STATUS_STATUS_MATCHERS_H_
 #define ABSL_STATUS_STATUS_MATCHERS_H_
@@ -104,9 +104,10 @@ ABSL_NAMESPACE_BEGIN
 // Returns a gMock matcher that matches a StatusOr<> whose status is
 // OK and whose value matches the inner matcher.
 template <typename InnerMatcherT>
-status_internal::IsOkAndHoldsMatcher<std::decay_t<InnerMatcherT>> IsOkAndHolds(
-    InnerMatcherT&& inner_matcher) {
-  return status_internal::IsOkAndHoldsMatcher<std::decay_t<InnerMatcherT>>(
+status_internal::IsOkAndHoldsMatcher<typename std::decay<InnerMatcherT>::type>
+IsOkAndHolds(InnerMatcherT&& inner_matcher) {
+  return status_internal::IsOkAndHoldsMatcher<
+      typename std::decay<InnerMatcherT>::type>(
       std::forward<InnerMatcherT>(inner_matcher));
 }
 
@@ -128,8 +129,7 @@ status_internal::StatusIsMatcher StatusIs(
 // code matches code_matcher.  See above for details.
 template <typename StatusCodeMatcherT>
 status_internal::StatusIsMatcher StatusIs(StatusCodeMatcherT&& code_matcher) {
-  return absl_testing::StatusIs(std::forward<StatusCodeMatcherT>(code_matcher),
-                                ::testing::_);
+  return StatusIs(std::forward<StatusCodeMatcherT>(code_matcher), ::testing::_);
 }
 
 // Returns a gMock matcher that matches a Status or StatusOr<> which is OK.

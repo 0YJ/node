@@ -83,9 +83,7 @@ for (const testCase of testCases) {
           server.close();
           assert.deepStrictEqual(requests, expectedUrls);
           const requestLogs = logs.filter((log) => !('error' in log));
-          // The client may reset a tunnel while the proxy is still relaying
-          // the upstream's TLS shutdown; that says nothing about the URLs.
-          const errors = logs.filter((log) => 'error' in log && log.error.code !== 'ECONNRESET');
+          const errors = logs.filter((log) => 'error' in log);
           assert.deepStrictEqual(new Set(requestLogs), expectedProxyLogs);
           assert.deepStrictEqual(errors, []);
         }));

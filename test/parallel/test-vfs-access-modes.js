@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // access / accessSync honour the R_OK / W_OK / X_OK / F_OK mode bits and

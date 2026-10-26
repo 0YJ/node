@@ -46,7 +46,6 @@ impl PartsWrite for TestWriter {
     }
 }
 
-#[doc(hidden)]
 pub fn writeable_to_parts_for_test<W: Writeable>(
     writeable: &W,
 ) -> (String, Vec<(usize, usize, Part)>) {
@@ -62,7 +61,6 @@ pub fn writeable_to_parts_for_test<W: Writeable>(
 }
 
 #[expect(clippy::type_complexity)]
-#[doc(hidden)]
 pub fn try_writeable_to_parts_for_test<W: TryWriteable>(
     writeable: &W,
 ) -> (String, Vec<(usize, usize, Part)>, Option<W::Error>) {

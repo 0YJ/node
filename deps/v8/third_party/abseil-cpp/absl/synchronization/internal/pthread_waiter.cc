@@ -25,6 +25,7 @@
 
 #include "absl/base/config.h"
 #include "absl/base/internal/raw_logging.h"
+#include "absl/base/internal/thread_identity.h"
 #include "absl/base/optimization.h"
 #include "absl/synchronization/internal/kernel_timeout.h"
 
@@ -58,12 +59,12 @@ class PthreadMutexHolder {
 }  // namespace
 
 PthreadWaiter::PthreadWaiter() : waiter_count_(0), wakeup_count_(0) {
-  const int err = pthread_mutex_init(&mu_, nullptr);
+  const int err = pthread_mutex_init(&mu_, 0);
   if (err != 0) {
     ABSL_RAW_LOG(FATAL, "pthread_mutex_init failed: %d", err);
   }
 
-  const int err2 = pthread_cond_init(&cv_, nullptr);
+  const int err2 = pthread_cond_init(&cv_, 0);
   if (err2 != 0) {
     ABSL_RAW_LOG(FATAL, "pthread_cond_init failed: %d", err2);
   }

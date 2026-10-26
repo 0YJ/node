@@ -15,10 +15,8 @@ class Object;
 class RegExpMatchInfo;
 class String;
 
-namespace regexp {
-
 // Helper methods for C++ regexp builtins.
-class Utils : public AllStatic {
+class RegExpUtils : public AllStatic {
  public:
   // Last match info accessors.
   static Handle<String> GenericCaptureGetter(
@@ -34,7 +32,7 @@ class Utils : public AllStatic {
   static V8_WARN_UNUSED_RESULT MaybeDirectHandle<Object> GetLastIndex(
       Isolate* isolate, DirectHandle<JSReceiver> recv);
 
-  // https://tc39.es/ecma262/#sec-regexpexec
+  // ES#sec-regexpexec Runtime Semantics: RegExpExec ( R, S )
   static V8_WARN_UNUSED_RESULT MaybeDirectHandle<JSAny> RegExpExec(
       Isolate* isolate, DirectHandle<JSReceiver> regexp,
       DirectHandle<String> string, DirectHandle<Object> exec);
@@ -47,7 +45,7 @@ class Utils : public AllStatic {
   // relevant property is 'exec'.
   static bool IsUnmodifiedRegExp(Isolate* isolate, DirectHandle<Object> obj);
 
-  // https://tc39.es/ecma262/#sec-advancestringindex
+  // ES#sec-advancestringindex
   // AdvanceStringIndex ( S, index, unicode )
   static uint64_t AdvanceStringIndex(Tagged<String> string, uint64_t index,
                                      bool unicode);
@@ -56,7 +54,6 @@ class Utils : public AllStatic {
       DirectHandle<String> string, bool unicode);
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

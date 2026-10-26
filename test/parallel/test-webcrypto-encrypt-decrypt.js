@@ -6,65 +6,102 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
-const { isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL, isBoringSSL } = require('../common/crypto');
 const { getFips } = require('crypto');
 const { subtle } = globalThis.crypto;
 
 // This is only a partial test. The WebCrypto Web Platform Tests
 // will provide much greater coverage.
 
-async function testRSAOaep(publicKey, privateKey) {
+// Test Encrypt/Decrypt RSA-OAEP w/ SHA-2
+{
   const buf = globalThis.crypto.getRandomValues(new Uint8Array(50));
-  const label = new TextEncoder().encode('a label');
-  const ciphertext = await subtle.encrypt({ name: 'RSA-OAEP', label }, publicKey, buf);
-  const plaintext = await subtle.decrypt({ name: 'RSA-OAEP', label }, privateKey, ciphertext);
 
-  assert.strictEqual(
-    Buffer.from(plaintext).toString('hex'),
-    Buffer.from(buf).toString('hex'));
+  async function test() {
+    const ec = new TextEncoder();
+    const { publicKey, privateKey } = await subtle.generateKey({
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-384',
+    }, true, ['encrypt', 'decrypt']);
 
-  await assert.rejects(() => subtle.encrypt({
-    name: 'RSA-OAEP',
-  }, privateKey, buf), {
-    name: 'InvalidAccessError',
-    message: 'Unable to use this key to encrypt'
-  });
+    const ciphertext = await subtle.encrypt({
+      name: 'RSA-OAEP',
+      label: ec.encode('a label')
+    }, publicKey, buf);
 
-  await assert.rejects(() => subtle.decrypt({
-    name: 'RSA-OAEP',
-  }, publicKey, ciphertext), {
-    name: 'InvalidAccessError',
-    message: 'Unable to use this key to decrypt'
-  });
+    const plaintext = await subtle.decrypt({
+      name: 'RSA-OAEP',
+      label: ec.encode('a label')
+    }, privateKey, ciphertext);
+
+    assert.strictEqual(
+      Buffer.from(plaintext).toString('hex'),
+      Buffer.from(buf).toString('hex'));
+
+    await assert.rejects(() => subtle.encrypt({
+      name: 'RSA-OAEP',
+    }, privateKey, buf), {
+      name: 'InvalidAccessError',
+      message: 'Unable to use this key to encrypt'
+    });
+
+    await assert.rejects(() => subtle.decrypt({
+      name: 'RSA-OAEP',
+    }, publicKey, ciphertext), {
+      name: 'InvalidAccessError',
+      message: 'Unable to use this key to decrypt'
+    });
+  }
+
+  test().then(common.mustCall());
 }
 
-(async function() {
-  const { publicKey, privateKey } = await subtle.generateKey({
-    name: 'RSA-OAEP',
-    modulusLength: 2048,
-    publicExponent: new Uint8Array([1, 0, 1]),
-    hash: 'SHA-384',
-  }, true, ['encrypt', 'decrypt']);
+// Test Encrypt/Decrypt RSA-OAEP w/ SHA-3
+if (!isBoringSSL) {
+  const buf = globalThis.crypto.getRandomValues(new Uint8Array(50));
 
-  await testRSAOaep(publicKey, privateKey);
+  async function test() {
+    const ec = new TextEncoder();
+    const { publicKey, privateKey } = await subtle.generateKey({
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA3-384',
+    }, true, ['encrypt', 'decrypt']);
 
-  // SHA-3 is only supported for digest operations in BoringSSL.
-  if (!isBoringSSL) {
-    // Import the same key material with SHA-3 to avoid another RSA keygen.
-    const [spki, pkcs8] = await Promise.all([
-      subtle.exportKey('spki', publicKey),
-      subtle.exportKey('pkcs8', privateKey),
-    ]);
-    for (const hash of ['SHA3-256', 'SHA3-384', 'SHA3-512']) {
-      const algorithm = { name: 'RSA-OAEP', hash };
-      const [sha3PublicKey, sha3PrivateKey] = await Promise.all([
-        subtle.importKey('spki', spki, algorithm, false, ['encrypt']),
-        subtle.importKey('pkcs8', pkcs8, algorithm, false, ['decrypt']),
-      ]);
-      await testRSAOaep(sha3PublicKey, sha3PrivateKey);
-    }
+    const ciphertext = await subtle.encrypt({
+      name: 'RSA-OAEP',
+      label: ec.encode('a label')
+    }, publicKey, buf);
+
+    const plaintext = await subtle.decrypt({
+      name: 'RSA-OAEP',
+      label: ec.encode('a label')
+    }, privateKey, ciphertext);
+
+    assert.strictEqual(
+      Buffer.from(plaintext).toString('hex'),
+      Buffer.from(buf).toString('hex'));
+
+    await assert.rejects(() => subtle.encrypt({
+      name: 'RSA-OAEP',
+    }, privateKey, buf), {
+      name: 'InvalidAccessError',
+      message: 'Unable to use this key to encrypt'
+    });
+
+    await assert.rejects(() => subtle.decrypt({
+      name: 'RSA-OAEP',
+    }, publicKey, ciphertext), {
+      name: 'InvalidAccessError',
+      message: 'Unable to use this key to decrypt'
+    });
   }
-})().then(common.mustCall());
+
+  test().then(common.mustCall());
+}
 
 // Test Encrypt/Decrypt AES-CTR
 {
@@ -148,7 +185,7 @@ async function testRSAOaep(publicKey, privateKey) {
 }
 
 // Test Encrypt/Decrypt AES-OCB
-if (!isBoringSSL) {
+if (hasOpenSSL(3)) {
   const buf = globalThis.crypto.getRandomValues(new Uint8Array(50));
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12));
 
@@ -174,11 +211,12 @@ if (!isBoringSSL) {
   if (getFips() === 1) {
     assert.rejects(
       test(),
-      { name: 'NotSupportedError', message: 'Unrecognized algorithm name' })
+      (err) => err.name === 'OperationError' &&
+               err.cause?.code === 'ERR_OSSL_EVP_UNSUPPORTED')
       .then(common.mustCall());
   } else {
     test().then(common.mustCall());
   }
 } else {
-  common.printSkipMessage('Skipping AES-OCB test cases unsupported by BoringSSL');
+  common.printSkipMessage('Skipping unsupported AES-OCB test cases');
 }

@@ -1,13 +1,9 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // watch / promises.watch / watchFile through RealFSProvider.
 
 const common = require('../common');
-
-if (common.isIBMi)
-  common.skip('IBMi does not support `fs.watch()`');
-
 const tmpdir = require('../common/tmpdir');
 const assert = require('assert');
 const fs = require('fs');

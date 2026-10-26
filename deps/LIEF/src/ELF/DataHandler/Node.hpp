@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,15 +24,14 @@ namespace LIEF::ELF::DataHandler {
 class LIEF_LOCAL Node {
   public:
   enum Type : uint8_t {
-    UNKNOWN = 0,
-    SECTION,
-    SEGMENT,
+    SECTION = 0,
+    SEGMENT = 1,
+    UNKNOWN = 2
   };
   Node() = default;
   Node(uint64_t offset, uint64_t size, Type type) :
-    size_{size},
-    offset_{offset},
-    type_{type} {}
+    size_{size}, offset_{offset}, type_{type}
+  {}
 
   Node& operator=(const Node&) = default;
   Node(const Node&) = default;

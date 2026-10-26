@@ -46,7 +46,6 @@ bool Type::Equals(const Type& other) const {
     case Kind::kAny:
       return true;
   }
-  UNREACHABLE();
 }
 
 bool Type::IsSubtypeOf(const Type& other) const {
@@ -73,7 +72,6 @@ bool Type::IsSubtypeOf(const Type& other) const {
     case Kind::kAny:
       UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 void Type::PrintTo(std::ostream& stream) const {
@@ -144,7 +142,6 @@ Type Type::LeastUpperBound(const Type& lhs, const Type& rhs, Zone* zone) {
     case Type::Kind::kTuple:
       return TupleType::LeastUpperBound(lhs.AsTuple(), rhs.AsTuple(), zone);
   }
-  UNREACHABLE();
 }
 
 std::optional<Type> Type::ParseFromString(const std::string_view& str,
@@ -173,7 +170,6 @@ Handle<TurboshaftType> Type::AllocateOnHeap(Factory* factory) const {
     case Kind::kAny:
       UNIMPLEMENTED();
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -190,7 +186,6 @@ bool WordType<Bits>::Contains(word_t value) const {
       return false;
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -209,7 +204,6 @@ bool WordType<Bits>::Equals(const WordType<Bits>& other) const {
       return true;
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -234,7 +228,6 @@ bool WordType<Bits>::IsSubtypeOf(const WordType<Bits>& other) const {
       return true;
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits, typename word_t = typename WordType<Bits>::word_t>
@@ -264,9 +257,8 @@ WordType<Bits> LeastUpperBoundFromRanges(word_t l_from, word_t l_to,
     return result;
   }
 
-  if (rhs_wrapping) {
+  if (rhs_wrapping)
     return LeastUpperBoundFromRanges<Bits>(r_from, r_to, l_from, l_to, zone);
-  }
   DCHECK(lhs_wrapping);
   DCHECK(!rhs_wrapping);
   // Case 3 & 4: lhs is wrapping, rhs is not
@@ -274,17 +266,15 @@ WordType<Bits> LeastUpperBoundFromRanges(word_t l_from, word_t l_to,
   // rhs -------|XX|-   -|XX|-------   ----|XXXXX|-   ---|XX|-----
   // ==> XXX|---|XXXX   XXXX|---|XXX   XXXXXXXXXXXX   XXXXXX|--|XX
   if (r_from <= l_to) {
-    if (r_to <= l_to) {
+    if (r_to <= l_to)
       return WordType<Bits>::Range(l_from, l_to, zone);       // y covered by x
-    }
     if (r_to >= l_from) return WordType<Bits>::Any();         // ex3
     auto result = WordType<Bits>::Range(l_from, r_to, zone);  // ex 1
     DCHECK(result.is_wrapping());
     return result;
   } else if (r_to >= l_from) {
-    if (r_from >= l_from) {
+    if (r_from >= l_from)
       return WordType<Bits>::Range(l_from, l_to, zone);       // y covered by x
-    }
     DCHECK_GT(r_from, l_to);                                  // handled above
     auto result = WordType<Bits>::Range(r_from, l_to, zone);  // ex 2
     DCHECK(result.is_wrapping());
@@ -416,7 +406,6 @@ Type WordType<Bits>::Intersect(const WordType<Bits>& lhs,
                  ? s_h
                  : s_l;
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -490,7 +479,6 @@ bool FloatType<Bits>::Contains(float_t value) const {
       return false;
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -513,7 +501,6 @@ bool FloatType<Bits>::Equals(const FloatType<Bits>& other) const {
       return true;
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>
@@ -542,10 +529,8 @@ bool FloatType<Bits>::IsSubtypeOf(const FloatType<Bits>& other) const {
           }
           return true;
       }
-      UNREACHABLE();
     }
   }
-  UNREACHABLE();
 }
 
 template <size_t Bits>

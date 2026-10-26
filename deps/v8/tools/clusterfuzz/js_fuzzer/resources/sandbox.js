@@ -24,6 +24,5 @@ try {
     getInstanceTypeIdOfObjectAt: () => undefined,
     getInstanceTypeIdFor: () => 0,
     getFieldOffset: () => 31,
-    getMetadata: () => ({trustedPointerHandleShift: 9}),
   };
 }

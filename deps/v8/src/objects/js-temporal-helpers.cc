@@ -5,13 +5,12 @@
 #include "src/objects/js-temporal-helpers.h"
 
 #include "src/objects/js-objects-inl.h"
-#include "src/objects/object-conversions-inl.h"
 
 namespace v8::internal::temporal {
 
 namespace {
 
-// https://tc39.es/proposal-temporal/#sec-isintegralnumber
+// #sec-isintegralnumber
 bool IsIntegralNumber(Isolate* isolate, DirectHandle<Object> argument) {
   // 1. If Type(argument) is not Number, return false.
   if (!IsNumber(*argument)) return false;
@@ -24,7 +23,7 @@ bool IsIntegralNumber(Isolate* isolate, DirectHandle<Object> argument) {
   return true;
 }
 
-// https://tc39.es/proposal-temporal/#sec-temporal-tointegerwithoutrounding
+// #sec-temporal-tointegerwithoutrounding
 Maybe<double> ToIntegerWithoutRounding(Isolate* isolate,
                                        DirectHandle<Object> argument) {
   // 1. Let number be ? ToNumber(argument).
@@ -85,7 +84,7 @@ Maybe<bool> IterateDurationRecordFieldsTable(
 
 }  // namespace
 
-// https://tc39.es/proposal-temporal/#sec-temporal-isvalidduration
+// #sec-temporal-isvalidduration
 bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
   // 1. Let sign be ! DurationSign(years, months, weeks, days, hours, minutes,
   // seconds, milliseconds, microseconds, nanoseconds).
@@ -173,7 +172,7 @@ bool IsValidDuration(Isolate* isolate, const DurationRecord& dur) {
   return true;
 }
 
-// https://tc39.es/proposal-temporal/#sec-temporal-durationsign
+// #sec-temporal-durationsign
 int32_t DurationRecord::Sign(const DurationRecord& dur) {
   // 1. For each value v of « years, months, weeks, days, hours, minutes,
   // seconds, milliseconds, microseconds, nanoseconds », do a. If v < 0, return
@@ -203,7 +202,7 @@ int32_t DurationRecord::Sign(const DurationRecord& dur) {
   return 0;
 }
 
-// https://tc39.es/proposal-temporal/#sec-temporal-createtimedurationrecord
+// #sec-temporal-createtimedurationrecord
 Maybe<TimeDurationRecord> TimeDurationRecord::Create(
     Isolate* isolate, double days, double hours, double minutes, double seconds,
     double milliseconds, double microseconds, double nanoseconds) {
@@ -222,7 +221,7 @@ Maybe<TimeDurationRecord> TimeDurationRecord::Create(
   return Just(record);
 }
 
-// https://tc39.es/proposal-temporal/#sec-temporal-createdurationrecord
+// #sec-temporal-createdurationrecord
 Maybe<DurationRecord> DurationRecord::Create(
     Isolate* isolate, double years, double months, double weeks, double days,
     double hours, double minutes, double seconds, double milliseconds,

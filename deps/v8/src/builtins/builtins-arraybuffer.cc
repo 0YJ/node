@@ -10,14 +10,13 @@
 #include "src/logging/counters.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/js-array-buffer-inl.h"
-#include "src/objects/object-conversions-inl.h"
 #include "src/objects/objects-inl.h"
 
 namespace v8 {
 namespace internal {
 
 #define CHECK_SHARED(expected, name, method)                                \
-  if (name->is_shared().value() != expected) {                              \
+  if (name->is_shared() != expected) {                                      \
     THROW_NEW_ERROR_RETURN_FAILURE(                                         \
         isolate,                                                            \
         NewTypeError(MessageTemplate::kIncompatibleMethodReceiver,          \
@@ -26,7 +25,7 @@ namespace internal {
   }
 
 #define CHECK_RESIZABLE(expected, name, method)                             \
-  if (name->is_resizable_by_js().value() != expected) {                     \
+  if (name->is_resizable_by_js() != expected) {                             \
     THROW_NEW_ERROR_RETURN_FAILURE(                                         \
         isolate,                                                            \
         NewTypeError(MessageTemplate::kIncompatibleMethodReceiver,          \
@@ -35,7 +34,7 @@ namespace internal {
   }
 
 // -----------------------------------------------------------------------------
-// https://tc39.es/ecma262/#sec-arraybuffer-objects
+// ES#sec-arraybuffer-objects
 
 namespace {
 
@@ -62,29 +61,32 @@ TryAllocateBackingStore(Isolate* isolate, SharedFlag shared,
     return {nullptr, MessageTemplate::kInvalidArrayBufferLength};
   }
 
-  if (!resizable) {
-    backing_store =
-        BackingStore::Allocate(isolate, byte_length, shared, initialized);
-  } else {
-    if (!TryNumberToSize(*max_length, &max_byte_length) ||
-        max_byte_length > max_allocatable) {
-      return {nullptr, MessageTemplate::kInvalidArrayBufferMaxLength};
-    }
-    if (byte_length > max_byte_length) {
-      return {nullptr, MessageTemplate::kInvalidArrayBufferMaxLength};
-    }
+  switch (resizable) {
+    case ResizableFlag::kNotResizable:
+      backing_store =
+          BackingStore::Allocate(isolate, byte_length, shared, initialized);
+      break;
+    case ResizableFlag::kResizable:
+      if (!TryNumberToSize(*max_length, &max_byte_length) ||
+          max_byte_length > max_allocatable) {
+        return {nullptr, MessageTemplate::kInvalidArrayBufferMaxLength};
+      }
+      if (byte_length > max_byte_length) {
+        return {nullptr, MessageTemplate::kInvalidArrayBufferMaxLength};
+      }
 
-    size_t page_size, initial_pages, max_pages;
-    const auto maybe_range_error =
-        JSArrayBuffer::GetResizableBackingStorePageConfigurationImpl(
-            isolate, byte_length, max_byte_length, &page_size, &initial_pages,
-            &max_pages);
-    if (maybe_range_error.has_value()) {
-      return {nullptr, maybe_range_error.value()};
-    }
-    backing_store = BackingStore::TryAllocateAndPartiallyCommitMemory(
-        isolate, byte_length, max_byte_length, page_size, initial_pages,
-        max_pages, WasmMemoryFlag::kNotWasm, shared);
+      size_t page_size, initial_pages, max_pages;
+      const auto maybe_range_error =
+          JSArrayBuffer::GetResizableBackingStorePageConfigurationImpl(
+              isolate, byte_length, max_byte_length, &page_size, &initial_pages,
+              &max_pages);
+      if (maybe_range_error.has_value()) {
+        return {nullptr, maybe_range_error.value()};
+      }
+      backing_store = BackingStore::TryAllocateAndPartiallyCommitMemory(
+          isolate, byte_length, max_byte_length, page_size, initial_pages,
+          max_pages, WasmMemoryFlag::kNotWasm, shared);
+      break;
   }
 
   // Range errors bailed out earlier; only the failing allocation needs to be
@@ -106,9 +108,12 @@ Tagged<Object> ConstructBuffer(Isolate* isolate,
   // JSArrayBuffer to avoid a complex dance during setup. We then always create
   // the AB before throwing a possible error as the creation is observable.
   const SharedFlag shared =
-      SharedFlag(*target != target->native_context()->array_buffer_fun());
-  const ResizableFlag resizable =
-      max_length.is_null() ? ResizableFlag{false} : ResizableFlag{true};
+      *target != target->native_context()->array_buffer_fun()
+          ? SharedFlag::kShared
+          : SharedFlag::kNotShared;
+  const ResizableFlag resizable = max_length.is_null()
+                                      ? ResizableFlag::kNotResizable
+                                      : ResizableFlag::kResizable;
   // BackingStore allocation may GC which is not observable itself.
   auto [backing_store, range_error] = TryAllocateBackingStore(
       isolate, shared, resizable, length, max_length, initialized);
@@ -129,13 +134,13 @@ Tagged<Object> ConstructBuffer(Isolate* isolate,
 
 }  // namespace
 
-// https://tc39.es/ecma262/#sec-arraybuffer-constructor
+// ES #sec-arraybuffer-constructor
 BUILTIN(ArrayBufferConstructor) {
   HandleScope scope(isolate);
   DirectHandle<JSFunction> target = args.target();
   DCHECK(*target == target->native_context()->array_buffer_fun() ||
          *target == target->native_context()->shared_array_buffer_fun());
-  if (IsUndefined(*args.new_target())) {  // [[Call]]
+  if (IsUndefined(*args.new_target(), isolate)) {  // [[Call]]
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate,
         NewTypeError(MessageTemplate::kConstructorNotFunction,
@@ -161,7 +166,7 @@ BUILTIN(ArrayBufferConstructor) {
       JSObject::ReadFromOptionsBag(
           options, isolate->factory()->max_byte_length_string(), isolate));
 
-  if (!IsUndefined(*max_length)) {
+  if (!IsUndefined(*max_length, isolate)) {
     if (*target == target->native_context()->array_buffer_fun()) {
       isolate->CountUsage(
           v8::Isolate::UseCounterFeature::kResizableArrayBuffer);
@@ -179,7 +184,7 @@ BUILTIN(ArrayBufferConstructor) {
     }
   }
   return ConstructBuffer(isolate, target, new_target, number_length,
-                         number_max_length, InitializedFlag{true});
+                         number_max_length, InitializedFlag::kZeroInitialized);
 }
 
 // This is a helper to construct an ArrayBuffer with uinitialized memory.
@@ -191,7 +196,7 @@ BUILTIN(ArrayBufferConstructor_DoNotInitialize) {
                                   isolate);
   DirectHandle<Object> length = args.atOrUndefined(isolate, 1);
   return ConstructBuffer(isolate, target, target, length, {},
-                         InitializedFlag{false});
+                         InitializedFlag::kUninitialized);
 }
 
 static Tagged<Object> SliceHelper(BuiltinArguments args, Isolate* isolate,
@@ -237,7 +242,7 @@ static Tagged<Object> SliceHelper(BuiltinArguments args, Isolate* isolate,
     // * If end is undefined, let relativeEnd be len; else let relativeEnd be ?
     //   ToInteger(end).
     double relative_end;
-    if (IsUndefined(*end)) {
+    if (IsUndefined(*end, isolate)) {
       relative_end = len;
     } else {
       ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, relative_end,
@@ -308,7 +313,11 @@ static Tagged<Object> SliceHelper(BuiltinArguments args, Isolate* isolate,
   CHECK_SHARED(is_shared, new_array_buffer, kMethodName);
 
   if (to_immutable) {
-    new_array_buffer->MakeImmutable(isolate);
+    new_array_buffer->set_is_immutable(true);
+    if (auto backing_store = new_array_buffer->GetBackingStore()) {
+      backing_store->set_is_immutable(true);
+    }
+    DCHECK(!new_array_buffer->was_detached());
 
     // * If IsDetachedBuffer(O) is true, throw a TypeError exception.
     // * Let fromBuf be O.[[ArrayBufferData]].
@@ -422,13 +431,13 @@ static Tagged<Object> SliceHelper(BuiltinArguments args, Isolate* isolate,
   return *new_;
 }
 
-// https://tc39.es/ecma262/#sec-sharedarraybuffer.prototype.slice
+// ES #sec-sharedarraybuffer.prototype.slice
 BUILTIN(SharedArrayBufferPrototypeSlice) {
   const char* const kMethodName = "SharedArrayBuffer.prototype.slice";
   return SliceHelper(args, isolate, kMethodName, true, false);
 }
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.slice
+// ES #sec-arraybuffer.prototype.slice
 // ArrayBuffer.prototype.slice ( start, end )
 BUILTIN(ArrayBufferPrototypeSlice) {
   const char* const kMethodName = "ArrayBuffer.prototype.slice";
@@ -486,18 +495,7 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
                                    kMethodName)));
   }
 
-  auto* extension = array_buffer->extension();
-  // Only resizable ArrayBuffer should get here.
-  SBXCHECK(extension->is_resizable_by_js());
-  SBXCHECK_EQ(extension->is_shared(), SharedFlag(is_shared));
-
-  auto backing_store = extension->backing_store();
-
-  if (is_shared &&
-      new_byte_length < backing_store->byte_length(std::memory_order_seq_cst)) {
-    // `backing_store->byte_length(std::memory_order_seq_cst)` above is
-    // equivalent to the GSAB path of JSArrayBuffer::GetByteLength.
-
+  if (is_shared && new_byte_length < array_buffer->GetByteLength()) {
     // GrowableSharedArrayBuffer is only allowed to grow.
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewRangeError(MessageTemplate::kInvalidArrayBufferResizeLength,
@@ -517,6 +515,7 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
   // If hostHandled is handled, return undefined.
 
 #ifdef V8_ENABLE_WEBASSEMBLY
+  auto backing_store = array_buffer->GetBackingStore();
   if (backing_store->is_wasm_memory()) {
     size_t old_byte_length =
         backing_store->byte_length(std::memory_order_seq_cst);
@@ -538,8 +537,9 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
     CHECK(IsWasmMemoryObject(*memory));
     // WasmMemoryObject::Grow handles updating byte_length, as it's used by both
     // ArrayBuffer.prototype.resize and WebAssembly.Memory.prototype.grow.
-    uint32_t delta_pages = static_cast<uint32_t>(
-        (new_byte_length - old_byte_length) / wasm::kWasmPageSize);
+    uint32_t delta_pages =
+        static_cast<uint32_t>(new_byte_length - old_byte_length) /
+        wasm::kWasmPageSize;
     if (WasmMemoryObject::Grow(isolate, Cast<WasmMemoryObject>(memory),
                                delta_pages) == -1) {
       THROW_NEW_ERROR_RETURN_FAILURE(
@@ -559,7 +559,8 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
     // [RAB] NOTE: Neither creation of the new Data Block nor copying from the
     // old Data Block are observable. Implementations reserve the right to
     // implement this method as in-place growth or shrinkage.
-    if (backing_store->ResizeInPlace(isolate, new_byte_length) !=
+    if (array_buffer->GetBackingStore()->ResizeInPlace(isolate,
+                                                       new_byte_length) !=
         BackingStore::ResizeOrGrowResult::kSuccess) {
       THROW_NEW_ERROR_RETURN_FAILURE(
           isolate, NewRangeError(MessageTemplate::kOutOfMemory,
@@ -578,14 +579,15 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
     }
 
     isolate->heap()->ResizeArrayBufferExtension(
-        extension,
+        array_buffer->extension(),
         static_cast<int64_t>(new_byte_length) - array_buffer->byte_length());
 
     // [RAB] Set O.[[ArrayBufferByteLength]] to newLength.
     array_buffer->set_byte_length(new_byte_length);
   } else {
     // [GSAB] (Detailed description of the algorithm omitted.)
-    auto result = backing_store->GrowInPlace(isolate, new_byte_length);
+    auto result =
+        array_buffer->GetBackingStore()->GrowInPlace(isolate, new_byte_length);
     if (result == BackingStore::ResizeOrGrowResult::kFailure) {
       THROW_NEW_ERROR_RETURN_FAILURE(
           isolate, NewRangeError(MessageTemplate::kOutOfMemory,
@@ -607,7 +609,7 @@ static Tagged<Object> ResizeHelper(BuiltinArguments args, Isolate* isolate,
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
-// https://tc39.es/ecma262/#sec-get-sharedarraybuffer.prototype.bytelength
+// ES #sec-get-sharedarraybuffer.prototype.bytelength
 // get SharedArrayBuffer.prototype.byteLength
 BUILTIN(SharedArrayBufferPrototypeGetByteLength) {
   const char* const kMethodName = "get SharedArrayBuffer.prototype.byteLength";
@@ -628,7 +630,7 @@ BUILTIN(SharedArrayBufferPrototypeGetByteLength) {
   return *isolate->factory()->NewNumberFromSize(byte_length);
 }
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.resize
+// ES #sec-arraybuffer.prototype.resize
 // ArrayBuffer.prototype.resize(new_size)
 BUILTIN(ArrayBufferPrototypeResize) {
   const char* const kMethodName = "ArrayBuffer.prototype.resize";
@@ -657,7 +659,7 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
   CHECK_SHARED(false, array_buffer, method_name);
 
   size_t new_byte_length;
-  if (IsUndefined(*new_length)) {
+  if (IsUndefined(*new_length, isolate)) {
     // 3. If newLength is undefined, then
     //   a. Let newByteLength be arrayBuffer.[[ArrayBufferByteLength]].
     new_byte_length = array_buffer->GetByteLength();
@@ -706,12 +708,12 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
     //    IsResizableArrayBuffer(arrayBuffer) is true, then
     //   a. Let newMaxByteLength be arrayBuffer.[[ArrayBufferMaxByteLength]].
     new_max_byte_length = array_buffer->max_byte_length();
-    resizable = ResizableFlag{true};
+    resizable = ResizableFlag::kResizable;
   } else {
     // 7. Else,
     //   a. Let newMaxByteLength be empty.
     new_max_byte_length = new_byte_length;
-    resizable = ResizableFlag{false};
+    resizable = ResizableFlag::kNotResizable;
   }
 
   // 8. If arrayBuffer.[[ArrayBufferDetachKey]] is not undefined, throw a
@@ -737,16 +739,17 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
     //    newMaxByteLength).
     //
     // Nothing to do for steps 10-14.
-    result_buffer =
-        isolate->factory()
-            ->NewJSArrayBufferAndBackingStore(0, new_max_byte_length,
-                                              InitializedFlag{false}, resizable)
-            .ToHandleChecked();
+    result_buffer = isolate->factory()
+                        ->NewJSArrayBufferAndBackingStore(
+                            0, new_max_byte_length,
+                            InitializedFlag::kUninitialized, resizable)
+                        .ToHandleChecked();
   } else {
     // Case 2: We can reuse the same BackingStore.
     auto from_backing_store = array_buffer->GetBackingStore();
     if (from_backing_store && !from_backing_store->is_resizable_by_js() &&
-        !resizable && new_byte_length == array_buffer->GetByteLength()) {
+        resizable == ResizableFlag::kNotResizable &&
+        new_byte_length == array_buffer->GetByteLength()) {
       // TODO(syg): Consider realloc when the default ArrayBuffer allocator's
       // Reallocate does better than copy.
       //
@@ -772,8 +775,8 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
       DirectHandle<JSArrayBuffer> new_buffer;
       MaybeDirectHandle<JSArrayBuffer> result =
           isolate->factory()->NewJSArrayBufferAndBackingStore(
-              new_byte_length, new_max_byte_length, InitializedFlag{false},
-              resizable);
+              new_byte_length, new_max_byte_length,
+              InitializedFlag::kUninitialized, resizable);
       if (!result.ToHandle(&new_buffer)) {
         THROW_NEW_ERROR_RETURN_FAILURE(
             isolate,
@@ -815,7 +818,10 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
   }
 
   if (preserve_resizability == kToImmutable) {
-    result_buffer->MakeImmutable(isolate);
+    result_buffer->set_is_immutable(true);
+    if (auto backing_store = result_buffer->GetBackingStore()) {
+      backing_store->set_is_immutable(true);
+    }
   }
 
   // 16. Return newBuffer.
@@ -824,7 +830,7 @@ Tagged<Object> ArrayBufferTransfer(Isolate* isolate,
 
 }  // namespace
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.transfer
+// ES #sec-arraybuffer.prototype.transfer
 // ArrayBuffer.prototype.transfer([new_length])
 BUILTIN(ArrayBufferPrototypeTransfer) {
   const char kMethodName[] = "ArrayBuffer.prototype.transfer";
@@ -838,7 +844,7 @@ BUILTIN(ArrayBufferPrototypeTransfer) {
                              kPreserveResizability, kMethodName);
 }
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.transferToFixedLength
+// ES #sec-arraybuffer.prototype.transferToFixedLength
 // ArrayBuffer.prototype.transferToFixedLength([new_length])
 BUILTIN(ArrayBufferPrototypeTransferToFixedLength) {
   const char kMethodName[] = "ArrayBuffer.prototype.transferToFixedLength";
@@ -852,7 +858,7 @@ BUILTIN(ArrayBufferPrototypeTransferToFixedLength) {
                              kMethodName);
 }
 
-// https://tc39.es/ecma262/#sec-sharedarraybuffer.prototype.grow
+// ES #sec-sharedarraybuffer.prototype.grow
 // SharedArrayBuffer.prototype.grow(new_size)
 BUILTIN(SharedArrayBufferPrototypeGrow) {
   const char* const kMethodName = "SharedArrayBuffer.prototype.grow";
@@ -860,7 +866,7 @@ BUILTIN(SharedArrayBufferPrototypeGrow) {
   return ResizeHelper(args, isolate, kMethodName, kIsShared);
 }
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.transferToImmutable
+// ES #sec-arraybuffer.prototype.transferToImmutable
 BUILTIN(ArrayBufferPrototypeTransferToImmutable) {
   const char kMethodName[] = "ArrayBuffer.prototype.transferToImmutable";
   HandleScope scope(isolate);
@@ -873,7 +879,7 @@ BUILTIN(ArrayBufferPrototypeTransferToImmutable) {
                              kMethodName);
 }
 
-// https://tc39.es/ecma262/#sec-arraybuffer.prototype.sliceToImmutable
+// ES #sec-arraybuffer.prototype.sliceToImmutable
 BUILTIN(ArrayBufferPrototypeSliceToImmutable) {
   const char* const kMethodName = "ArrayBuffer.prototype.sliceToImmutable";
   return SliceHelper(args, isolate, kMethodName, false, true);

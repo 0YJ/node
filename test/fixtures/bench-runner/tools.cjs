@@ -1,6 +1,5 @@
 'use strict';
 
-const { completeSample } = require('../../common/bench');
 const { bench } = require('node:bench');
 
 if (process.env.NODE_BENCH_PID_LOG !== undefined) {
@@ -11,5 +10,11 @@ if (process.env.NODE_BENCH_PID_LOG !== undefined) {
 for (const size of [1, 2]) {
   bench('tools/simple.js', {
     params: { method: 'loop', size },
-  }, (b) => completeSample(b, 1_000));
+  }, (b) => {
+    let value = 0;
+    b.start();
+    for (let i = 0; i < 1_000; i++) value += size;
+    b.end(1_000);
+    if (value === 0) throw new Error('unreachable');
+  });
 }

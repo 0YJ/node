@@ -1,4 +1,4 @@
-#include "arch/arm_arch.h"
+#include "arm_arch.h"
 
 .section	__TEXT,__const
 

@@ -1,10 +1,11 @@
 /* zip.h -- IO on .zip files using zlib
-   part of the MiniZip project - ( https://www.winimage.com/zLibDll/minizip.html )
+   Version 1.1, February 14h, 2010
+   part of the MiniZip project - ( http://www.winimage.com/zLibDll/minizip.html )
 
-         Copyright (C) 1998-2026 Gilles Vollant (minizip) ( https://www.winimage.com/zLibDll/minizip.html )
+         Copyright (C) 1998-2010 Gilles Vollant (minizip) ( http://www.winimage.com/zLibDll/minizip.html )
 
          Modifications for Zip64 support
-         Copyright (C) 2009-2010 Mathias Svensson ( https://result42.com )
+         Copyright (C) 2009-2010 Mathias Svensson ( http://result42.com )
 
          For more info read MiniZip_info.txt
 
@@ -43,7 +44,7 @@
 extern "C" {
 #endif
 
-/* #define HAVE_BZIP2 */
+//#define HAVE_BZIP2
 
 #ifndef _ZLIB_H
 #include "zlib.h"
@@ -67,8 +68,6 @@ typedef zipFile__ *zipFile;
 #else
 typedef voidp zipFile;
 #endif
-
-extern const char zip_copyright[];
 
 #define ZIP_OK                          (0)
 #define ZIP_EOF                         (0)

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --no-liftoff
+
 // Under certain conditions, the following subgraph was not optimized correctly:
 // cond
 //  |  \

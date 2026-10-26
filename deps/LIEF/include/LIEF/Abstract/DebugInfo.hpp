@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,14 +34,13 @@ class DebugInfo;
 /// Users can use this interface to access high-level debug features like
 /// resolving function addresses.
 ///
-/// @see LIEF::pdb::DebugInfo, LIEF::dwarf::DebugInfo
+/// See: LIEF::pdb::DebugInfo, LIEF::dwarf::DebugInfo
 class LIEF_API DebugInfo {
   public:
   friend class Binary;
   enum class FORMAT {
     UNKNOWN = 0,
-    DWARF,
-    PDB,
+    DWARF, PDB,
   };
   DebugInfo(std::unique_ptr<details::DebugInfo> impl);
 
@@ -62,7 +61,7 @@ class LIEF_API DebugInfo {
   template<class T>
   const T* as() const {
     static_assert(std::is_base_of<DebugInfo, T>::value,
-                  "Requires DebugInfo inheritance");
+                  "Require Instruction inheritance");
     if (T::classof(this)) {
       return static_cast<const T*>(this);
     }
@@ -70,8 +69,7 @@ class LIEF_API DebugInfo {
   }
 
   /// Attempt to resolve the address of the function specified by `name`.
-  virtual optional<uint64_t>
-      find_function_address(const std::string& name) const = 0;
+  virtual optional<uint64_t> find_function_address(const std::string& name) const = 0;
 
   protected:
   std::unique_ptr<details::DebugInfo> impl_;

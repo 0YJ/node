@@ -10,7 +10,6 @@
 #include "src/compiler/opcodes.h"
 #include "src/compiler/operator-properties.h"
 #include "src/compiler/simplified-operator.h"
-#include "src/flags/flags.h"
 #include "src/objects/type-hints.h"
 
 namespace v8 {
@@ -29,9 +28,7 @@ bool BinaryOperationHintToNumberOperationHint(
       *number_hint = NumberOperationHint::kSignedSmallInputs;
       return true;
     case BinaryOperationHint::kAdditiveSafeInteger:
-      *number_hint = v8_flags.turbofan_additive_safe_int_feedback
-                         ? NumberOperationHint::kAdditiveSafeInteger
-                         : NumberOperationHint::kNumber;
+      *number_hint = NumberOperationHint::kAdditiveSafeInteger;
       return true;
     case BinaryOperationHint::kNumber:
       *number_hint = NumberOperationHint::kNumber;
@@ -163,7 +160,6 @@ class JSSpeculativeBinopBuilder final {
         *hint = BigIntOperationHint::kBigInt64;
         return true;
     }
-    UNREACHABLE();
   }
 
   const Operator* SpeculativeNumberOp(NumberOperationHint hint) {
@@ -343,9 +339,7 @@ class JSSpeculativeBinopBuilder final {
 
  private:
   BinaryOperationHint GetBinaryOperationHint() {
-    if (slot_.IsInvalid() && !embedded_hint_.IsInvalid()) {
-      return std::get<BinaryOperationHint>(embedded_hint_.hint());
-    }
+    DCHECK(!slot_.IsInvalid());
     return lowering_->GetBinaryOperationHint(slot_);
   }
 
@@ -388,126 +382,108 @@ CompareOperationHint JSTypeHintLowering::GetCompareOperationHint(
   return broker()->GetFeedbackForCompareOperation(source);
 }
 
-JSTypeHintLowering::LoweringResult JSTypeHintLowering::ReduceTypeOfOperation(
+JSTypeHintLowering::LoweringResult JSTypeHintLowering::ReduceUnaryOperation(
     const Operator* op, Node* operand, Node* effect, Node* control,
     FeedbackSlot slot) const {
-  DCHECK_EQ(op->opcode(), IrOpcode::kTypeOf);
   if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
           slot, effect, control,
           DeoptimizeReason::kInsufficientTypeFeedbackForUnaryOperation)) {
     return LoweringResult::Exit(node);
   }
 
+  // Note: Unary and binary operations collect the same kind of feedback.
   FeedbackSource feedback(feedback_vector(), slot);
 
-  TypeOfFeedback::Result hint = broker()->GetFeedbackForTypeOf(feedback);
-  switch (hint) {
-    case TypeOfFeedback::kNumber:
-    case TypeOfFeedback::kSmi: {
-      Node* check = jsgraph()->graph()->NewNode(
-          jsgraph()->simplified()->CheckNumber(FeedbackSource()), operand,
-          effect, control);
-      Node* node =
-          jsgraph()->ConstantNoHole(broker()->number_string(), broker());
-      return LoweringResult::SideEffectFree(node, check, control);
-    }
-    case TypeOfFeedback::kString: {
-      Node* check = jsgraph()->graph()->NewNode(
-          jsgraph()->simplified()->CheckString(FeedbackSource()), operand,
-          effect, control);
-      Node* node =
-          jsgraph()->ConstantNoHole(broker()->string_string(), broker());
-      return LoweringResult::SideEffectFree(node, check, control);
-    }
-    case TypeOfFeedback::kFunction: {
-      Node* condition = jsgraph()->graph()->NewNode(
-          jsgraph()->simplified()->ObjectIsDetectableCallable(), operand);
-      Node* check = jsgraph()->graph()->NewNode(
-          jsgraph()->simplified()->CheckIf(
-              DeoptimizeReason::kNotDetectableReceiver, FeedbackSource()),
-          condition, effect, control);
-      Node* node =
-          jsgraph()->ConstantNoHole(broker()->function_string(), broker());
-      return LoweringResult::SideEffectFree(node, check, control);
-    }
-    default:
-      break;
-  }
-  return LoweringResult::NoChange();
-}
-
-JSTypeHintLowering::LoweringResult
-JSTypeHintLowering::ReduceUnaryOperationWithEmbeddedHint(const Operator* op,
-                                                         Node* operand,
-                                                         Node* effect,
-                                                         Node* control) const {
-  auto embedded_hint = EmbeddedHintParameterOf(op);
-  if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
-          embedded_hint, effect, control,
-          DeoptimizeReason::kInsufficientTypeFeedbackForUnaryOperation)) {
-    return LoweringResult::Exit(node);
-  }
-
-  BinaryOperationHint hint =
-      std::get<BinaryOperationHint>(embedded_hint.hint());
-
+  Node* node;
+  Node* check = nullptr;
   switch (op->opcode()) {
     case IrOpcode::kJSBitwiseNot: {
       // Lower to a speculative xor with -1 if we have some kind of Number
       // feedback.
       JSSpeculativeBinopBuilder b(
-          this, jsgraph()->javascript()->BitwiseXor(hint), operand,
-          jsgraph()->SmiConstant(-1), effect, control, embedded_hint);
-      if (Node* node = b.TryBuildNumberBinop()) {
-        return LoweringResult::SideEffectFree(node, node, control);
-      }
+          this, jsgraph()->javascript()->BitwiseXor(feedback), operand,
+          jsgraph()->SmiConstant(-1), effect, control, slot);
+      node = b.TryBuildNumberBinop();
       break;
     }
     case IrOpcode::kJSDecrement: {
       // Lower to a speculative subtraction of 1 if we have some kind of Number
       // feedback.
-      JSSpeculativeBinopBuilder b(this, jsgraph()->javascript()->Subtract(hint),
-                                  operand, jsgraph()->SmiConstant(1), effect,
-                                  control, embedded_hint);
-      if (Node* node = b.TryBuildNumberBinop()) {
-        return LoweringResult::SideEffectFree(node, node, control);
-      }
+      JSSpeculativeBinopBuilder b(
+          this, jsgraph()->javascript()->Subtract(feedback), operand,
+          jsgraph()->SmiConstant(1), effect, control, slot);
+      node = b.TryBuildNumberBinop();
       break;
     }
     case IrOpcode::kJSIncrement: {
       // Lower to a speculative addition of 1 if we have some kind of Number
       // feedback.
-      JSSpeculativeBinopBuilder b(this, jsgraph()->javascript()->Add(hint),
+      JSSpeculativeBinopBuilder b(this, jsgraph()->javascript()->Add(feedback),
                                   operand, jsgraph()->SmiConstant(1), effect,
-                                  control, embedded_hint);
-      if (Node* node = b.TryBuildNumberBinop()) {
-        return LoweringResult::SideEffectFree(node, node, control);
-      }
+                                  control, slot);
+      node = b.TryBuildNumberBinop();
       break;
     }
     case IrOpcode::kJSNegate: {
       // Lower to a speculative multiplication with -1 if we have some kind of
       // Number feedback.
-      JSSpeculativeBinopBuilder b(this, jsgraph()->javascript()->Multiply(hint),
-                                  operand, jsgraph()->SmiConstant(-1), effect,
-                                  control, embedded_hint);
-      if (Node* node = b.TryBuildNumberBinop()) {
-        return LoweringResult::SideEffectFree(node, node, control);
+      JSSpeculativeBinopBuilder b(
+          this, jsgraph()->javascript()->Multiply(feedback), operand,
+          jsgraph()->SmiConstant(-1), effect, control, slot);
+      node = b.TryBuildNumberBinop();
+      if (!node) {
+        if (jsgraph()->machine()->Is64()) {
+          if (GetBinaryOperationHint(slot) == BinaryOperationHint::kBigInt) {
+            op = jsgraph()->simplified()->SpeculativeBigIntNegate(
+                BigIntOperationHint::kBigInt);
+            node = jsgraph()->graph()->NewNode(op, operand, effect, control);
+          }
+        }
       }
-      if (jsgraph()->machine()->Is64() &&
-          hint == BinaryOperationHint::kBigInt) {
-        Node* node = jsgraph()->graph()->NewNode(
-            jsgraph()->simplified()->SpeculativeBigIntNegate(
-                BigIntOperationHint::kBigInt),
-            operand, effect, control);
-        return LoweringResult::SideEffectFree(node, node, control);
+      break;
+    }
+    case IrOpcode::kTypeOf: {
+      TypeOfFeedback::Result hint = broker()->GetFeedbackForTypeOf(feedback);
+      switch (hint) {
+        case TypeOfFeedback::kNumber:
+        case TypeOfFeedback::kSmi:
+          check = jsgraph()->graph()->NewNode(
+              jsgraph()->simplified()->CheckNumber(FeedbackSource()), operand,
+              effect, control);
+          node = jsgraph()->ConstantNoHole(broker()->number_string(), broker());
+          break;
+        case TypeOfFeedback::kString:
+          check = jsgraph()->graph()->NewNode(
+              jsgraph()->simplified()->CheckString(FeedbackSource()), operand,
+              effect, control);
+          node = jsgraph()->ConstantNoHole(broker()->string_string(), broker());
+          break;
+        case TypeOfFeedback::kFunction: {
+          Node* condition = jsgraph()->graph()->NewNode(
+              jsgraph()->simplified()->ObjectIsDetectableCallable(), operand);
+          check = jsgraph()->graph()->NewNode(
+              jsgraph()->simplified()->CheckIf(
+                  DeoptimizeReason::kNotDetectableReceiver, FeedbackSource()),
+              condition, effect, control);
+          node =
+              jsgraph()->ConstantNoHole(broker()->function_string(), broker());
+          break;
+        }
+        default:
+          node = nullptr;
+          break;
       }
       break;
     }
     default:
       UNREACHABLE();
   }
-  return LoweringResult::NoChange();
+
+  if (node != nullptr) {
+    return LoweringResult::SideEffectFree(node, check ? check : node, control);
+  } else {
+    return LoweringResult::NoChange();
+  }
 }
 
 JSTypeHintLowering::LoweringResult JSTypeHintLowering::ReduceBinaryOperation(
@@ -590,39 +566,8 @@ JSTypeHintLowering::ReduceBinaryOperationWithEmbeddedHint(const Operator* op,
     case IrOpcode::kJSStrictEqual: {
       if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
               EmbeddedHintParameterOf(op), effect, control,
-              DeoptimizeReason::kInsufficientTypeFeedbackForCompareOperation)) {
-        return LoweringResult::Exit(node);
-      }
-      break;
-    }
-    case IrOpcode::kJSBitwiseOr:
-    case IrOpcode::kJSBitwiseXor:
-    case IrOpcode::kJSBitwiseAnd:
-    case IrOpcode::kJSShiftLeft:
-    case IrOpcode::kJSShiftRight:
-    case IrOpcode::kJSShiftRightLogical:
-    case IrOpcode::kJSAdd:
-    case IrOpcode::kJSSubtract:
-    case IrOpcode::kJSMultiply:
-    case IrOpcode::kJSDivide:
-    case IrOpcode::kJSModulus:
-    case IrOpcode::kJSExponentiate: {
-      auto embedded_hint = EmbeddedHintParameterOf(op);
-      if (Node* node = BuildDeoptIfFeedbackIsInsufficient(
-              embedded_hint, effect, control,
               DeoptimizeReason::kInsufficientTypeFeedbackForBinaryOperation)) {
         return LoweringResult::Exit(node);
-      }
-      JSSpeculativeBinopBuilder b(this, op, left, right, effect, control,
-                                  embedded_hint);
-      if (Node* node = b.TryBuildNumberBinop()) {
-        return LoweringResult::SideEffectFree(node, node, control);
-      }
-      if (op->opcode() != IrOpcode::kJSShiftRightLogical &&
-          op->opcode() != IrOpcode::kJSExponentiate) {
-        if (Node* node = b.TryBuildBigIntBinop()) {
-          return LoweringResult::SideEffectFree(node, node, control);
-        }
       }
       break;
     }
@@ -794,7 +739,9 @@ Node* JSTypeHintLowering::BuildDeoptIfFeedbackIsInsufficient(
   if (feedback_is_sufficient) return nullptr;
 
   Node* deoptimize = jsgraph()->graph()->NewNode(
-      jsgraph()->common()->Deoptimize(reason, FeedbackSource()),
+      jsgraph()->common()->Deoptimize(
+          DeoptimizeReason::kInsufficientTypeFeedbackForCompareOperation,
+          FeedbackSource()),
       jsgraph()->Dead(), effect, control);
   Node* frame_state =
       NodeProperties::FindFrameStateBefore(deoptimize, jsgraph()->Dead());

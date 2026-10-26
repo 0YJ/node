@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 #ifndef LIEF_ASM_AARCH64_OPERAND_H
 #define LIEF_ASM_AARCH64_OPERAND_H
 #include "LIEF/visibility.h"
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/iterators.hpp"
 
 #include <memory>
@@ -36,13 +35,14 @@ class OperandIt;
 /// This class represents an operand for an AArch64 instruction
 class LIEF_API Operand {
   public:
-  /// **Forward** iterator that lazily disassembles aarch64 Operand.
-  class Iterator final
-    : public iterator_facade_base<Iterator, std::forward_iterator_tag, Operand,
-                                  std::ptrdiff_t, const Operand*, const Operand&> {
+
+  /// **Forward** iterator that outputs aarch64 Operand as `std::unique_ptr`
+  class Iterator final :
+    public iterator_facade_base<Iterator, std::forward_iterator_tag, std::unique_ptr<Operand>,
+                                std::ptrdiff_t, Operand*, std::unique_ptr<Operand>>
+  {
     public:
     using implementation = details::OperandIt;
-    using iterator_facade_base::operator++;
 
     LIEF_API Iterator();
 
@@ -55,7 +55,6 @@ class LIEF_API Operand {
 
     LIEF_API ~Iterator();
 
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
     LIEF_API Iterator& operator++();
 
     friend LIEF_API bool operator==(const Iterator& LHS, const Iterator& RHS);
@@ -64,20 +63,10 @@ class LIEF_API Operand {
       return !(LHS == RHS);
     }
 
-    LIEF_API const Operand& operator*() const LIEF_LIFETIMEBOUND;
-
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
-    LIEF_API const Operand* operator->() const LIEF_LIFETIMEBOUND;
-
-    /// Transfer ownership of the operand at the current position to the
-    /// caller. Returns `nullptr` if the iterator is past-the-end.
-    LIEF_API std::unique_ptr<Operand> yield();
+    LIEF_API std::unique_ptr<Operand> operator*() const;
 
     private:
-    void load() const;
-
     std::unique_ptr<details::OperandIt> impl_;
-    mutable std::unique_ptr<Operand> cached_;
   };
 
   /// Pretty representation of the operand
@@ -92,7 +81,7 @@ class LIEF_API Operand {
   /// }
   /// ```
   template<class T>
-  const T* as() const LIEF_LIFETIMEBOUND {
+  const T* as() const {
     static_assert(std::is_base_of<Operand, T>::value,
                   "Require Operand inheritance");
     if (T::classof(this)) {
@@ -103,18 +92,18 @@ class LIEF_API Operand {
 
   virtual ~Operand();
 
-  /// @private
+  /// \private
   static LIEF_LOCAL std::unique_ptr<Operand>
-      create(std::unique_ptr<details::Operand> impl);
+    create(std::unique_ptr<details::Operand> impl);
 
-  /// @private
-  LIEF_LOCAL const details::Operand& impl() const LIEF_LIFETIMEBOUND {
+  /// \private
+  LIEF_LOCAL const details::Operand& impl() const {
     assert(impl_ != nullptr);
     return *impl_;
   }
 
-  /// @private
-  LIEF_LOCAL details::Operand& impl() LIEF_LIFETIMEBOUND {
+  /// \private
+  LIEF_LOCAL details::Operand& impl() {
     assert(impl_ != nullptr);
     return *impl_;
   }

@@ -9,7 +9,6 @@ const {
 } = require('vm');
 const { setFlagsFromString } = require('v8');
 const { inspect } = require('util');
-const honorAllowedRejections = require('./rejections');
 const {
   isMainThread,
   parentPort,
@@ -80,7 +79,6 @@ function run(workerData) {
     filename: workerData.harness.filename,
     importModuleDynamically: USE_MAIN_CONTEXT_DEFAULT_LOADER,
   });
-  honorAllowedRejections();
 
   // If there are skip patterns, wrap test functions to prevent execution of
   // matching tests. This must happen after testharness.js is loaded but before

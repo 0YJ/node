@@ -219,7 +219,6 @@ class CipherJob final : public CryptoJob<CipherTraits> {
   WebCryptoCipherMode cipher_mode() const { return cipher_mode_; }
 
   void DoThreadPoolWork() override {
-    ncrypto::ClearErrorOnReturn clear_error_on_return;
     const WebCryptoCipherStatus status =
         CipherTraits::DoCipher(
             AsyncWrap::env(),
@@ -254,7 +253,11 @@ class CipherJob final : public CryptoJob<CipherTraits> {
     Environment* env = AsyncWrap::env();
     CryptoErrorStore* errors = CryptoJob<CipherTraits>::errors();
 
-    if (errors->Empty()) {
+    if (errors->Empty())
+      errors->Capture();
+
+    if (out_.size() > 0 || errors->Empty()) {
+      CHECK(errors->Empty());
       *err = v8::Undefined(env->isolate());
       *result = out_.ToArrayBuffer(env);
       if (result->IsEmpty()) {

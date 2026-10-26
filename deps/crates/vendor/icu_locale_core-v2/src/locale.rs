@@ -4,7 +4,7 @@
 
 use crate::parser::*;
 use crate::subtags::Subtag;
-use crate::{LanguageIdentifier, extensions, subtags};
+use crate::{extensions, subtags, LanguageIdentifier};
 #[cfg(feature = "alloc")]
 use alloc::borrow::Cow;
 use core::cmp::Ordering;
@@ -80,7 +80,7 @@ use core::str::FromStr;
 /// More complex example:
 ///
 /// ```
-/// use icu::locale::{Locale, subtags::*};
+/// use icu::locale::{subtags::*, Locale};
 ///
 /// let loc: Locale = "eN-latn-Us-Valencia-u-hC-H12"
 ///     .parse()
@@ -139,10 +139,6 @@ impl Locale {
     ///
     /// ✨ *Enabled with the `alloc` Cargo feature.*
     ///
-    /// Note: Support for the legacy `_` separator has been dropped since 2.0.0.
-    /// Users of ICU4X need to convert the `_` to `-` before calling the
-    /// function.
-    ///
     /// # Examples
     ///
     /// ```
@@ -166,7 +162,7 @@ impl Locale {
 
     /// Normalize the locale (operating on UTF-8 formatted byte slices)
     ///
-    /// This operation will normalize casing.
+    /// This operation will normalize casing and the separator.
     ///
     /// ✨ *Enabled with the `alloc` Cargo feature.*
     ///
@@ -188,7 +184,7 @@ impl Locale {
 
     /// Normalize the locale (operating on strings)
     ///
-    /// This operation will normalize casing.
+    /// This operation will normalize casing and the separator.
     ///
     /// ✨ *Enabled with the `alloc` Cargo feature.*
     ///
@@ -415,15 +411,15 @@ impl Locale {
         if !subtag_matches!(subtags::Language, iter, self.id.language) {
             return false;
         }
-        if let Some(ref script) = self.id.script
-            && !subtag_matches!(subtags::Script, iter, *script)
-        {
-            return false;
+        if let Some(ref script) = self.id.script {
+            if !subtag_matches!(subtags::Script, iter, *script) {
+                return false;
+            }
         }
-        if let Some(ref region) = self.id.region
-            && !subtag_matches!(subtags::Region, iter, *region)
-        {
-            return false;
+        if let Some(ref region) = self.id.region {
+            if !subtag_matches!(subtags::Region, iter, *region) {
+                return false;
+            }
         }
         for variant in self.id.variants.iter() {
             if !subtag_matches!(subtags::Variant, iter, *variant) {
@@ -472,12 +468,6 @@ impl Locale {
         self.id.for_each_subtag_str(f)?;
         self.extensions.for_each_subtag_str(f)?;
         Ok(())
-    }
-}
-
-impl AsRef<LanguageIdentifier> for Locale {
-    fn as_ref(&self) -> &LanguageIdentifier {
-        &self.id
     }
 }
 

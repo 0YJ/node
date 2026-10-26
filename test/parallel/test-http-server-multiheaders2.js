@@ -100,7 +100,6 @@ const headers = []
 
 server.listen(0, function() {
   http.get({
-    agent: false,
     host: 'localhost',
     port: this.address().port,
     path: '/',

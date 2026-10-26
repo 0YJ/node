@@ -2,7 +2,6 @@ const npa = require('npm-package-arg')
 const { log } = require('proc-log')
 const {
   getTrustedRegistryIdentity,
-  matchFileOrDir,
   resolvedSourceSpecs,
 } = require('@npmcli/arborist/lib/script-allowed.js')
 
@@ -151,7 +150,7 @@ const isNameOnlyKey = (key) => {
 const keyTargetsNode = (key, node) => {
   let parsed
   try {
-    parsed = npa(key, node?.root?.path)
+    parsed = npa(key)
   } catch {
     return false
   }
@@ -180,7 +179,6 @@ const keyTargetsNode = (key, node) => {
     }
     case 'file':
     case 'directory':
-      return matchFileOrDir(node, parsed)
     case 'remote':
       return resolvedSourceSpecs(node)
         .some(resolved => resolved === parsed.saveSpec || resolved === parsed.fetchSpec)

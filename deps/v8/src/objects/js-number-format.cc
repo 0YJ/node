@@ -11,13 +11,11 @@
 #include <set>
 #include <string>
 
-#include "src/base/logging.h"
 #include "src/execution/isolate.h"
 #include "src/numbers/conversions.h"
 #include "src/objects/intl-objects.h"
 #include "src/objects/js-number-format-inl.h"
 #include "src/objects/managed-inl.h"
-#include "src/objects/object-conversions-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/option-utils.h"
 #include "src/strings/char-predicates-inl.h"
@@ -106,7 +104,6 @@ UNumberUnitWidth ToUNumberUnitWidth(CurrencyDisplay currency_display) {
     case CurrencyDisplay::NARROW_SYMBOL:
       return UNumberUnitWidth::UNUM_UNIT_WIDTH_NARROW;
   }
-  UNREACHABLE();
 }
 
 UNumberUnitWidth ToUNumberUnitWidth(UnitDisplay unit_display) {
@@ -118,7 +115,6 @@ UNumberUnitWidth ToUNumberUnitWidth(UnitDisplay unit_display) {
     case UnitDisplay::NARROW:
       return UNumberUnitWidth::UNUM_UNIT_WIDTH_NARROW;
   }
-  UNREACHABLE();
 }
 
 UNumberSignDisplay ToUNumberSignDisplay(SignDisplay sign_display,
@@ -151,7 +147,6 @@ UNumberSignDisplay ToUNumberSignDisplay(SignDisplay sign_display,
       DCHECK(currency_sign == CurrencySign::STANDARD);
       return UNumberSignDisplay::UNUM_SIGN_NEGATIVE;
   }
-  UNREACHABLE();
 }
 
 }  // namespace
@@ -174,7 +169,6 @@ icu::number::Notation Intl::ToICUNotation(
       DCHECK(compact_display == Intl::CompactDisplay::LONG);
       return icu::number::Notation::compactLong();
   }
-  UNREACHABLE();
 }
 
 namespace {
@@ -201,7 +195,6 @@ UNumberFormatRoundingMode ToUNumberFormatRoundingMode(
     case Intl::RoundingMode::kHalfEven:
       return UNumberFormatRoundingMode::UNUM_ROUND_HALFEVEN;
   }
-  UNREACHABLE();
 }
 
 UNumberGroupingStrategy ToUNumberGroupingStrategy(UseGrouping use_grouping) {
@@ -215,7 +208,6 @@ UNumberGroupingStrategy ToUNumberGroupingStrategy(UseGrouping use_grouping) {
     case UseGrouping::ALWAYS:
       return UNumberGroupingStrategy::UNUM_GROUPING_ON_ALIGNED;
   }
-  UNREACHABLE();
 }
 
 std::map<const std::string, icu::MeasureUnit, std::less<>> CreateUnitMap() {
@@ -243,7 +235,7 @@ class UnitFactory {
   UnitFactory() : map_(CreateUnitMap()) {}
   virtual ~UnitFactory() = default;
 
-  // https://tc39.es/ecma402/#sec-issanctionedsimpleunitidentifier
+  // ecma402 #sec-issanctionedsimpleunitidentifier
   icu::MeasureUnit create(const std::string_view unitIdentifier) {
     // 1. If unitIdentifier is in the following list, return true.
     auto found = map_.find(unitIdentifier);
@@ -260,14 +252,14 @@ class UnitFactory {
   std::map<const std::string, icu::MeasureUnit, std::less<>> map_;
 };
 
-// https://tc39.es/ecma402/#sec-issanctionedsimpleunitidentifier
+// ecma402 #sec-issanctionedsimpleunitidentifier
 icu::MeasureUnit IsSanctionedUnitIdentifier(const std::string_view unit) {
   static base::LazyInstance<UnitFactory>::type factory =
       LAZY_INSTANCE_INITIALIZER;
   return factory.Pointer()->create(unit);
 }
 
-// https://tc39.es/ecma402/#sec-iswellformedunitidentifier
+// ecma402 #sec-iswellformedunitidentifier
 Maybe<std::pair<icu::MeasureUnit, icu::MeasureUnit>> IsWellFormedUnitIdentifier(
     Isolate* isolate, const std::string_view unit) {
   icu::MeasureUnit result = IsSanctionedUnitIdentifier(unit);
@@ -326,10 +318,10 @@ bool IsAToZ(char ch) {
   return base::IsInRange(AsciiAlphaToLower(ch), 'a', 'z');
 }
 
-// https://tc39.es/ecma402/#sec-iswellformedcurrencycode
+// ecma402/#sec-iswellformedcurrencycode
 bool IsWellFormedCurrencyCode(const std::string& currency) {
   // Verifies that the input is a well-formed ISO 4217 currency code.
-  // https://tc39.es/ecma402/#sec-currency-codes
+  // ecma402/#sec-currency-codes
   // 2. If the number of elements in normalized is not 3, return false.
   if (currency.length() != 3) return false;
   // 1. Let normalized be the result of mapping currency to upper case as
@@ -425,12 +417,13 @@ const icu::UnicodeString CurrencyFromSkeleton(
 const icu::UnicodeString JSNumberFormat::NumberingSystemFromSkeleton(
     const icu::UnicodeString& skeleton) {
   const char numbering_system[] = "numbering-system/";
-  int32_t begin = skeleton.indexOf(numbering_system);
-  if (begin < 0) return "latn";
-  begin += static_cast<int32_t>(std::strlen(numbering_system));
-  int32_t end = skeleton.indexOf(" ", begin);
-  return end <= begin ? skeleton.tempSubString(begin)
-                      : skeleton.tempSubStringBetween(begin, end);
+  int32_t index = skeleton.indexOf(numbering_system);
+  if (index < 0) return "latn";
+  index += static_cast<int32_t>(std::strlen(numbering_system));
+  const icu::UnicodeString res = skeleton.tempSubString(index);
+  index = res.indexOf(" ");
+  if (index < 0) return res;
+  return res.tempSubString(0, index);
 }
 
 namespace {
@@ -870,14 +863,14 @@ JSNumberFormat::SetDigitOptionsToFormatter(
 }
 
 // static
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.resolvedoptions
+// ecma402 #sec-intl.numberformat.prototype.resolvedoptions
 DirectHandle<JSObject> JSNumberFormat::ResolvedOptions(
     Isolate* isolate, DirectHandle<JSNumberFormat> number_format) {
   Factory* factory = isolate->factory();
 
   UErrorCode status = U_ZERO_ERROR;
-  Managed<icu::number::LocalizedNumberFormatter>::Ptr fmt =
-      number_format->icu_number_formatter()->ptr();
+  icu::number::LocalizedNumberFormatter* fmt =
+      number_format->icu_number_formatter()->raw();
   icu::UnicodeString skeleton = fmt->toSkeleton(status);
   DCHECK(U_SUCCESS(status));
 
@@ -1033,7 +1026,7 @@ DirectHandle<JSObject> JSNumberFormat::ResolvedOptions(
   return options;
 }
 
-// https://tc39.es/ecma402/#sec-unwrapnumberformat
+// ecma402/#sec-unwrapnumberformat
 MaybeDirectHandle<JSNumberFormat> JSNumberFormat::UnwrapNumberFormat(
     Isolate* isolate, DirectHandle<JSReceiver> format_holder) {
   // old code copy from NumberFormat::Unwrap that has no spec comment and
@@ -1408,6 +1401,16 @@ MaybeDirectHandle<JSNumberFormat> JSNumberFormat::New(
     default_use_grouping = UseGrouping::MIN2;
   }
 
+  if (v8_flags.icu_default_italian_number_grouping_always) {
+    // Before ICU 76 1234 is formatted as "1.234" in Italian by default, and
+    // starting in ICU 76 it is "1234". There were bug reports against Firefox
+    // and iOS due to this. Setting the default grouping to "always" restores
+    // the old behavior.
+    if (strcmp(icu_locale.getLanguage(), "it") == 0) {
+      default_use_grouping = UseGrouping::ALWAYS;
+    }
+  }
+
   // 30. Let useGrouping be ? GetStringOrBooleanOption(options, "useGrouping",
   // « "min2", "auto", "always" », "always", false, defaultUseGrouping).
   Maybe<UseGrouping> maybe_use_grouping = GetStringOrBooleanOption<UseGrouping>(
@@ -1492,7 +1495,8 @@ int32_t SignedStringLength(StringHandle string) {
 }
 
 icu::number::FormattedNumber FormatDecimalString(
-    Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+    Isolate* isolate,
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
     Handle<String> string, UErrorCode& status) {
   string = String::Flatten(isolate, string);
   DisallowGarbageCollection no_gc;
@@ -1525,7 +1529,8 @@ MaybeHandle<String> IntlMathematicalValue::ToString(Isolate* isolate) const {
 
 namespace {
 Maybe<icu::number::FormattedNumber> IcuFormatNumber(
-    Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+    Isolate* isolate,
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
     Handle<Object> numeric_obj) {
   icu::number::FormattedNumber formatted;
   // If it is BigInt, handle it differently.
@@ -1583,21 +1588,22 @@ Maybe<icu::number::FormattedNumber> IcuFormatNumber(
 }  // namespace
 
 Maybe<icu::number::FormattedNumber> IntlMathematicalValue::FormatNumeric(
-    Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+    Isolate* isolate,
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
     const IntlMathematicalValue& x) {
   if (IsString(*x.value_)) {
     Handle<String> string;
     ASSIGN_RETURN_ON_EXCEPTION(isolate, string, x.ToString(isolate));
     UErrorCode status = U_ZERO_ERROR;
     icu::number::FormattedNumber result =
-        FormatDecimalString(isolate, lfmt, string, status);
+        FormatDecimalString(isolate, std::move(lfmt), string, status);
     if (U_FAILURE(status)) {
       THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kIcuError));
     }
     return Just(std::move(result));
   }
   CHECK(IsNumber(*x.value_) || IsBigInt(*x.value_));
-  return IcuFormatNumber(isolate, lfmt, x.value_);
+  return IcuFormatNumber(isolate, std::move(lfmt), x.value_);
 }
 
 Maybe<icu::number::FormattedNumberRange> IntlMathematicalValue::FormatRange(
@@ -1670,7 +1676,7 @@ Handle<String> TrimWhiteSpaceOrLineTerminator(Isolate* isolate,
 
 }  // namespace
 
-// https://tc39.es/ecma262/#sec-tointlmathematicalvalue
+// #sec-tointlmathematicalvalue
 Maybe<IntlMathematicalValue> IntlMathematicalValue::From(Isolate* isolate,
                                                          Handle<Object> value) {
   Factory* factory = isolate->factory();
@@ -1988,10 +1994,11 @@ Maybe<int> Intl::AddNumberElements(Isolate* isolate,
 
 namespace {
 
-// https://tc39.es/ecma262/#sec-partitionnumberrangepattern
-template <typename T, MaybeDirectHandle<T> (*F)(
-                          Isolate*, const icu::FormattedValue&,
-                          const icu::number::LocalizedNumberFormatter*, bool)>
+// #sec-partitionnumberrangepattern
+template <typename T,
+          MaybeDirectHandle<T> (*F)(
+              Isolate*, const icu::FormattedValue&,
+              std::shared_ptr<icu::number::LocalizedNumberFormatter>, bool)>
 MaybeDirectHandle<T> PartitionNumberRangePattern(
     Isolate* isolate, DirectHandle<JSNumberFormat> number_format,
     Handle<Object> start, Handle<Object> end, const char* func_name) {
@@ -2019,12 +2026,10 @@ MaybeDirectHandle<T> PartitionNumberRangePattern(
                                factory->NewStringFromStaticChars("end"), end));
   }
 
-  Managed<icu::number::LocalizedNumberFormatter>::Ptr icu_number_formatter =
-      number_format->icu_number_formatter()->ptr();
-
   Maybe<icu::number::LocalizedNumberRangeFormatter> maybe_range_formatter =
-      JSNumberFormat::GetRangeFormatter(isolate, number_format->locale(),
-                                        *icu_number_formatter);
+      JSNumberFormat::GetRangeFormatter(
+          isolate, number_format->locale(),
+          *number_format->icu_number_formatter()->raw());
   MAYBE_RETURN(maybe_range_formatter, MaybeDirectHandle<T>());
 
   icu::number::LocalizedNumberRangeFormatter nrfmt =
@@ -2036,7 +2041,8 @@ MaybeDirectHandle<T> PartitionNumberRangePattern(
   icu::number::FormattedNumberRange formatted =
       std::move(maybe_formatted).FromJust();
 
-  return F(isolate, formatted, icu_number_formatter.raw(), false /* is_nan */);
+  return F(isolate, formatted, number_format->icu_number_formatter()->get(),
+           false /* is_nan */);
 }
 
 MaybeDirectHandle<String> FormatToString(Isolate* isolate,
@@ -2050,13 +2056,13 @@ MaybeDirectHandle<String> FormatToString(Isolate* isolate,
 }
 MaybeDirectHandle<String> FormatToString(
     Isolate* isolate, const icu::FormattedValue& formatted,
-    const icu::number::LocalizedNumberFormatter*, bool) {
+    std::shared_ptr<icu::number::LocalizedNumberFormatter>, bool) {
   return FormatToString(isolate, formatted);
 }
 
 MaybeDirectHandle<JSArray> FormatToJSArray(
     Isolate* isolate, const icu::FormattedValue& formatted,
-    const icu::number::LocalizedNumberFormatter* lfmt, bool is_nan,
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt, bool is_nan,
     bool output_source) {
   UErrorCode status = U_ZERO_ERROR;
   bool is_unit = Style::UNIT == StyleFromSkeleton(lfmt->toSkeleton(status));
@@ -2077,8 +2083,8 @@ MaybeDirectHandle<JSArray> FormatToJSArray(
 
 MaybeDirectHandle<JSArray> FormatRangeToJSArray(
     Isolate* isolate, const icu::FormattedValue& formatted,
-    const icu::number::LocalizedNumberFormatter* lfmt, bool is_nan) {
-  return FormatToJSArray(isolate, formatted, lfmt, is_nan, true);
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt, bool is_nan) {
+  return FormatToJSArray(isolate, formatted, std::move(lfmt), is_nan, true);
 }
 
 }  // namespace
@@ -2102,10 +2108,11 @@ JSNumberFormat::GetRangeFormatter(
 }
 
 MaybeDirectHandle<String> JSNumberFormat::FormatNumeric(
-    Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+    Isolate* isolate,
+    std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
     Handle<Object> numeric_obj) {
   Maybe<icu::number::FormattedNumber> maybe_format =
-      IcuFormatNumber(isolate, lfmt, numeric_obj);
+      IcuFormatNumber(isolate, std::move(lfmt), numeric_obj);
   MAYBE_RETURN(maybe_format, DirectHandle<String>());
   icu::number::FormattedNumber formatted = std::move(maybe_format).FromJust();
 
@@ -2121,10 +2128,9 @@ MaybeDirectHandle<String> JSNumberFormat::NumberFormatFunction(
                              IntlMathematicalValue::From(isolate, value));
 
   // 5. Return FormatNumeric(nf, x).
-  Managed<icu::number::LocalizedNumberFormatter>::Ptr lfmt =
-      number_format->icu_number_formatter()->ptr();
   Maybe<icu::number::FormattedNumber> maybe_formatted =
-      IntlMathematicalValue::FormatNumeric(isolate, lfmt.raw(), x);
+      IntlMathematicalValue::FormatNumeric(
+          isolate, number_format->icu_number_formatter()->get(), x);
   MAYBE_RETURN(maybe_formatted, DirectHandle<String>());
   icu::number::FormattedNumber formatted =
       std::move(maybe_formatted).FromJust();
@@ -2139,18 +2145,19 @@ MaybeDirectHandle<JSArray> JSNumberFormat::FormatToParts(
   ASSIGN_RETURN_ON_EXCEPTION(isolate, value,
                              IntlMathematicalValue::From(isolate, numeric_obj));
 
-  Managed<icu::number::LocalizedNumberFormatter>::Ptr lfmt =
-      number_format->icu_number_formatter()->ptr();
+  std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt(
+      number_format->icu_number_formatter()->get());
   Maybe<icu::number::FormattedNumber> maybe_formatted =
-      IntlMathematicalValue::FormatNumeric(isolate, lfmt.raw(), value);
+      IntlMathematicalValue::FormatNumeric(isolate, lfmt, value);
   MAYBE_RETURN(maybe_formatted, DirectHandle<JSArray>());
   icu::number::FormattedNumber formatted =
       std::move(maybe_formatted).FromJust();
 
-  return FormatToJSArray(isolate, formatted, lfmt.raw(), value.IsNaN(), false);
+  return FormatToJSArray(isolate, formatted, std::move(lfmt), value.IsNaN(),
+                         false);
 }
 
-// https://tc39.es/ecma262/#sec-number-format-functions
+// #sec-number-format-functions
 
 MaybeDirectHandle<String> JSNumberFormat::FormatNumericRange(
     Isolate* isolate, DirectHandle<JSNumberFormat> number_format,

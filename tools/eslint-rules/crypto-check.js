@@ -48,7 +48,7 @@ module.exports = {
     }
 
     function isCryptoCheck(node) {
-      return utils.usesCommonProperty(node, ['hasCrypto']);
+      return utils.usesCommonProperty(node, ['hasCrypto', 'hasFipsCrypto']);
     }
 
     function checkCryptoCall(node) {

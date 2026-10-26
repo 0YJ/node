@@ -16,7 +16,6 @@ const server = http.createServer(function(req, res) {
 
 server.listen(0, function() {
   const req = http.request({
-    agent: false,
     method: 'POST',
     port: this.address().port
   });

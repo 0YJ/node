@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,36 +34,35 @@
 
 FMT_FORMATTER(LIEF::PE::ResourcesManager::TYPE, LIEF::PE::to_string);
 
-
-namespace LIEF::PE {
+namespace LIEF {
+namespace PE {
 
 static constexpr auto RESOURCE_TYPES = {
-    ResourcesManager::TYPE::CURSOR,       ResourcesManager::TYPE::BITMAP,
-    ResourcesManager::TYPE::ICON,         ResourcesManager::TYPE::MENU,
-    ResourcesManager::TYPE::DIALOG,       ResourcesManager::TYPE::STRING,
-    ResourcesManager::TYPE::FONTDIR,      ResourcesManager::TYPE::FONT,
-    ResourcesManager::TYPE::ACCELERATOR,  ResourcesManager::TYPE::RCDATA,
-    ResourcesManager::TYPE::MESSAGETABLE, ResourcesManager::TYPE::GROUP_CURSOR,
-    ResourcesManager::TYPE::GROUP_ICON,   ResourcesManager::TYPE::VERSION,
-    ResourcesManager::TYPE::DLGINCLUDE,   ResourcesManager::TYPE::PLUGPLAY,
-    ResourcesManager::TYPE::VXD,          ResourcesManager::TYPE::ANICURSOR,
-    ResourcesManager::TYPE::ANIICON,      ResourcesManager::TYPE::HTML,
-    ResourcesManager::TYPE::MANIFEST,
+  ResourcesManager::TYPE::CURSOR,         ResourcesManager::TYPE::BITMAP,
+  ResourcesManager::TYPE::ICON,           ResourcesManager::TYPE::MENU,
+  ResourcesManager::TYPE::DIALOG,         ResourcesManager::TYPE::STRING,
+  ResourcesManager::TYPE::FONTDIR,        ResourcesManager::TYPE::FONT,
+  ResourcesManager::TYPE::ACCELERATOR,    ResourcesManager::TYPE::RCDATA,
+  ResourcesManager::TYPE::MESSAGETABLE,   ResourcesManager::TYPE::GROUP_CURSOR,
+  ResourcesManager::TYPE::GROUP_ICON,     ResourcesManager::TYPE::VERSION,
+  ResourcesManager::TYPE::DLGINCLUDE,     ResourcesManager::TYPE::PLUGPLAY,
+  ResourcesManager::TYPE::VXD,            ResourcesManager::TYPE::ANICURSOR,
+  ResourcesManager::TYPE::ANIICON,        ResourcesManager::TYPE::HTML,
+  ResourcesManager::TYPE::MANIFEST,
 };
 
 std::string ResourcesManager::string_entry_t::string_u8() const {
   return u16tou8(string);
 }
 
-const ResourceNode*
-    ResourcesManager::get_node_type(ResourcesManager::TYPE type) const {
+const ResourceNode* ResourcesManager::get_node_type(ResourcesManager::TYPE type) const {
   ResourceNode::it_childs nodes = resources_->childs();
-  const auto it_node =
-      std::find_if(nodes.begin(), nodes.end(), [type](const ResourceNode& node) {
+  const auto it_node = std::find_if(std::begin(nodes), std::end(nodes),
+      [type] (const ResourceNode& node) {
         return TYPE(node.id()) == type;
       });
 
-  if (it_node == nodes.end()) {
+  if (it_node == std::end(nodes)) {
     return nullptr;
   }
 
@@ -73,10 +72,12 @@ const ResourceNode*
 std::vector<ResourcesManager::TYPE> ResourcesManager::get_types() const {
   std::vector<TYPE> types;
   for (const ResourceNode& node : resources_->childs()) {
-    const auto it = std::find_if(RESOURCE_TYPES.begin(), RESOURCE_TYPES.end(),
-                                 [&node](TYPE t) { return t == TYPE(node.id()); });
+    const auto it = std::find_if(std::begin(RESOURCE_TYPES), std::end(RESOURCE_TYPES),
+        [&node] (TYPE t) {
+          return t == TYPE(node.id());
+        });
 
-    if (it != RESOURCE_TYPES.end()) {
+    if (it != std::end(RESOURCE_TYPES)) {
       types.push_back(*it);
     }
   }
@@ -90,15 +91,15 @@ std::string ResourcesManager::manifest() const {
   }
 
   const auto* data_node =
-      root_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
+    root_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
 
   if (data_node == nullptr) {
-    LIEF_WARN("Corrupted manifest node");
+    LIEF_WARN("Manifest node seems corrupted");
     return "";
   }
 
   span<const uint8_t> content = data_node->content();
-  return std::string{content.begin(), content.end()};
+  return std::string{std::begin(content), std::end(content)};
 }
 
 void ResourcesManager::manifest(const std::string& manifest) {
@@ -109,23 +110,23 @@ void ResourcesManager::manifest(const std::string& manifest) {
     auto L3 = std::make_unique<ResourceData>(manifest);
 
     (*resources_)
-        .add_child(std::move(L1))
-        .add_child(std::move(L2))
-        .add_child(std::move(L3));
+      .add_child(std::move(L1))
+      .add_child(std::move(L2))
+      .add_child(std::move(L3));
 
     manifest_node = get_node_type(TYPE::MANIFEST);
   }
 
   if (manifest_node == nullptr) {
-    LIEF_WARN("Corrupted manifest node");
+    LIEF_WARN("Manifest node seems corrupted");
     return;
   }
 
   auto* data_node =
-      manifest_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
+    manifest_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
 
   if (data_node == nullptr) {
-    LIEF_WARN("Corrupted manifest node");
+    LIEF_WARN("Manifest node seems corrupted");
     return;
   }
 
@@ -159,7 +160,7 @@ std::vector<ResourceVersion> ResourcesManager::version() const {
 
 ResourcesManager::it_const_icons ResourcesManager::icons() const {
   std::vector<ResourceIcon> icons;
-  const ResourceNode* root_icon = get_node_type(TYPE::ICON);
+  const ResourceNode* root_icon     = get_node_type(TYPE::ICON);
   const ResourceNode* root_grp_icon = get_node_type(TYPE::GROUP_ICON);
   if (root_icon == nullptr) {
     LIEF_ERR("Missing '{}' entry", to_string(TYPE::ICON));
@@ -175,7 +176,7 @@ ResourcesManager::it_const_icons ResourcesManager::icons() const {
     for (const ResourceNode& grp_icon_lvl3 : grp_icon_lvl2.childs()) {
       const auto* icon_group_node = grp_icon_lvl3.cast<ResourceData>();
       if (icon_group_node == nullptr) {
-        LIEF_WARN("Expected data node for node id {}", grp_icon_lvl3.id());
+        LIEF_WARN("Expecting a data node for node id: {}", grp_icon_lvl3.id());
         continue;
       }
       const uint32_t id = icon_group_node->id();
@@ -188,11 +189,11 @@ ResourcesManager::it_const_icons ResourcesManager::icons() const {
       }
 
       SpanStream stream(icon_group_content);
-      details::pe_resource_icon_dir group_icon_header{};
+      details::pe_resource_icon_dir group_icon_header;
       if (auto res = stream.read<details::pe_resource_icon_dir>()) {
         group_icon_header = *res;
       } else {
-        LIEF_WARN("Failed to read GRPICONDIR for resource node id {}", id);
+        LIEF_WARN("Can't read GRPICONDIR for resource node id: {}", id);
         continue;
       }
 
@@ -201,16 +202,16 @@ ResourcesManager::it_const_icons ResourcesManager::icons() const {
 
       // Some checks
       if (group_icon_header.type != 1) {
-        LIEF_ERR("Group icon type should be 1 (got {})", group_icon_header.type);
+        LIEF_ERR("Group icon type should be equal to 1 (vs {})", group_icon_header.type);
         return icons;
       }
 
       for (size_t i = 0; i < group_icon_header.count; ++i) {
-        details::pe_resource_icon_group entry{};
+        details::pe_resource_icon_group entry;
         if (auto res = stream.read<details::pe_resource_icon_group>()) {
           entry = *res;
         } else {
-          LIEF_WARN("Failed to read GRPICONDIR.idEntries[{}]", i);
+          LIEF_WARN("Can't read GRPICONDIR.idEntries[{}]", i);
           break;
         }
 
@@ -218,31 +219,29 @@ ResourcesManager::it_const_icons ResourcesManager::icons() const {
         icon.lang_ = lang_from_id(grp_icon_lvl3.id());
         icon.sublang_ = sublang_from_id(grp_icon_lvl3.id());
 
-        // Find the icon in the RESOURCE_TYPES::ICON tree that matches entry.ID
+        // Find the icon the RESOURCE_TYPES::ICON tree that matched entry.ID
         ResourceNode::it_const_childs sub_nodes_icons = root_icon->childs();
-        const auto it =
-            std::find_if(sub_nodes_icons.begin(), sub_nodes_icons.end(),
-                         [&entry](const ResourceNode& node) {
-                           return node.id() == entry.ID;
-                         });
-        if (it == sub_nodes_icons.end()) {
-          LIEF_WARN("Icon with id {:d} not found", entry.ID);
+        const auto it = std::find_if(std::begin(sub_nodes_icons), std::end(sub_nodes_icons),
+            [&entry] (const ResourceNode& node) {
+              return node.id() == entry.ID;
+            });
+        if (it == std::end(sub_nodes_icons)) {
+          LIEF_WARN("Unable to find the icon associated with id: {:d}", entry.ID);
           continue;
         }
 
         ResourceNode::it_childs icons_childs = it->childs();
         if (icons_childs.empty()) {
-          LIEF_WARN("Resource nodes appear corrupted");
+          LIEF_WARN("Resources nodes looks corrupted");
           continue;
         }
         const ResourceNode& icon_node = icons_childs[0];
         if (!icon_node.is_data()) {
-          LIEF_WARN("Expected data node for node id {}", icon_node.id());
+          LIEF_WARN("Expecting a Data node for node id: {}", icon_node.id());
           continue;
         }
-        span<const uint8_t> pixels =
-            static_cast<const ResourceData&>(icon_node).content();
-        icon.pixels_ = std::vector<uint8_t>(pixels.begin(), pixels.end());
+        span<const uint8_t> pixels = static_cast<const ResourceData&>(icon_node).content();
+        icon.pixels_ = std::vector<uint8_t>(std::begin(pixels), std::end(pixels));
         icons.push_back(std::move(icon));
       }
     }
@@ -287,10 +286,11 @@ void ResourcesManager::add_icon(const ResourceIcon& icon) {
                 sizeof(details::pe_icon_header));
 
     ios
-        // pe_resource_icon_dir
-        .write<uint16_t>(/*reserved*/ 0)
-        .write<uint16_t>(/*type*/ 1)
-        .write<uint16_t>(/*count*/ 0);
+      // pe_resource_icon_dir
+      .write<uint16_t>(/*reserved*/0)
+      .write<uint16_t>(/*type*/1)
+      .write<uint16_t>(/*count*/0)
+    ;
     std::vector<uint8_t> raw_header;
     ios.move(raw_header);
 
@@ -309,47 +309,48 @@ void ResourcesManager::add_icon(const ResourceIcon& icon) {
   }
 
   auto* icon_group_data =
-      icon_grp_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
+    icon_grp_node->safe_get_at(0).safe_get_at(0).cast<ResourceData>();
 
-  auto* icon_dir = icon_node->safe_get_at(0).cast<ResourceDirectory>();
+  auto* icon_dir =
+    icon_node->safe_get_at(0).cast<ResourceDirectory>();
 
   if (icon_group_data == nullptr) {
-    LIEF_ERR("Icon group headers data node not found");
+    LIEF_ERR("Can't find data node for the icon group headers");
     return;
   }
 
   if (icon_dir == nullptr) {
-    LIEF_ERR("Icon headers data node not found");
+    LIEF_ERR("Can't find data node for the icon headers");
     return;
   }
 
   vector_iostream icon_group = icon_group_data->edit();
 
-  if (icon_group.size() < /* reserved + type + count */ 3 * sizeof(uint16_t)) {
+  if (icon_group.size() < /* reserved + type + count */3 * sizeof(uint16_t)) {
     LIEF_ERR("Icon group header too small");
     return;
   }
 
   ++icon_group.edit_as<details::pe_resource_icon_dir>()->count;
-  icon_group.seek_end()
-      .write<uint8_t>(icon.width())
-      .write<uint8_t>(icon.height())
-      .write<uint8_t>(icon.color_count())
-      .write<uint8_t>(icon.reserved())
-      .write<uint16_t>(icon.planes())
-      .write<uint16_t>(icon.bit_count())
-      .write<uint16_t>(icon.size())
-      .write<uint16_t>(new_id);
+  icon_group
+    .seek_end()
+    .write<uint8_t>(icon.width())
+    .write<uint8_t>(icon.height())
+    .write<uint8_t>(icon.color_count())
+    .write<uint8_t>(icon.reserved())
+    .write<uint16_t>(icon.planes())
+    .write<uint16_t>(icon.bit_count())
+    .write<uint16_t>(icon.size())
+    .write<uint16_t>(new_id)
+  ;
 
   auto pixel_node = std::make_unique<ResourceData>(as_vector(icon.pixels()));
-  pixel_node->id(static_cast<int>(icon.sublang()) << 10 |
-                 static_cast<int>(icon.lang()));
+  pixel_node->id(static_cast<int>(icon.sublang()) << 10 | static_cast<int>(icon.lang()));
   icon_dir->add_child(std::move(pixel_node));
 }
 
 
-void ResourcesManager::change_icon(const ResourceIcon& original,
-                                   const ResourceIcon& newone) {
+void ResourcesManager::change_icon(const ResourceIcon& original, const ResourceIcon& newone) {
   ResourceNode* icon_node = get_node_type(TYPE::ICON);
   ResourceNode* icon_grp_node = get_node_type(TYPE::GROUP_ICON);
 
@@ -363,20 +364,20 @@ void ResourcesManager::change_icon(const ResourceIcon& original,
     return;
   }
 
-  // Update group in which the icon is registered
+  // Update group in which the icon is registred
   for (ResourceNode& grp_icon_lvl2 : icon_grp_node->childs()) {
     for (ResourceNode& grp_icon_lvl3 : grp_icon_lvl2.childs()) {
       auto* icon_group_node = grp_icon_lvl3.cast<ResourceData>();
 
       if (icon_group_node == nullptr) {
-        LIEF_WARN("Corrupted resource group icon");
+        LIEF_WARN("Resource group icon corrupted");
         continue;
       }
 
       vector_iostream editor = icon_group_node->edit();
       SpanStream stream = icon_group_node->content();
 
-      /* reserved */ stream.read<uint16_t>().value_or(0);
+      /* reserved */stream.read<uint16_t>().value_or(0);
       /* type */ stream.read<uint16_t>().value_or(0);
       size_t count = stream.read<uint16_t>().value_or(0);
 
@@ -409,13 +410,11 @@ void ResourcesManager::change_icon(const ResourceIcon& original,
   ResourceDirectory new_icon_dir_node(newone.id());
   ResourceData new_icon_data_node(as_vector(newone.pixels()));
   new_icon_data_node.id((int)encode_lang(newone.lang(), newone.sublang()));
-  new_icon_dir_node.add_child(new_icon_data_node);
-  icon_node->add_child(new_icon_dir_node);
+  new_icon_dir_node.add_child(std::move(new_icon_data_node));
+  icon_node->add_child(std::move(new_icon_dir_node));
 }
 
 ResourcesManager::it_const_dialogs ResourcesManager::dialogs() const {
-  static std::mutex DIALOG_CACHE_MU;
-  std::scoped_lock lock(DIALOG_CACHE_MU);
   dialogs_.clear();
   const ResourceNode* dialog_node = get_node_type(TYPE::DIALOG);
   if (dialog_node == nullptr) {
@@ -425,7 +424,7 @@ ResourcesManager::it_const_dialogs ResourcesManager::dialogs() const {
   const auto* dialog_dir = dialog_node->cast<ResourceDirectory>();
 
   if (dialog_dir == nullptr) {
-    LIEF_INFO("Expected directory node for dialog node");
+    LIEF_INFO("Expecting a Directory node for the Dialog Node");
     return dialogs_;
   }
 
@@ -441,7 +440,7 @@ ResourcesManager::it_const_dialogs ResourcesManager::dialogs() const {
     for (size_t j = 0; j < langs.size(); ++j) {
       const auto* data_node = langs[j].cast<ResourceData>();
       if (data_node == nullptr) {
-        LIEF_INFO("Expected data node for child #{}->{}", i, j);
+        LIEF_INFO("Expecting a Data node for child #{}->{}", i, j);
         continue;
       }
 
@@ -468,7 +467,7 @@ ResourcesManager::strings_table_t ResourcesManager::string_table() const {
     for (const ResourceNode& child_l2 : child_l1.childs()) {
       const auto* data_node = child_l2.cast<ResourceData>();
       if (data_node == nullptr) {
-        LIEF_WARN("Expected data node for string node id {}", child_l2.id());
+        LIEF_WARN("Expecting a data not for the string node id {}", child_l2.id());
         continue;
       }
       span<const uint8_t> content = data_node->content();
@@ -516,17 +515,17 @@ std::vector<std::string> ResourcesManager::html() const {
   for (const ResourceNode& child_l1 : root_node->childs()) {
     for (const ResourceNode& child_l2 : child_l1.childs()) {
       if (!child_l2.is_data()) {
-        LIEF_ERR("HTML node corrupted");
+        LIEF_ERR("html node corrupted");
         continue;
       }
       const auto& html_node = static_cast<const ResourceData&>(child_l2);
 
       span<const uint8_t> content = html_node.content();
       if (content.empty()) {
-        LIEF_ERR("HTML content is empty");
+        LIEF_ERR("html content is empty");
         continue;
       }
-      html.emplace_back(content.begin(), content.end());
+      html.push_back(std::string{std::begin(content), std::end(content)});
     }
   }
 
@@ -545,7 +544,7 @@ ResourcesManager::it_const_accelerators ResourcesManager::accelerator() const {
     for (const ResourceNode& child_l2 : child_l1.childs()) {
       const auto* accelerator_node = child_l2.cast<ResourceData>();
       if (accelerator_node == nullptr) {
-        LIEF_ERR("Expected data node for node id {}", child_l2.id());
+        LIEF_ERR("Expecting a Data node for node id: {}", child_l2.id());
         continue;
       }
 
@@ -561,7 +560,7 @@ ResourcesManager::it_const_accelerators ResourcesManager::accelerator() const {
       while (stream) {
         auto res_entry = stream.read<details::pe_resource_acceltableentry>();
         if (!res_entry) {
-          LIEF_ERR("Failed to read pe_resource_acceltableentry");
+          LIEF_ERR("Can't read pe_resource_acceltableentry");
           break;
         }
         accelerator.emplace_back(*res_entry);
@@ -570,7 +569,7 @@ ResourcesManager::it_const_accelerators ResourcesManager::accelerator() const {
       if (!accelerator.empty()) {
         ResourceAccelerator& acc = accelerator.back();
         if (!acc.has(ResourceAccelerator::FLAGS::END)) {
-          LIEF_ERR("Possibly corrupted accelerator resources");
+          LIEF_ERR("Accelerator resources might be corrupted");
         }
       }
     }
@@ -586,11 +585,11 @@ std::string ResourcesManager::print(uint32_t depth) const {
   return oss.str();
 }
 
-void ResourcesManager::print_tree(const ResourceNode& node,
-                                  std::ostringstream& output,
+void ResourcesManager::print_tree(const ResourceNode& node, std::ostringstream& output,
                                   uint32_t current_depth, uint32_t max_depth,
-                                  const ResourceNode* /*parent*/,
-                                  std::string header, bool is_last) const {
+                                  const ResourceNode*/*parent*/, std::string header,
+                                  bool is_last) const
+{
   static constexpr auto ELBOW = "└──";
   static constexpr auto PIPE = "│  ";
   static constexpr auto TEE = "├──";
@@ -601,31 +600,32 @@ void ResourcesManager::print_tree(const ResourceNode& node,
   }
 
   std::string type = node.is_directory() ? "Directory" : "Data";
-  std::string info =
-      fmt::format("{} ID: {:04d} ({:#06x})", type, node.id(), node.id());
+  std::string info = fmt::format("{} ID: {:04d} (0x{:04x})",
+                                 type, node.id(), node.id());
   if (node.has_name()) {
     info += fmt::format(" name: {}", u16tou8(node.name()));
   } else if (std::string ty = to_string(TYPE(node.id()));
              ty != "UNKNOWN" && node.depth() == 1)
   {
     info += fmt::format(" type: {}", ty);
-  } else if (current_depth == 3) {
+  }
+  else if (current_depth == 3) {
     uint32_t lang = lang_from_id(node.id());
     uint32_t sub_lang = sublang_from_id(node.id());
-    info += fmt::format(" Lang: {:#04x} / Sublang: {:#04x}", lang, sub_lang);
+    info += fmt::format(" Lang: 0x{:02x} / Sublang: 0x{:02x}", lang, sub_lang);
   }
 
   if (const auto* data = node.cast<ResourceData>()) {
     const size_t size = data->content().size();
-    info += fmt::format(" length={} ({:#08x}), offset: {:#06x}", size, size,
-                        data->offset());
+    info += fmt::format(" length={} (0x{:06x}), offset: 0x{:04x}",
+                        size, size, data->offset());
   }
 
   if (const auto* dir = node.cast<ResourceDirectory>()) {
     info += fmt::format(" children={}", dir->childs().size());
   }
 
-  output << fmt::format("{}{} {}\n", header, is_last ? ELBOW : TEE, info);
+  output << fmt::format("{}{} {}\n", header, is_last ? ELBOW : TEE , info);
   if (const auto* data = node.cast<ResourceData>()) {
     std::string hex_content;
     std::string str_content;
@@ -649,8 +649,9 @@ void ResourcesManager::print_tree(const ResourceNode& node,
 
   auto children = node.childs();
   for (size_t i = 0; i < children.size(); ++i) {
-    print_tree(children[i], output, current_depth + 1, max_depth, &node,
-               header + (is_last ? BLANK : PIPE), i == (children.size() - 1));
+    print_tree(children[i], output, current_depth + 1, max_depth,
+               &node, header + (is_last ? BLANK : PIPE),
+               i == (children.size() - 1));
   }
 }
 
@@ -694,17 +695,31 @@ std::ostream& operator<<(std::ostream& os, const ResourcesManager& rsrc) {
 }
 
 const char* to_string(ResourcesManager::TYPE type) {
-#define ENTRY(X) std::pair(ResourcesManager::TYPE::X, #X)
-  STRING_MAP enums2str{
-      ENTRY(CURSOR),     ENTRY(BITMAP),       ENTRY(ICON),
-      ENTRY(MENU),       ENTRY(DIALOG),       ENTRY(STRING),
-      ENTRY(FONTDIR),    ENTRY(FONT),         ENTRY(ACCELERATOR),
-      ENTRY(RCDATA),     ENTRY(MESSAGETABLE), ENTRY(GROUP_CURSOR),
-      ENTRY(GROUP_ICON), ENTRY(VERSION),      ENTRY(DLGINCLUDE),
-      ENTRY(PLUGPLAY),   ENTRY(VXD),          ENTRY(ANICURSOR),
-      ENTRY(ANIICON),    ENTRY(HTML),         ENTRY(MANIFEST),
+  #define ENTRY(X) std::pair(ResourcesManager::TYPE::X, #X)
+  STRING_MAP enums2str {
+    ENTRY(CURSOR),
+    ENTRY(BITMAP),
+    ENTRY(ICON),
+    ENTRY(MENU),
+    ENTRY(DIALOG),
+    ENTRY(STRING),
+    ENTRY(FONTDIR),
+    ENTRY(FONT),
+    ENTRY(ACCELERATOR),
+    ENTRY(RCDATA),
+    ENTRY(MESSAGETABLE),
+    ENTRY(GROUP_CURSOR),
+    ENTRY(GROUP_ICON),
+    ENTRY(VERSION),
+    ENTRY(DLGINCLUDE),
+    ENTRY(PLUGPLAY),
+    ENTRY(VXD),
+    ENTRY(ANICURSOR),
+    ENTRY(ANIICON),
+    ENTRY(HTML),
+    ENTRY(MANIFEST),
   };
-#undef ENTRY
+  #undef ENTRY
 
   if (auto it = enums2str.find(type); it != enums2str.end()) {
     return it->second;
@@ -714,4 +729,5 @@ const char* to_string(ResourcesManager::TYPE type) {
 }
 
 
-} // namespace LIEF::PE
+} // namespace PE
+} // namespace LIEF

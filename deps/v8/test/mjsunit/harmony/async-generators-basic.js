@@ -130,7 +130,7 @@ assertTrue(ctorDesc.configurable);
 // ----------------------------------------------------------------------------
 // The AsyncGeneratorFunction Constructor is the %AsyncGeneratorFunction%
 // intrinsic object and is a subclass of Function.
-// (https://tc39.es/proposal-async-iteration/#sec-asyncgeneratorfunction-constructor)
+// (proposal-async-iteration/#sec-asyncgeneratorfunction-constructor)
 let AsyncGeneratorFunction = AsyncGenerator.constructor;
 assertEquals(Object.getPrototypeOf(AsyncGeneratorFunction), Function);
 assertEquals(Object.getPrototypeOf(AsyncGeneratorFunction.prototype),

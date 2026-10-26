@@ -14,14 +14,9 @@
 
 #include "absl/strings/internal/cord_rep_btree.h"
 
-#include <cassert>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <deque>
 #include <iostream>
-#include <random>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -32,11 +27,9 @@
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/internal/cord_data_edge.h"
 #include "absl/strings/internal/cord_internal.h"
-#include "absl/strings/internal/cord_rep_flat.h"
 #include "absl/strings/internal/cord_rep_test_util.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

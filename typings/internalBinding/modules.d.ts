@@ -5,7 +5,6 @@ export type PackageConfig = {
   type: PackageType
   exports?: string | string[] | Record<string, unknown>
   imports?: string | string[] | Record<string, unknown>
-  private?: boolean
 }
 export type DeserializedPackageConfig = {
   data: PackageConfig,
@@ -19,14 +18,12 @@ export type SerializedPackageConfig = [
   string | undefined, // exports
   string | undefined, // imports
   DeserializedPackageConfig['path'], // pjson file path
-  PackageConfig['private'], // private
 ]
 
 export interface ModulesBinding {
   readPackageJSON(path: string): SerializedPackageConfig | undefined;
   getNearestParentPackageJSONType(path: string): PackageConfig['type']
   getNearestParentPackageJSON(path: string): SerializedPackageConfig | undefined
-  getRootPackageJSON(path: string): SerializedPackageConfig | undefined
   getPackageScopeConfig(path: string): SerializedPackageConfig | undefined
   getPackageType(path: string): PackageConfig['type'] | undefined
   enableCompileCache(path?: string): { status: number, message?: string, directory?: string }

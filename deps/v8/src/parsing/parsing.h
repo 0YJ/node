@@ -5,7 +5,6 @@
 #ifndef V8_PARSING_PARSING_H_
 #define V8_PARSING_PARSING_H_
 
-#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 
 namespace v8 {
@@ -16,8 +15,7 @@ class SharedFunctionInfo;
 
 namespace parsing {
 
-using ReportStatisticsMode =
-    base::StrongAlias<struct ReportStatisticsModeTag, bool>;
+enum class ReportStatisticsMode { kYes, kNo };
 
 // Parses the top-level source code represented by the parse info and sets its
 // function literal. Returns false (and deallocates any allocated AST nodes) if

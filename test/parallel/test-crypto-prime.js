@@ -5,7 +5,6 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
-const { isBoringSSL } = require('../common/crypto');
 
 const {
   generatePrime,
@@ -166,7 +165,7 @@ generatePrime(
   // The behavior when specifying only add without rem should depend on the
   // safe option.
 
-  if (!isBoringSSL) {
+  if (process.versions.openssl >= '1.1.1f') {
     generatePrime(128, {
       bigint: true,
       add: 5n
@@ -216,7 +215,7 @@ generatePrime(
     code: 'ERR_OUT_OF_RANGE'
   });
 
-  if (!isBoringSSL) {
+  if (process.versions.openssl >= '1.1.1f') {
     // This is possible and allowed (but makes little sense).
     assert.strictEqual(generatePrimeSync(4, {
       add: 15n,

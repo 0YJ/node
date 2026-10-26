@@ -7,7 +7,6 @@
 
 #include <cstdint>
 
-#include "include/cppgc/garbage-collected.h"
 #include "include/v8-function-callback.h"
 #include "include/v8-isolate.h"
 #include "include/v8-local-handle.h"
@@ -133,7 +132,7 @@ class ConsoleContext {
   v8::Local<v8::String> name_;
 };
 
-class V8_EXPORT_PRIVATE ConsoleDelegate : public cppgc::GarbageCollectedMixin {
+class ConsoleDelegate {
  public:
   virtual void Debug(const ConsoleCallArguments& args,
                      const ConsoleContext& context) {}
@@ -179,7 +178,6 @@ class V8_EXPORT_PRIVATE ConsoleDelegate : public cppgc::GarbageCollectedMixin {
                        const ConsoleContext& context) {}
   virtual void TimeStamp(const ConsoleCallArguments& args,
                          const ConsoleContext& context) {}
-  void Trace(cppgc::Visitor* visitor) const override {}
   virtual ~ConsoleDelegate() = default;
 };
 

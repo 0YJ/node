@@ -4,7 +4,6 @@
 
 #include "src/wasm/wasm-subtyping.h"
 
-#include "src/base/logging.h"
 #include "src/wasm/canonical-types.h"
 #include "src/wasm/wasm-module.h"
 
@@ -42,11 +41,11 @@ bool ValidStructSubtypeDefinition(ModuleTypeIndex subtype_index,
     }
   }
   if (sub_def.descriptor.valid()) {
-    // If a type has a descriptor, its supertype must also have a descriptor,
-    // and the supertype's descriptor must be a declared supertype of the
+    // If a type has a descriptor, its supertype must either have no descriptor,
+    // or the supertype's descriptor must be a declared supertype of the
     // subtype's descriptor.
-    if (!super_def.descriptor.valid()) return false;
-    if (module->supertype(sub_def.descriptor) != super_def.descriptor) {
+    if (super_def.descriptor.valid() &&
+        module->supertype(sub_def.descriptor) != super_def.descriptor) {
       return false;
     }
   } else {
@@ -137,9 +136,8 @@ StandardType UpcastToStandardType(ValueTypeBase type) {
     case RefTypeKind::kCont:
       return StandardType::kCont;
     case RefTypeKind::kOther:
-      break;
+      UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 // Format: subtype, supertype
@@ -162,9 +160,7 @@ StandardType UpcastToStandardType(ValueTypeBase type) {
   /* exnref hierarchy */                                                       \
   V(NoExn, Exn)                                                                \
   /* cont hierarchy */                                                         \
-  V(NoCont, Cont)                                                              \
-  /* waitqueue hierarchy */                                                    \
-  V(NoWaitqueue, Waitqueue)
+  V(NoCont, Cont)
 
 static constexpr uint32_t kNumStandardTypes =
     value_type_impl::kNumberOfStandardTypes;
@@ -231,7 +227,6 @@ constexpr uint8_t ComputeCondensedIndex(StandardType type) {
     FOREACH_GENERIC_TYPE(CASE)
 #undef CASE
   }
-  UNREACHABLE();
 }
 constexpr StandardType ComputeStandardType(uint8_t condensed_index) {
 #define CASE(name, ...)                                                \
@@ -361,7 +356,7 @@ HeapType NullSentinelImpl(HeapType type) {
   if (type.is_string_view()) {
     // TODO(12868): This special case reflects unresolved discussion. If string
     // views aren't nullable, they shouldn't really show up here at all.
-    return type;
+    return HeapType::Generic(GenericKind::kNone, type.is_shared());
   }
   UNREACHABLE();
 }
@@ -396,7 +391,6 @@ bool ValidSubtypeDefinition(ModuleTypeIndex subtype_index,
       return ValidContinuationSubtypeDefinition(subtype_index, supertype_index,
                                                 module);
   }
-  UNREACHABLE();
 }
 
 namespace {
@@ -405,8 +399,8 @@ std::optional<bool> IsSubtypeOf_CommonImpl(ValueTypeBase subtype,
                                            ValueTypeBase supertype) {
   DCHECK(!subtype.is_numeric() && !supertype.is_numeric());
 
-  if (subtype.is_bottom()) return true;
   if (subtype.is_shared() != supertype.is_shared()) return false;
+  if (subtype.is_bottom()) return true;
   if (supertype.has_index()) {
     if (subtype.has_index()) {
       // Only exact types can possibly be subtypes of other exact types.
@@ -518,7 +512,7 @@ namespace {
 HeapType CommonAncestor(HeapType type1, HeapType type2,
                         const WasmModule* module) {
   DCHECK(type1.has_index() && type2.has_index());
-  SharedFlag both_shared = type1.is_shared();
+  bool both_shared = type1.is_shared();
   if (both_shared != type2.is_shared()) return HeapType{kWasmTop};
 
   ModuleTypeIndex type_index1 = type1.ref_index();
@@ -559,7 +553,7 @@ HeapType CommonAncestor(HeapType type1, HeapType type2,
 // another heap type {type2}.
 HeapType CommonAncestorWithAbstract(HeapType heap1, HeapType heap2) {
   DCHECK(heap1.is_abstract_ref());
-  SharedFlag is_shared = heap1.is_shared();
+  bool is_shared = heap1.is_shared();
   if (is_shared != heap2.is_shared()) return HeapType{kWasmTop};
 
   // If {heap2} is an indexed type, then {heap1} could be a subtype of it if

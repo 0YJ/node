@@ -22,7 +22,6 @@
 #include <limits>
 
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
 #include "absl/base/optimization.h"
 
 namespace absl {

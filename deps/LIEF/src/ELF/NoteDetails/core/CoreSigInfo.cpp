@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@
 
 #include "spdlog/fmt/fmt.h"
 
-
-namespace LIEF::ELF {
+namespace LIEF {
+namespace ELF {
 
 static constexpr auto signo_offset = offsetof(details::Elf_siginfo, si_signo);
 static constexpr auto sigcode_offset = offsetof(details::Elf_siginfo, si_code);
@@ -58,8 +58,11 @@ void CoreSigInfo::accept(Visitor& visitor) const {
 void CoreSigInfo::dump(std::ostream& os) const {
   Note::dump(os);
   os << '\n'
-     << fmt::format("  signo: {} code: {} errno: {}\n", signo().value_or(-1),
-                    sigcode().value_or(-1), sigerrno().value_or(-1));
+     << fmt::format("  signo: {} code: {} errno: {}\n",
+                    signo().value_or(-1),
+                    sigcode().value_or(-1),
+                    sigerrno().value_or(-1));
 }
 
-} // namespace LIEF::ELF
+} // namespace ELF
+} // namespace LIEF

@@ -139,15 +139,13 @@ class V8_EXPORT Message {
 
   /**
    * Returns the index within the script of the first character where
-   * the error occurred. This is best effort and not guaranteed. It may be -1 or
-   * even > EndPosition in some cases.
+   * the error occurred.
    */
   int GetStartPosition() const;
 
   /**
    * Returns the index within the script of the last character where
-   * the error occurred. This is best effort and not guaranteed. It may be -1 or
-   * even < StartPosition in some cases.
+   * the error occurred.
    */
   int GetEndPosition() const;
 

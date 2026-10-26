@@ -1,4 +1,4 @@
-/* Copyright 2021 - 2026 R. Thomas
+/* Copyright 2021 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +21,8 @@
 #include <vector>
 #include "LIEF/ELF/Builder.hpp"
 
-
-namespace LIEF::ELF {
+namespace LIEF {
+namespace ELF {
 class Section;
 class Binary;
 class Layout {
@@ -30,7 +30,8 @@ class Layout {
   Layout(Binary& bin, bool should_swap, const Builder::config_t& config) :
     binary_(&bin),
     should_swap_(should_swap),
-    config_(&config) {}
+    config_(&config)
+  {}
 
   virtual const std::unordered_map<std::string, size_t>& shstr_map() const {
     return shstr_name_map_;
@@ -82,5 +83,5 @@ class Layout {
   const Builder::config_t* config_ = nullptr;
 };
 }
-
+}
 #endif

@@ -17,18 +17,18 @@ const rejectsXCurves = hasFIPS(3, 5);
 
 // Test generateKeyPairSync with raw encoding for EdDSA/ECDH key types.
 {
-  const types = ['ed25519', 'x25519', 'ed448', 'x448'];
+  const types = ['ed25519', 'x25519'];
+  if (!isBoringSSL) {
+    types.push('ed448', 'x448');
+  }
   for (const type of types) {
     const options = {
       publicKeyEncoding: { format: 'raw-public' },
       privateKeyEncoding: { format: 'raw-private' },
     };
-    if ((isBoringSSL && type.endsWith('448')) ||
-        (rejectsXCurves && type.startsWith('x'))) {
+    if (rejectsXCurves && type.startsWith('x')) {
       assert.throws(() => generateKeyPairSync(type, options), {
-        name: 'TypeError',
-        code: 'ERR_INVALID_ARG_VALUE',
-        message: `The argument 'type' must be a supported key type. Received '${type}'`,
+        code: 'ERR_OSSL_EVP_UNSUPPORTED',
       });
       continue;
     }
@@ -58,23 +58,22 @@ const rejectsXCurves = hasFIPS(3, 5);
 
 // Test async generateKeyPair with raw encoding for EdDSA/ECDH key types.
 {
-  const types = ['ed25519', 'x25519', 'ed448', 'x448'];
+  const types = ['ed25519', 'x25519'];
+  if (!isBoringSSL) {
+    types.push('ed448', 'x448');
+  }
   for (const type of types) {
     const options = {
       publicKeyEncoding: { format: 'raw-public' },
       privateKeyEncoding: { format: 'raw-private' },
     };
-    if ((isBoringSSL && type.endsWith('448')) ||
-        (rejectsXCurves && type.startsWith('x'))) {
-      assert.throws(() => generateKeyPair(type, options, common.mustNotCall()), {
-        name: 'TypeError',
-        code: 'ERR_INVALID_ARG_VALUE',
-        message: `The argument 'type' must be a supported key type. Received '${type}'`,
-      });
-      continue;
-    }
     generateKeyPair(type, options,
-                    common.mustSucceed((publicKey, privateKey) => {
+                    common.mustCall((err, publicKey, privateKey) => {
+                      if (rejectsXCurves && type.startsWith('x')) {
+                        assert.strictEqual(err?.code, 'ERR_OSSL_EVP_UNSUPPORTED');
+                        return;
+                      }
+                      assert.ifError(err);
                       assert(Buffer.isBuffer(publicKey));
                       assert(Buffer.isBuffer(privateKey));
                     }));

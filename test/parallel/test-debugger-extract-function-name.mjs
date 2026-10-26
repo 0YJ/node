@@ -7,12 +7,14 @@ import startCLI from '../common/debugger.js';
 
 import assert from 'assert';
 
-// Evaluating while the target is running can trigger a V8 scope assertion.
-// Keep it paused for these formatting checks.
-const cli = startCLI([fixtures.path('debugger', 'three-lines.js')]);
+const env = {
+  ...process.env,
+  NODE_INSPECT_RESUME_ON_START: '1',
+};
+const cli = startCLI(
+  [fixtures.path('debugger', 'alive.js')], [], { env });
 
 try {
-  await cli.waitForInitialBreak();
   await cli.waitForPrompt();
   await cli.command('exec a = function func() {}; a;');
   assert.match(cli.output, /\[Function: func\]/);
@@ -31,5 +33,5 @@ try {
   await cli.command('exec a = function * func() {}; a;');
   assert.match(cli.output, /\[GeneratorFunction\]/);
 } finally {
-  await cli.quit();
+  cli.quit();
 }

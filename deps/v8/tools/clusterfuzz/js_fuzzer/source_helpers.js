@@ -49,7 +49,6 @@ BABYLON_REPLACE_VAR_OPTIONS['placeholderPattern'] = /^VAR_[0-9]+$/;
 // loose transformation to trigger a commonly seen pattern:
 // A.prototype.foo = bar;
 const BABYLON_TRANSPILE_OPTIONS = {
-    sourceType: "script",
     plugins: [
     ["@babel/plugin-transform-class-properties", { "loose": true }],
     ["@babel/plugin-transform-class-static-block", { "loose": true }],
@@ -114,14 +113,8 @@ function _findPath(path, caseSensitive=true) {
     const curListing = fs.readdirSync(realPath);
     let realComponent = null;
     for (const component of curListing) {
-      let isDirectory = false;
-      try {
-        isDirectory = fs.statSync(fsPath.join(realPath, component)).isDirectory();
-      } catch (e) {
-        continue;
-      }
-
-      if (i < pathComponents.length - 1 && !isDirectory) {
+      if (i < pathComponents.length - 1 &&
+          !fs.statSync(fsPath.join(realPath, component)).isDirectory()) {
         continue;
       }
 
@@ -429,14 +422,8 @@ function loadSource(corpus, relPath, parseStrict=false, transpile=false) {
 
   let preprocessed = maybeUseStict(replaceV8Builtins(data), parseStrict);
   if (transpile){
-    try {
-      preprocessed = babel.transformSync(
-          preprocessed, BABYLON_TRANSPILE_OPTIONS).code;
-    } catch (e) {
-      console.log(`WARNING: failed to transpile ${relPath}`);
-      console.log(e);
-      transpile = false;
-    }
+    preprocessed = babel.transformSync(
+        preprocessed, BABYLON_TRANSPILE_OPTIONS).code;
   }
   const ast = babylon.parse(preprocessed, BABYLON_OPTIONS);
 

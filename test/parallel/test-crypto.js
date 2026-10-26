@@ -29,7 +29,7 @@ const assert = require('assert');
 const crypto = require('crypto');
 const tls = require('tls');
 const fixtures = require('../common/fixtures');
-const { hasFIPS, isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL, hasFIPS, isBoringSSL } = require('../common/crypto');
 const isFips = hasFIPS(3);
 
 // Test Certificates
@@ -244,16 +244,25 @@ assert.throws(() => {
     assert(Array.isArray(err.opensslErrorStack));
     assert(err.opensslErrorStack.length > 0);
   } else {
-    assert.throws(() => { throw err; }, {
+    if (!hasOpenSSL(3))
+      assert.ok(!('opensslErrorStack' in err));
+    assert.throws(() => { throw err; }, hasOpenSSL(3) ? {
       name: 'Error',
       message: 'error:02000070:rsa routines::digest too big for rsa key',
       library: 'rsa routines',
+    } : {
+      name: 'Error',
+      message: /routines:RSA_sign:digest too big for rsa key$/,
+      library: /rsa routines/i,
+      function: 'RSA_sign',
+      reason: /digest[\s_]too[\s_]big[\s_]for[\s_]rsa[\s_]key/i,
+      code: 'ERR_OSSL_RSA_DIGEST_TOO_BIG_FOR_RSA_KEY'
     });
   }
   return true;
 });
 
-if (isBoringSSL) {
+if (!hasOpenSSL(3)) {
   // The correct header inside `rsa_private_pkcs8_bad.pem` should have been
   // -----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----
   // instead of
@@ -261,10 +270,32 @@ if (isBoringSSL) {
   const sha1_privateKey = fixtures.readKey('rsa_private_pkcs8_bad.pem',
                                            'ascii');
 
-  // BoringSSL accepts the PKCS#8 payload despite the legacy PEM label.
-  const signature = crypto.createSign('sha1').sign(sha1_privateKey);
-  assert(Buffer.isBuffer(signature));
-  assert.strictEqual(signature.length, 256);
+  if (isBoringSSL) {
+    // BoringSSL accepts the PKCS#8 payload despite the legacy PEM label.
+    const signature = crypto.createSign('sha1').sign(sha1_privateKey);
+    assert(Buffer.isBuffer(signature));
+    assert.strictEqual(signature.length, 256);
+  } else {
+    assert.throws(() => {
+      // This would inject errors onto OpenSSL's error stack
+      crypto.createSign('sha1').sign(sha1_privateKey);
+    }, (err) => {
+      // Do the standard checks, but then do some custom checks afterwards.
+      assert.throws(() => { throw err; }, {
+        message: 'error:0D0680A8:asn1 encoding routines:asn1_check_tlen:' +
+                 'wrong tag',
+        library: 'asn1 encoding routines',
+        function: 'asn1_check_tlen',
+        reason: 'wrong tag',
+        code: 'ERR_OSSL_ASN1_WRONG_TAG',
+      });
+      // Throws crypto error, so there is an opensslErrorStack property.
+      // The openSSL stack should have content.
+      assert(Array.isArray(err.opensslErrorStack));
+      assert(err.opensslErrorStack.length > 0);
+      return true;
+    });
+  }
 }
 
 // Make sure memory isn't released before being returned

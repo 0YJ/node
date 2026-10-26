@@ -26,8 +26,6 @@ const fixtures = require('../common/fixtures');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
-const { untrustedLeafErrorCode } = require('../common/tls');
-
 const assert = require('assert');
 const https = require('https');
 
@@ -95,7 +93,7 @@ server.listen(0, common.mustCall(() => {
   const checkCertReq = https.request(options, common.mustNotCall()).end();
 
   checkCertReq.on('error', common.mustCall((e) => {
-    assert.strictEqual(e.code, untrustedLeafErrorCode);
+    assert.strictEqual(e.code, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
     done();
   }));
 }));

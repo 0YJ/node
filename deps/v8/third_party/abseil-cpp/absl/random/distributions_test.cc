@@ -80,15 +80,19 @@ Invalid InferredTaggedUniformReturnT(...);
 template <typename A, typename B, typename Expect>
 void CheckArgsInferType() {
   static_assert(
-      std::conjunction_v<
+      absl::conjunction<
           std::is_same<Expect, decltype(InferredUniformReturnT<A, B>(0))>,
-          std::is_same<Expect, decltype(InferredUniformReturnT<B, A>(0))>>);
+          std::is_same<Expect,
+                       decltype(InferredUniformReturnT<B, A>(0))>>::value,
+      "");
   static_assert(
-      std::conjunction_v<
+      absl::conjunction<
           std::is_same<Expect, decltype(InferredTaggedUniformReturnT<
                                         absl::IntervalOpenOpenTag, A, B>(0))>,
-          std::is_same<Expect, decltype(InferredTaggedUniformReturnT<
-                                        absl::IntervalOpenOpenTag, B, A>(0))>>);
+          std::is_same<Expect,
+                       decltype(InferredTaggedUniformReturnT<
+                                absl::IntervalOpenOpenTag, B, A>(0))>>::value,
+      "");
 }
 
 template <typename A, typename B, typename ExplicitRet>
@@ -117,19 +121,21 @@ Invalid ExplicitTaggedUniformReturnT(...);
 template <typename A, typename B, typename Expect>
 void CheckArgsReturnExpectedType() {
   static_assert(
-      std::conjunction_v<
+      absl::conjunction<
           std::is_same<Expect,
                        decltype(ExplicitUniformReturnT<A, B, Expect>(0))>,
-          std::is_same<Expect,
-                       decltype(ExplicitUniformReturnT<B, A, Expect>(0))>>);
+          std::is_same<Expect, decltype(ExplicitUniformReturnT<B, A, Expect>(
+                                   0))>>::value,
+      "");
   static_assert(
-      std::conjunction_v<
+      absl::conjunction<
           std::is_same<Expect,
                        decltype(ExplicitTaggedUniformReturnT<
                                 absl::IntervalOpenOpenTag, A, B, Expect>(0))>,
-          std::is_same<Expect,
-                       decltype(ExplicitTaggedUniformReturnT<
-                                absl::IntervalOpenOpenTag, B, A, Expect>(0))>>);
+          std::is_same<Expect, decltype(ExplicitTaggedUniformReturnT<
+                                        absl::IntervalOpenOpenTag, B, A,
+                                        Expect>(0))>>::value,
+      "");
 }
 
 // Takes the type of `absl::Uniform<R>(gen)` if valid or `Invalid` otherwise.

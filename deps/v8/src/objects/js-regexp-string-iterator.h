@@ -5,8 +5,8 @@
 #ifndef V8_OBJECTS_JS_REGEXP_STRING_ITERATOR_H_
 #define V8_OBJECTS_JS_REGEXP_STRING_ITERATOR_H_
 
-#include "src/base/bit-field.h"
 #include "src/objects/js-objects.h"
+#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -14,19 +14,12 @@
 namespace v8 {
 namespace internal {
 
-V8_OBJECT class JSRegExpStringIterator : public JSObject {
+#include "torque-generated/src/objects/js-regexp-string-iterator-tq.inc"
+
+class JSRegExpStringIterator
+    : public TorqueGeneratedJSRegExpStringIterator<JSRegExpStringIterator,
+                                                   JSObject> {
  public:
-  inline Tagged<JSReceiver> iterating_reg_exp() const;
-  inline void set_iterating_reg_exp(
-      Tagged<JSReceiver> value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<String> iterated_string() const;
-  inline void set_iterated_string(Tagged<String> value,
-                                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int flags() const;
-  inline void set_flags(int value);
-
   // [boolean]: The [[Done]] internal property.
   DECL_BOOLEAN_ACCESSORS(done)
 
@@ -37,19 +30,11 @@ V8_OBJECT class JSRegExpStringIterator : public JSObject {
   DECL_BOOLEAN_ACCESSORS(unicode)
 
   DECL_PRINTER(JSRegExpStringIterator)
-  DECL_VERIFIER(JSRegExpStringIterator)
 
-  // Bit layout for flags_.
-  using DoneBit = base::BitField<bool, 0, 1>;
-  using GlobalBit = DoneBit::Next<bool, 1>;
-  using UnicodeBit = GlobalBit::Next<bool, 1>;
+  DEFINE_TORQUE_GENERATED_JS_REG_EXP_STRING_ITERATOR_FLAGS()
 
- public:
-  TaggedMember<JSReceiver> iterating_reg_exp_;
-  TaggedMember<String> iterated_string_;
-  // SmiTagged<JSRegExpStringIteratorFlags>.
-  TaggedMember<Smi> flags_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(JSRegExpStringIterator)
+};
 
 }  // namespace internal
 }  // namespace v8

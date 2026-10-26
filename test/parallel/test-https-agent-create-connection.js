@@ -5,8 +5,6 @@ const fixtures = require('../common/fixtures');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
-const { untrustedLeafErrorCode } = require('../common/tls');
-
 const assert = require('assert');
 const https = require('https');
 
@@ -19,6 +17,7 @@ const options = {
 
 const expectedHeader = /^HTTP\/1\.1 200 OK/;
 const expectedBody = /hello world\n/;
+const expectCertError = /^UNABLE_TO_VERIFY_LEAF_SIGNATURE$/;
 
 function checkRequest(socket, server) {
   let result = '';
@@ -113,7 +112,7 @@ function createServer() {
     const options = null;
     const socket = agent.createConnection(port, host, options);
     socket.on('error', common.mustCall((e) => {
-      assert.strictEqual(e.code, untrustedLeafErrorCode);
+      assert.match(e.code, expectCertError);
       server.close();
     }));
   }));
@@ -128,7 +127,7 @@ function createServer() {
     const options = undefined;
     const socket = agent.createConnection(port, host, options);
     socket.on('error', common.mustCall((e) => {
-      assert.strictEqual(e.code, untrustedLeafErrorCode);
+      assert.match(e.code, expectCertError);
       server.close();
     }));
   }));

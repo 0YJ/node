@@ -6,7 +6,7 @@
 
 use crate::{
     assert_syntax,
-    encoding::EncodingType,
+    core::EncodingType,
     parsers::{
         grammar::{
             is_ascii_sign, is_day_designator, is_duration_designator, is_hour_designator,
@@ -23,26 +23,24 @@ use crate::{
 pub(crate) fn parse_duration<T: EncodingType>(
     cursor: &mut Cursor<T>,
 ) -> ParserResult<DurationParseRecord> {
-    let sign = if cursor.check(is_ascii_sign)?.ok_or(ParseError::AbruptEnd {
-        location: "DurationStart",
-    })? {
+    let sign = if cursor
+        .check(is_ascii_sign)?
+        .ok_or_else(|| ParseError::abrupt_end("DurationStart"))?
+    {
         cursor.next_or(ParseError::ImplAssert)? == b'+'
     } else {
         true
     };
 
     assert_syntax!(
-        is_duration_designator(cursor.next_or(ParseError::AbruptEnd {
-            location: "DurationDesignator"
-        })?),
+        is_duration_designator(cursor.next_or(ParseError::abrupt_end("DurationDesignator"))?),
         DurationDisgnator,
     );
 
     let date = if cursor
         .check(is_time_designator)?
-        .ok_or(ParseError::AbruptEnd {
-            location: "Duration",
-        })? {
+        .ok_or(ParseError::abrupt_end("Duration"))?
+    {
         None
     } else {
         Some(parse_date_duration(cursor)?)
@@ -77,9 +75,9 @@ pub(crate) fn parse_date_duration<T: EncodingType>(
     while cursor.check_or(false, |ch| ch.is_ascii_digit())? {
         let mut value: u64 = 0;
         while cursor.check_or(false, |ch| ch.is_ascii_digit())? {
-            let digit = cursor.next_digit()?.ok_or(ParseError::AbruptEnd {
-                location: "DateDuration",
-            })?;
+            let digit = cursor
+                .next_digit()?
+                .ok_or_else(|| ParseError::abrupt_end("DateDuration"))?;
             value = value
                 .checked_mul(10)
                 .and_then(|v| v.checked_add(u64::from(digit)))
@@ -118,11 +116,7 @@ pub(crate) fn parse_date_duration<T: EncodingType>(
                 date.days = value;
                 previous_unit = DateUnit::Day;
             }
-            Some(_) | None => {
-                return Err(ParseError::AbruptEnd {
-                    location: "DateDurationDesignator",
-                })
-            }
+            Some(_) | None => return Err(ParseError::abrupt_end("DateDurationDesignator")),
         }
     }
 
@@ -155,9 +149,9 @@ pub(crate) fn parse_time_duration<T: EncodingType>(
     while cursor.check_or(false, |c| c.is_ascii_digit())? {
         let mut value: u64 = 0;
         while cursor.check_or(false, |c| c.is_ascii_digit())? {
-            let digit = cursor.next_digit()?.ok_or(ParseError::AbruptEnd {
-                location: "TimeDurationDigit",
-            })?;
+            let digit = cursor
+                .next_digit()?
+                .ok_or_else(|| ParseError::abrupt_end("TimeDurationDigit"))?;
             value = value
                 .checked_mul(10)
                 .and_then(|v| v.checked_add(u64::from(digit)))
@@ -197,11 +191,7 @@ pub(crate) fn parse_time_duration<T: EncodingType>(
                 }
                 previous_unit = TimeUnit::Second;
             }
-            Some(_) | None => {
-                return Err(ParseError::AbruptEnd {
-                    location: "TimeDurationDesignator",
-                })
-            }
+            Some(_) | None => return Err(ParseError::abrupt_end("TimeDurationDesignator")),
         }
 
         if fraction.is_some() {
@@ -231,8 +221,6 @@ pub(crate) fn parse_time_duration<T: EncodingType>(
             seconds: time.2,
             fraction: time.3,
         })),
-        TimeUnit::None => Err(ParseError::AbruptEnd {
-            location: "TimeDurationDesignator",
-        }),
+        TimeUnit::None => Err(ParseError::abrupt_end("TimeDurationDesignator")),
     }
 }

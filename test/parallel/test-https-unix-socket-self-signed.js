@@ -21,7 +21,6 @@ const server = https.createServer(options, common.mustCall((req, res) => {
 
 server.listen(common.PIPE, common.mustCall(() => {
   https.get({
-    agent: false,
     socketPath: common.PIPE,
     rejectUnauthorized: false
   });

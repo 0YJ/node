@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax
+// Flags: --js-sum-precise --allow-natives-syntax
 
 function assertSum(expected, iterable) {
   let res = Math.sumPrecise(iterable);
@@ -13,9 +13,6 @@ assertEquals(-0, Math.sumPrecise([]));
 assertEquals(6, Math.sumPrecise([1, 2, 3]));
 assertEquals(-0, Math.sumPrecise([-0, -0]));
 assertSum(6.6, [1.1, 2.2, 3.3]);
-
-
-assertThrows(() => Math.sumPrecise([undefined]), TypeError);
 
 // Abusing an existing iterator (Array iterator on plain object)
 (function TestAbusedArrayIterator() {

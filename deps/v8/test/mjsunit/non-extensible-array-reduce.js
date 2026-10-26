@@ -704,7 +704,6 @@ assertEquals(undefined, Object.preventExtensions(arr).reduceRight(function(val) 
 })();
 
 (function ReduceCatch() {
-  let array = [1, '2', 3];
   let f = (a,current) => {
     return a + current;
   };
@@ -1063,7 +1062,6 @@ assertEquals(undefined, Object.preventExtensions(arr).reduceRight(function(val) 
 })();
 
 (function ReduceCatch() {
-  let array = [1, '2', 3];
   let f = (a,current) => {
     return a + Number(current);
   };

@@ -3,46 +3,36 @@
 // found in the LICENSE file.
 
 @abstract
-@cppObjectLayoutDefinition
 extern class JSCollection extends JSObject {
   // The backing hash table.
   //
   // Use StableOrderedHasSet or StableOrderedHashMap to read.
   table: Object;
 }
-@cppObjectLayoutDefinition
 extern class JSSet extends JSCollection {}
-@cppObjectLayoutDefinition
 extern class JSMap extends JSCollection {}
 
 @abstract
-@cppObjectLayoutDefinition
 extern class JSWeakCollection extends JSObject {
   // The backing hash table mapping keys to values.
   table: Object;
 }
-@cppObjectLayoutDefinition
 extern class JSWeakSet extends JSWeakCollection {}
-@cppObjectLayoutDefinition
 extern class JSWeakMap extends JSWeakCollection {}
 
-@abstract
-@cppObjectLayoutDefinition
-extern class JSMapIterator extends JSCollectionIterator {}
+@abstract extern class JSMapIterator extends JSCollectionIterator;
 extern class JSMapKeyIterator extends JSMapIterator
-    generates 'JSMapIterator';
+    generates 'TNode<JSMapIterator>';
 extern class JSMapKeyValueIterator extends JSMapIterator
-    generates 'JSMapIterator';
+    generates 'TNode<JSMapIterator>';
 extern class JSMapValueIterator extends JSMapIterator
-    generates 'JSMapIterator';
+    generates 'TNode<JSMapIterator>';
 
-@abstract
-@cppObjectLayoutDefinition
-extern class JSSetIterator extends JSCollectionIterator {}
+@abstract extern class JSSetIterator extends JSCollectionIterator;
 extern class JSSetKeyValueIterator extends JSSetIterator
-    generates 'JSSetIterator';
+    generates 'TNode<JSSetIterator>';
 extern class JSSetValueIterator extends JSSetIterator
-    generates 'JSSetIterator';
+    generates 'TNode<JSSetIterator>';
 
 transient type JSSetWithNoCustomIteration extends JSSet;
 transient type JSMapWithNoCustomIteration extends JSMap;

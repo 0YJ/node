@@ -1,4 +1,5 @@
 use super::TokenStreamExt;
+use std::sync::Arc;
 use alloc::borrow::{Cow, ToOwned};
 use alloc::boxed::Box;
 use alloc::ffi::CString;
@@ -7,7 +8,6 @@ use alloc::string::String;
 use core::ffi::CStr;
 use core::iter;
 use proc_macro2::{Group, Ident, Literal, Punct, Span, TokenStream, TokenTree};
-use std::sync::Arc;
 
 /// Types that can be interpolated inside a `quote!` invocation.
 pub trait ToTokens {

@@ -63,12 +63,14 @@ def FindV8SrcFromFilename(filename):
     (String) Path of 'v8/', or None if unable to find.
   """
   curdir = os.path.normpath(os.path.dirname(filename))
-  while not PathExists(curdir, '.git'):
+  while not (PathExists(curdir, 'v8') and PathExists(curdir, 'v8', 'DEPS')
+             and (PathExists(curdir, '.gclient')
+                  or PathExists(curdir, 'v8', '.git'))):
     nextdir = os.path.normpath(os.path.join(curdir, '..'))
     if nextdir == curdir:
       return None
     curdir = nextdir
-  return curdir
+  return os.path.join(curdir, 'v8')
 
 
 def GetClangCommandFromNinjaForFilename(v8_root, filename):

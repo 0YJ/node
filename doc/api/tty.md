@@ -70,9 +70,7 @@ A `boolean` that is always `true` for `tty.ReadStream` instances.
 <!-- YAML
 added: v0.7.7
 changes:
-  - version:
-     - v26.8.0
-     - v24.21.0
+  - version: v26.8.0
     pr-url: https://github.com/nodejs/node/pull/64140
     description: The `mode` argument supports `'raw'` and `'io'`.
 -->
@@ -106,9 +104,7 @@ Windows.
 ### `readStream.rawMode`
 
 <!-- YAML
-added:
- - v26.8.0
- - v24.21.0
+added: v26.8.0
 -->
 
 * {boolean|string}

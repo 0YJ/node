@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@
 
 #include "LIEF/span.hpp"
 #include "LIEF/Object.hpp"
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 
 namespace LIEF {
@@ -33,26 +32,27 @@ class LIEF_API Section : public Object {
 
   Section() = default;
   Section(std::string name) :
-    name_(std::move(name)) {}
+    name_(std::move(name))
+  {}
 
   ~Section() override = default;
 
   Section& operator=(const Section&) = default;
   Section(const Section&) = default;
 
-  /// Section's name
+  /// section's name
   virtual std::string name() const {
     return name_.c_str();
   }
 
-  /// Return the **complete** section's name which might include
+  /// Return the **complete** section's name which might
   /// trailing (``0``) bytes
   virtual const std::string& fullname() const {
     return name_;
   }
 
-  /// Section's content
-  virtual span<const uint8_t> content() const LIEF_LIFETIMEBOUND {
+  ///  section's content
+  virtual span<const uint8_t> content() const {
     return {};
   }
 
@@ -61,7 +61,7 @@ class LIEF_API Section : public Object {
     size_ = size;
   }
 
-  /// Section's size (size in the binary, not the virtual size)
+  /// section's size (size in the binary, not the virtual size)
   virtual uint64_t size() const {
     return size_;
   }
@@ -118,9 +118,9 @@ class LIEF_API Section : public Object {
 
   protected:
   std::string name_;
-  uint64_t virtual_address_ = 0;
-  uint64_t size_ = 0;
-  uint64_t offset_ = 0;
+  uint64_t    virtual_address_ = 0;
+  uint64_t    size_ = 0;
+  uint64_t    offset_ = 0;
 
   private:
   template<typename T>

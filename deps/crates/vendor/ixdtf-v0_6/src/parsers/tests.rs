@@ -9,7 +9,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::{
-    encoding::Utf16,
+    core::Utf16,
     parsers::IxdtfParser,
     records::{
         Annotation, DateRecord, Fraction, IxdtfParseRecord, TimeRecord, TimeZoneAnnotation,
@@ -429,10 +429,6 @@ fn invalid_year_month() {
     let bad_value = "-00202011Z[Europe/Berlin]";
     let err = IxdtfParser::from_str(bad_value).parse_year_month();
     assert_eq!(err, Err(ParseError::InvalidEnd));
-
-    let bad_value = "2020-11[u-ca=iso8601]junk";
-    let err = IxdtfParser::from_str(bad_value).parse_year_month();
-    assert_eq!(err, Err(ParseError::InvalidEnd));
 }
 
 #[test]
@@ -453,11 +449,7 @@ fn temporal_month_day() {
 fn invalid_month_day() {
     let bad_value = "-11-07";
     let err = IxdtfParser::from_str(bad_value).parse_month_day();
-    assert_eq!(err, Err(ParseError::MonthDayHyphen));
-
-    let bad_value = "11-07[+04:00]junk";
-    let err = IxdtfParser::from_str(bad_value).parse_month_day();
-    assert_eq!(err, Err(ParseError::InvalidEnd));
+    assert_eq!(err, Err(ParseError::MonthDayHyphen))
 }
 
 #[test]
@@ -1111,7 +1103,7 @@ fn test_zulu_offset() {
                 second: 0,
                 fraction: None,
             }),
-            offset: Some(UtcOffsetRecordOrZ::Z),
+            offset: Some(crate::records::UtcOffsetRecordOrZ::Z),
             tz: Some(TimeZoneAnnotation {
                 critical: false,
                 tz: TimeZoneRecord::Name("America/Chicago".as_bytes())

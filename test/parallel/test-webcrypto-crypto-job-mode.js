@@ -15,8 +15,10 @@ const {
 } = require('internal/crypto/keys');
 const {
   getUsagesMask,
-  jobPromise,
 } = require('internal/crypto/util');
+const {
+  aesCipher,
+} = require('internal/crypto/aes');
 
 const {
   AESCipherJob,
@@ -133,13 +135,11 @@ async function withObjectPrototypeSetters(names, fn) {
         Buffer.alloc(15)),
       /Invalid initialization vector/);
 
-    const promise = jobPromise(() => new AESCipherJob(
-      kCryptoJobWebCrypto,
+    const promise = aesCipher(
       kWebCryptoCipherEncrypt,
-      getCryptoKeyHandle(key),
+      key,
       Buffer.alloc(16),
-      kKeyVariantAES_CBC_128,
-      Buffer.alloc(15)));
+      { name: 'AES-CBC', iv: Buffer.alloc(15) });
 
     assert.strictEqual(Object.getPrototypeOf(promise), Promise.prototype);
     await assert.rejects(promise, (err) => {

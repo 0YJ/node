@@ -25,9 +25,9 @@ usage = """Usage: %prog [OPTION]... $D8_BIN [D8_OPTION]... [FILE]
 This script runs linux-perf with custom V8 logging to get support to resolve
 JS function names.
 
-The perf data is written to OUT_DIR separate by process.
+The perf data is written to OUT_DIR separate by renderer process.
 
-See docs/linux-perf.md for more detailed instructions.
+See https://v8.dev/docs/linux-perf for more detailed instructions.
 See $D8_BIN --help for more flags/options
 """
 parser = optparse.OptionParser(usage=usage)
@@ -291,20 +291,20 @@ def main():
       print("# Checking gcert status for googlers")
       subprocess.check_call("gcertstatus >&/dev/null || gcert", shell=True)
       has_gcert = True
-      # TOOD: use -symbolize=local again once http://b/487399967 is fixed
+
       cmd = [
-          "pprof", "-symbolize=force", "-flame",
+          "pprof", "-symbolize=local", "-flame",
           f"-add_comment={shlex.join(sys.argv)}",
           str(result.absolute())
       ]
-      print("# Processing and uploading to pprof")
+      print("# Processing and uploading to pprofresult")
       url = subprocess.check_output(cmd).decode('utf-8').strip()
       print(url)
     except subprocess.CalledProcessError as e:
       if has_gcert:
         raise Exception("Could not generate pprof results") from e
       print("# Please run `gcert` for generating pprof results")
-      print(shlex.join(["pprof", "-symbolize=force", "-flame", str(result)]))
+      print(f"pprof -symbolize=local -flame {result}")
     except KeyboardInterrupt:
       return 1
 

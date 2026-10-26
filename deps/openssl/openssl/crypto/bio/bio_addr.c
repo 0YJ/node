@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -22,7 +22,6 @@
 #undef UNICODE
 
 #include <assert.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "bio_local.h"
@@ -266,7 +265,7 @@ static int addr_strings(const BIO_ADDR *ap, int numeric,
          * didn't go the way one might expect.
          */
         if (serv[0] == '\0') {
-            snprintf(serv, sizeof(serv), "%d",
+            BIO_snprintf(serv, sizeof(serv), "%d",
                 ntohs(BIO_ADDR_rawport(ap)));
         }
 
@@ -280,7 +279,7 @@ static int addr_strings(const BIO_ADDR *ap, int numeric,
             *hostname = OPENSSL_strdup(inet_ntoa(ap->s_in.sin_addr));
         if (service != NULL) {
             char serv[6]; /* port is 16 bits => max 5 decimal digits */
-            snprintf(serv, sizeof(serv), "%d", ntohs(ap->s_in.sin_port));
+            BIO_snprintf(serv, sizeof(serv), "%d", ntohs(ap->s_in.sin_port));
             *service = OPENSSL_strdup(serv);
         }
     }
@@ -429,7 +428,7 @@ int BIO_ADDRINFO_protocol(const BIO_ADDRINFO *bai)
 socklen_t BIO_ADDRINFO_sockaddr_size(const BIO_ADDRINFO *bai)
 {
     if (bai != NULL)
-        return (socklen_t)bai->bai_addrlen;
+        return bai->bai_addrlen;
     return 0;
 }
 
@@ -630,12 +629,7 @@ static int addrinfo_wrap(int family, int socktype,
            all right. */
         BIO_ADDR *addr = BIO_ADDR_new();
         if (addr != NULL) {
-            if (!BIO_ADDR_rawmake(addr, family, where, wherelen, port)) {
-                BIO_ADDR_free(addr);
-                BIO_ADDRINFO_free(*bai);
-                *bai = NULL;
-                return 0;
-            }
+            BIO_ADDR_rawmake(addr, family, where, wherelen, port);
             (*bai)->bai_addr = BIO_ADDR_sockaddr_noconst(addr);
         }
     }

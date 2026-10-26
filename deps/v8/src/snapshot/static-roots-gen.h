@@ -13,7 +13,6 @@ class Isolate;
 class StaticRootsTableGen {
  public:
   static void write(Isolate* isolate, const char* file);
-  static void write_text(Isolate* isolate, const char* file);
 };
 
 }  // namespace internal

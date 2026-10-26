@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-generic-wrapper
+// Flags: --wasm-generic-wrapper --experimental-wasm-type-reflection
 // Flags: --wasm-wrapper-tiering-budget=1 --allow-natives-syntax
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
@@ -14,6 +14,12 @@ function GetJSFunction(numParams) {
   return () => 15;
 }
 
+function GetWasmJSFunction(numParams) {
+  return new WebAssembly.Function(
+      {parameters: new Array(numParams).fill('i32'), results: []},
+      () => 12);
+}
+
 function GetReExportedJSFunction(numParams) {
   const paramsTypes = new Array(numParams).fill(kWasmI32);
   const retTypes = [];
@@ -22,10 +28,20 @@ function GetReExportedJSFunction(numParams) {
   const builder = new WasmModuleBuilder();
   const impIndex = builder.addImport('m', 'foo', sig);
   builder.addExport("foo", impIndex);
-  let f = builder.instantiate(
+  return builder.instantiate(
       {'m': {'foo': GetJSFunction(numParams)}}).exports.foo;
-  f.isValidFuncref = true;
-  return f;
+}
+
+function GetReExportedWasmJSFunction(numParams) {
+  const paramsTypes = new Array(numParams).fill(kWasmI32);
+  const retTypes = [];
+  const sig = makeSig(paramsTypes, retTypes);
+
+  const builder = new WasmModuleBuilder();
+  const impIndex = builder.addImport('m', 'foo', sig);
+  builder.addExport("foo", impIndex);
+  return builder.instantiate(
+      {'m': {'foo': GetWasmJSFunction(numParams)}}).exports.foo;
 }
 
 function AssertWrapperTierup(instance) {
@@ -102,7 +118,7 @@ function TestIndirectElementSection(numParams, jsFunc, mode) {
 }
 
 function TestIndirectJSTableImport(numParams, jsFunc, mode) {
-  if (!jsFunc.isValidFuncref) {
+  if (!(jsFunc instanceof WebAssembly.Function)) {
     return;
   }
 
@@ -194,7 +210,7 @@ function TestIndirectWasmTableImport(numParams, jsFunc, mode) {
 }
 
 function TestIndirectTableSetInJS(numParams, jsFunc, mode) {
-  if (!jsFunc.isValidFuncref) {
+  if (!(jsFunc instanceof WebAssembly.Function)) {
     return;
   }
 
@@ -233,7 +249,7 @@ function TestIndirectTableSetInJS(numParams, jsFunc, mode) {
 }
 
 function TestIndirectTableSetFromParam(numParams, jsFunc, mode) {
-  if (!jsFunc.isValidFuncref) {
+  if (!(jsFunc instanceof WebAssembly.Function)) {
     return;
   }
 
@@ -363,7 +379,7 @@ function TestIndirectTableSetFromFuncRef(numParams, jsFunc, mode) {
 }
 
 function TestIndirectTableSetFromParamInOtherInstance(numParams, jsFunc, mode) {
-  if (!jsFunc.isValidFuncref) {
+  if (!(jsFunc instanceof WebAssembly.Function)) {
     return;
   }
 
@@ -563,7 +579,7 @@ function TestIndirectTableSetFromFuncRefInOtherInstance(numParams, jsFunc, mode)
 
 function TestCallRefFromParam(numParams, jsFunc, mode) {
   if (mode != kNormal) return;
-  if (!jsFunc.isValidFuncref) {
+  if (!(jsFunc instanceof WebAssembly.Function)) {
     return;
   }
 
@@ -624,7 +640,8 @@ function TestCallRefFromFuncRef(numParams, jsFunc, mode) {
 
 (function Test() {
   const kinds = [
-    GetJSFunction, GetReExportedJSFunction,
+    GetJSFunction, GetWasmJSFunction, GetReExportedJSFunction,
+    GetReExportedWasmJSFunction
   ];
 
   const tests = [

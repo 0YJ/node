@@ -454,8 +454,6 @@ for (const isolation of ['none', 'process']) {
   // Should not propagate config file options to sub tests in isolation process.
   const fixturePath = join(testFixtures, 'options-propagation');
   const configFlagVariants = [
-    ['--config-file=node.config.json'],
-    ['--config-file'],
     ['--experimental-config-file=node.config.json'],
     ['--experimental-config-file'],
     ['--experimental-default-config-file'],
@@ -494,7 +492,7 @@ for (const isolation of ['none', 'process']) {
     const args = [
       '--test-reporter=tap',
       '--no-warnings',
-      `--config-file=node.config.json`,
+      `--experimental-config-file=node.config.json`,
       '--expose-internals',
       '--test',
     ];

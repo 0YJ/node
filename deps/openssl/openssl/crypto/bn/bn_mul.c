@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -154,7 +154,7 @@ BN_ULONG bn_sub_part_words(BN_ULONG *r,
 }
 #endif
 
-#ifndef OPENSSL_SMALL_FOOTPRINT
+#ifdef BN_RECURSION
 /*
  * Karatsuba recursive multiplication algorithm (cf. Knuth, The Art of
  * Computer Programming, Vol. 2)
@@ -180,6 +180,13 @@ void bn_mul_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
     unsigned int neg, zero;
     BN_ULONG ln, lo, *p;
 
+#ifdef BN_MUL_COMBA
+#if 0
+    if (n2 == 4) {
+        bn_mul_comba4(r, a, b);
+        return;
+    }
+#endif
     /*
      * Only call bn_mul_comba 8 if n2 == 8 and the two arrays are complete
      * [steve]
@@ -188,7 +195,7 @@ void bn_mul_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
         bn_mul_comba8(r, a, b);
         return;
     }
-
+#endif /* BN_MUL_COMBA */
     /* Else do normal multiply */
     if (n2 < BN_MUL_RECURSIVE_SIZE_NORMAL) {
         bn_mul_normal(r, a, n2 + dna, b, n2 + dnb);
@@ -233,6 +240,7 @@ void bn_mul_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
         break;
     }
 
+#ifdef BN_MUL_COMBA
     if (n == 4 && dna == 0 && dnb == 0) { /* XXX: bn_mul_comba4 could take
                                            * extra args to do this well */
         if (!zero)
@@ -252,7 +260,9 @@ void bn_mul_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
 
         bn_mul_comba8(r, a, b);
         bn_mul_comba8(&(r[n2]), &(a[n]), &(b[n]));
-    } else {
+    } else
+#endif /* BN_MUL_COMBA */
+    {
         p = &(t[n2 * 2]);
         if (!zero)
             bn_mul_recursive(&(t[n2]), t, &(t[n]), n, 0, 0, p);
@@ -482,7 +492,7 @@ void bn_mul_low_recursive(BN_ULONG *r, BN_ULONG *a, BN_ULONG *b, int n2,
         bn_add_words(&(r[n]), &(r[n]), &(t[n]), n);
     }
 }
-#endif /* OPENSSL_SMALL_FOOTPRINT */
+#endif /* BN_RECURSION */
 
 int BN_mul(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx)
 {
@@ -499,8 +509,10 @@ int bn_mul_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx)
     int ret = 0;
     int top, al, bl;
     BIGNUM *rr;
-#if !defined(OPENSSL_SMALL_FOOTPRINT)
+#if defined(BN_MUL_COMBA) || defined(BN_RECURSION)
     int i;
+#endif
+#ifdef BN_RECURSION
     BIGNUM *t = NULL;
     int j = 0, k;
 #endif
@@ -525,9 +537,10 @@ int bn_mul_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx)
     } else
         rr = r;
 
-#if !defined(OPENSSL_SMALL_FOOTPRINT)
+#if defined(BN_MUL_COMBA) || defined(BN_RECURSION)
     i = al - bl;
-
+#endif
+#ifdef BN_MUL_COMBA
     if (i == 0) {
 #if 0
         if (al == 4) {
@@ -546,7 +559,8 @@ int bn_mul_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx)
             goto end;
         }
     }
-
+#endif /* BN_MUL_COMBA */
+#ifdef BN_RECURSION
     if ((al >= BN_MULL_SIZE_NORMAL) && (bl >= BN_MULL_SIZE_NORMAL)) {
         if (i >= -1 && i <= 1) {
             /*
@@ -584,13 +598,13 @@ int bn_mul_fixed_top(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx)
             goto end;
         }
     }
-#endif /* OPENSSL_SMALL_FOOTPRINT */
+#endif /* BN_RECURSION */
     if (bn_wexpand(rr, top) == NULL)
         goto err;
     rr->top = top;
     bn_mul_normal(rr->d, a->d, al, b->d, bl);
 
-#if !defined(OPENSSL_SMALL_FOOTPRINT)
+#if defined(BN_MUL_COMBA) || defined(BN_RECURSION)
 end:
 #endif
     rr->neg = a->neg ^ b->neg;

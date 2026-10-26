@@ -30,9 +30,7 @@
 #define TARGET_ADDRESSING_MODE_LIST(V)
 #endif
 #include "src/base/bit-field.h"
-#include "src/base/logging.h"
 #include "src/codegen/atomic-memory-order.h"
-#include "src/codegen/macro-assembler.h"
 #include "src/compiler/globals.h"
 #include "src/compiler/write-barrier-kind.h"
 
@@ -121,8 +119,7 @@ inline RecordWriteMode WriteBarrierKindToRecordWriteMode(
   V(AtomicLoadWord32)                                      \
   V(AtomicStoreWord8)                                      \
   V(AtomicStoreWord16)                                     \
-  V(AtomicStoreWord32)                                     \
-  IF_SANDBOX(V, ArchLoadTrustedPointer)
+  V(AtomicStoreWord32)
 
 // Target-specific opcodes that specify which assembly sequence to emit.
 // Most opcodes specify a single instruction.
@@ -158,7 +155,6 @@ inline RecordWriteMode WriteBarrierKindToRecordWriteMode(
   IF_HARDWARE_SANDBOX(V, ArchSwitchSandboxMode)                            \
   V(ArchComment)                                                           \
   V(ArchDeoptimize)                                                        \
-  IF_WASM(V, ArchTrap)                                                     \
   V(ArchRet)                                                               \
   V(ArchFramePointer)                                                      \
   V(ArchRootPointer)                                                       \
@@ -285,7 +281,11 @@ FlagsCondition CommuteFlagsCondition(FlagsCondition condition);
 V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                            const FlagsCondition& fc);
 
-enum MemoryAccessMode { kMemoryAccessDirect = 0, kMemoryAccessTrapping = 1 };
+enum MemoryAccessMode {
+  kMemoryAccessDirect = 0,
+  kMemoryAccessProtectedMemOutOfBounds = 1,
+  kMemoryAccessProtectedNullDereference = 2,
+};
 
 enum class AtomicWidth { kWord32, kWord64 };
 
@@ -295,52 +295,6 @@ inline size_t AtomicWidthSize(AtomicWidth width) {
       return 4;
     case AtomicWidth::kWord64:
       return 8;
-  }
-  UNREACHABLE();
-}
-
-enum class LaneSize : uint8_t { kL8 = 0, kL16 = 1, kL32 = 2, kL64 = 3 };
-inline int32_t LaneSizeBits(LaneSize size) {
-  switch (size) {
-    case LaneSize::kL8:
-      return 8;
-    case LaneSize::kL16:
-      return 16;
-    case LaneSize::kL32:
-      return 32;
-    case LaneSize::kL64:
-      return 64;
-  }
-  UNREACHABLE();
-}
-
-inline LaneSize LaneSizeFromBits(uint8_t width) {
-  switch (width) {
-    default:
-      UNREACHABLE();
-    case 8:
-      return LaneSize::kL8;
-    case 16:
-      return LaneSize::kL16;
-    case 32:
-      return LaneSize::kL32;
-    case 64:
-      return LaneSize::kL64;
-  }
-}
-
-enum class VectorLength : uint8_t { kV64 = 0, kV128 = 1, kV256 = 2, kV512 = 3 };
-
-inline int32_t VectorLengthBits(VectorLength length) {
-  switch (length) {
-    case VectorLength::kV64:
-      return 64;
-    case VectorLength::kV128:
-      return 128;
-    case VectorLength::kV256:
-      return 256;
-    case VectorLength::kV512:
-      return 512;
   }
   UNREACHABLE();
 }
@@ -358,61 +312,57 @@ using InstructionCode = uint32_t;
 // other information into a single InstructionCode which is stored as part of
 // the instruction.
 //
-// All instructions have the first five fields, using up the lower 23 bits.
-// The remaining 9 bits are accessible in the MiscField, which the other
+// All instructions have the first five fields, using up the lower 22 bits.
+// The remaining 10 bits are accessible in the MiscField, which the other
 // instructions types can overlay specific data:
 // -- Generic
 // Field                        | Bits
-// ArchOpcode                   | 10
+// ArchOpcode                   | 9
 // AddressingMode               | 5
 // FlagsMode                    | 3
 // FlagsCondition               | 5
-// Misc                         | 9
+// Misc                         | 10
 //
 // So, the following instruction types use the MiscField in the following ways:
 // -- Atomics
 // Field                        | Bits
-// RecordWriteMode              | 3
-// AtomicWidth                  | 1
-// AtomicMemoryOrder            | 1
-// AccessMode                   | 1
-// Undefined                    | 3
+// AtomicWidth                  | 2
+// AtomicMemoryOrder            | 2
+// AtomicStoreRecordWriteMode   | 4
+// AccessMode                   | 2
 //
-// -- Non-atomic stores
+// -- Write barriers
 // Field                        | Bits
-// RecordWriteMode              | 3
-// Undefined                    | 2
-// AccessMode                   | 1
-// Undefined                    | 3
+// RecordWriteMode              | 4
+// Undefined                    | 4
+// AccessMode                   | 2
 //
-// -- Non-atomic loads
-// Field                        | Bits
-// Undefined                    | 5
-// AccessMode                   | 1
-// Undefined                    | 3
-//
-// -- Vectors
+// -- X64 vectors
 // Field                        | Bits
 // LaneSize                     | 2
 // VectorLength                 | 2
-// Undefined                    | 1
-// AccessMode                   | 1
-// Undefined                    | 3
+// Undefined                    | 4
+// AccessMode                   | 2
+//
+// -- Everyone else vectors
+// Field                        | Bits
+// LaneSize                     | 8
+// AccessMode                   | 2
 //
 // -- Deopts
 // Field                        | Bits
 // DeoptImmedArgsCount          | 2
-// DeoptFrameStateOffset        | 7
+// DeoptFrameStateOffset        | 8
 //
 // -- Non-deopt branches
 // Field                        | Bits
 // StackCheck                   | 2
 // BranchHint                   | 1
-// Undefined                    | 6
+// Undefined                    | 7
 //
-using ArchOpcodeField = base::BitField<ArchOpcode, 0, 10>;
+using ArchOpcodeField = base::BitField<ArchOpcode, 0, 9>;
 static_assert(ArchOpcodeField::is_valid(kLastArchOpcode),
-              "All opcodes must fit in the 10-bit ArchOpcodeField.");
+              "All opcodes must fit in the 9-bit ArchOpcodeField.");
 using AddressingModeField = ArchOpcodeField::Next<AddressingMode, 5>;
 static_assert(
     AddressingModeField::is_valid(kLastAddressingMode),
@@ -420,34 +370,45 @@ static_assert(
 using FlagsModeField = AddressingModeField::Next<FlagsMode, 3>;
 using FlagsConditionField = FlagsModeField::Next<FlagsCondition, 5>;
 
-// Write modes for writes with barrier.
-using RecordWriteModeField = FlagsConditionField::Next<RecordWriteMode, 3>;
 // AtomicWidthField is used for the various Atomic opcodes. Only used on 64bit
 // architectures. All atomic instructions on 32bit architectures are assumed to
 // be 32bit wide.
-using AtomicWidthField = RecordWriteModeField::Next<AtomicWidth, 1>;
+using AtomicWidthField = FlagsConditionField::Next<AtomicWidth, 2>;
 // AtomicMemoryOrderField is used for the various Atomic opcodes. This field is
 // not used on all architectures. It is used on architectures where the codegen
 // for kSeqCst and kAcqRel differ only by emitting fences.
-using AtomicMemoryOrderField = AtomicWidthField::Next<AtomicMemoryOrder, 1>;
-// Denotes whether the instruction needs to emit an accompanying landing pad for
-// the trap handler.
-using AccessModeField = AtomicMemoryOrderField::Next<MemoryAccessMode, 1>;
+using AtomicMemoryOrderField = AtomicWidthField::Next<AtomicMemoryOrder, 2>;
+using AtomicStoreRecordWriteModeField =
+    AtomicMemoryOrderField::Next<RecordWriteMode, 4>;
+
+// Write modes for writes with barrier.
+using RecordWriteModeField = FlagsConditionField::Next<RecordWriteMode, 3>;
 
 // LaneSizeField and AccessModeField are helper types to encode/decode a lane
 // size, an access mode, or both inside the overlapping MiscField.
+#ifdef V8_TARGET_ARCH_X64
+enum LaneSize { kL8 = 0, kL16 = 1, kL32 = 2, kL64 = 3 };
+enum VectorLength { kV128 = 0, kV256 = 1, kV512 = 3 };
 using LaneSizeField = FlagsConditionField::Next<LaneSize, 2>;
 using VectorLengthField = LaneSizeField::Next<VectorLength, 2>;
+#else
+using LaneSizeField = FlagsConditionField::Next<int, 8>;
+#endif  // V8_TARGET_ARCH_X64
+
+// Denotes whether the instruction needs to emit an accompanying landing pad for
+// the trap handler.
+using AccessModeField =
+    AtomicStoreRecordWriteModeField::Next<MemoryAccessMode, 2>;
 
 // Since AccessModeField is defined in terms of atomics, this assert ensures it
 // does not overlap with other fields it is used with.
-static_assert(AtomicMemoryOrderField::kLastUsedBit >=
+static_assert(AtomicStoreRecordWriteModeField::kLastUsedBit >=
               RecordWriteModeField::kLastUsedBit);
 #ifdef V8_TARGET_ARCH_X64
-static_assert(AtomicMemoryOrderField::kLastUsedBit >=
+static_assert(AtomicStoreRecordWriteModeField::kLastUsedBit >=
               VectorLengthField::kLastUsedBit);
 #else
-static_assert(AtomicMemoryOrderField::kLastUsedBit >=
+static_assert(AtomicStoreRecordWriteModeField::kLastUsedBit >=
               LaneSizeField::kLastUsedBit);
 #endif
 
@@ -476,29 +437,23 @@ inline bool HasMemoryAccessMode(ArchOpcode opcode) {
 }
 
 using DeoptImmedArgsCountField = FlagsConditionField::Next<int, 2>;
-using DeoptFrameStateOffsetField = DeoptImmedArgsCountField::Next<int, 7>;
-
-// {MiscField} is used for a variety of things, depending on the opcode.
-// TODO(turbofan): There should be an abstraction that ensures safe encoding and
-// decoding. {HasMemoryAccessMode} and its uses are a small step in that
-// direction.
-using MiscField = FlagsConditionField::Next<int, 9>;
-
-using StackCheckField = FlagsConditionField::Next<StackCheckKind, 2>;
-using BranchHintField = StackCheckField::Next<bool, 1>;
+using DeoptFrameStateOffsetField = DeoptImmedArgsCountField::Next<int, 8>;
 
 // ParamField and FPParamField represent the general purpose and floating point
 // parameter counts of a direct call into C and are given 5 bits each, which
 // allow storing a number up to the current maximum parameter count, which is 20
 // (see kMaxCParameters defined in macro-assembler.h).
-// Not that these aren't encoded in the InstructionCode, they are encoded as an
-// operand.
-using ParamField = base::BitField<int, 0, 5>;
+using ParamField = FlagsConditionField::Next<int, 5>;
 using FPParamField = ParamField::Next<int, 5>;
-#ifdef USE_SIMULATOR
-static_assert(kMaxCParameters <= ParamField::kMax);
-static_assert(kMaxCParameters <= FPParamField::kMax);
-#endif
+
+// {MiscField} is used for a variety of things, depending on the opcode.
+// TODO(turbofan): There should be an abstraction that ensures safe encoding and
+// decoding. {HasMemoryAccessMode} and its uses are a small step in that
+// direction.
+using MiscField = FlagsConditionField::Next<int, 10>;
+
+using StackCheckField = FlagsConditionField::Next<StackCheckKind, 2>;
+using BranchHintField = StackCheckField::Next<bool, 1>;
 
 // This static assertion serves as an early warning if we are about to exhaust
 // the available opcode space. If we are about to exhaust it, we should start
@@ -508,7 +463,7 @@ static_assert(kMaxCParameters <= FPParamField::kMax);
 // back fixes that add new opcodes.
 // It is OK to temporarily reduce the required slack if we have a tracking bug
 // to reduce the number of used opcodes again.
-static_assert(ArchOpcodeField::kMax - kLastArchOpcode >= 13,
+static_assert(ArchOpcodeField::kMax - kLastArchOpcode >= 15,
               "We are running close to the number of available opcodes.");
 
 }  // namespace compiler

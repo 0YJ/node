@@ -167,35 +167,6 @@ async function testPipeRejectsWriterResize() {
   );
 }
 
-async function testConsumersRejectDetachedViews() {
-  // Views of fixed-length buffers are tracked without a full snapshot; they
-  // must still be rejected when detached after being accepted.
-  const asyncBuffer = new ArrayBuffer(2);
-  async function* asyncSource() {
-    yield [new Uint8Array(asyncBuffer), Uint8Array.of(1)];
-    asyncBuffer.transfer();
-  }
-  await assert.rejects(array(asyncSource()), kResizeError);
-  const limitedBuffer = new ArrayBuffer(2);
-  async function* limitedSource() {
-    yield [new Uint8Array(limitedBuffer)];
-    limitedBuffer.transfer();
-  }
-  await assert.rejects(array(limitedSource(), { limit: 10 }), kResizeError);
-
-  const syncBuffer = new ArrayBuffer(2);
-  function* syncSource() {
-    yield [new Uint8Array(syncBuffer, 1)];
-    syncBuffer.transfer();
-  }
-  assert.throws(() => arraySync(syncSource()), kResizeError);
-
-  // Unchanged views are returned as-is.
-  const chunk = new Uint8Array(4);
-  const [result] = arraySync([[chunk]]);
-  assert.strictEqual(result, chunk);
-}
-
 Promise.all([
   testBufferedViewMutationRejected(),
   testDropOldestUsesAcceptedByteLength(),
@@ -203,6 +174,5 @@ Promise.all([
   testBroadcastRejectsResizedBufferedView(),
   testShareRejectsResizedBufferedView(),
   testConsumersRejectResizedViews(),
-  testConsumersRejectDetachedViews(),
   testPipeRejectsWriterResize(),
 ]).then(common.mustCall());

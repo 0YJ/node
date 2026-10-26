@@ -13,7 +13,7 @@ const {
   kGetDispatcher
 } = require('./pool-base')
 const Pool = require('./pool')
-const { kOriginless, kUrl } = require('../core/symbols')
+const { kUrl } = require('../core/symbols')
 const util = require('../core/util')
 const kFactory = Symbol('factory')
 
@@ -49,17 +49,14 @@ function defaultFactory (origin, opts) {
 }
 
 class BalancedPool extends PoolBase {
-  constructor (upstreams = [], { factory = defaultFactory, connect, tls, ...opts } = {}) {
+  constructor (upstreams = [], { factory = defaultFactory, ...opts } = {}) {
     if (typeof factory !== 'function') {
       throw new InvalidArgumentError('factory must be a function.')
     }
 
-    super(opts)
+    super()
 
-    this[kOriginless] = true
-    if (connect && typeof connect !== 'function') connect = { ...connect }
-    if (tls && typeof tls !== 'function') tls = { ...tls }
-    this[kOptions] = { ...util.deepClone(opts), connect, tls }
+    this[kOptions] = { ...util.deepClone(opts) }
     this[kIndex] = -1
     this[kCurrentWeight] = 0
 

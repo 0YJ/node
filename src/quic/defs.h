@@ -290,9 +290,25 @@ enum class Side : uint8_t {
   SERVER,
 };
 
+enum class EndpointLabel : uint8_t {
+  LOCAL,
+  REMOTE,
+};
+
 enum class Direction : uint8_t {
   BIDIRECTIONAL,
   UNIDIRECTIONAL,
+};
+
+enum class HeadersKind : uint8_t {
+  HINTS,
+  INITIAL,
+  TRAILING,
+};
+
+enum class HeadersFlags : uint8_t {
+  NONE,
+  TERMINAL,
 };
 
 enum class StreamPriority : uint8_t {
@@ -395,7 +411,6 @@ class DebugIndentScope final {
   }
 
  private:
-  // NOLINTNEXTLINE(runtime/thread_local)
   static thread_local int indent_;
 };
 

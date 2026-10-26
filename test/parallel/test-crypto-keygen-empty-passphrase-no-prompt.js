@@ -12,7 +12,7 @@ const {
 const {
   hasFIPS,
   testSignVerify,
-  isBoringSSL,
+  hasOpenSSL,
 } = require('../common/crypto');
 
 const fips4 = hasFIPS(4);
@@ -56,14 +56,14 @@ for (const type of ['pkcs1', 'pkcs8']) {
     // the key, and not specifying a passphrase should fail when decoding it.
     assert.throws(() => {
       return testSignVerify(publicKey, privateKey);
-    }, isBoringSSL ? {
-      name: 'TypeError',
-      code: 'ERR_MISSING_PASSPHRASE',
-      message: 'Passphrase required for encrypted key'
-    } : {
+    }, hasOpenSSL(3) ? {
       name: 'Error',
       code: 'ERR_OSSL_CRYPTO_INTERRUPTED_OR_CANCELLED',
       message: 'error:07880109:common libcrypto routines::interrupted or cancelled'
+    } : {
+      name: 'TypeError',
+      code: 'ERR_MISSING_PASSPHRASE',
+      message: 'Passphrase required for encrypted key'
     });
   }));
 }

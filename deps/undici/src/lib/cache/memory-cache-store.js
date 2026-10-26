@@ -87,7 +87,7 @@ class MemoryCacheStore extends EventEmitter {
   }
 
   /**
-   * @param {import('../../types/cache-interceptor.d.ts').default.CacheKey} key
+   * @param {import('../../types/cache-interceptor.d.ts').default.CacheKey} req
    * @returns {import('../../types/cache-interceptor.d.ts').default.GetResult | undefined}
    */
   get (key) {
@@ -99,11 +99,6 @@ class MemoryCacheStore extends EventEmitter {
     const entries = this.#entries.get(topLevelKey)
 
     const entry = entries ? findEntry(key, entries, now) : null
-
-    if (entry != null) {
-      this.#entries.delete(topLevelKey)
-      this.#entries.set(topLevelKey, entries)
-    }
 
     return entry == null
       ? undefined
@@ -153,13 +148,11 @@ class MemoryCacheStore extends EventEmitter {
       },
       final (callback) {
         let entries = store.#entries.get(topLevelKey)
-        if (entries) {
-          store.#entries.delete(topLevelKey)
-        } else {
+        if (!entries) {
           entries = []
+          store.#entries.set(topLevelKey, entries)
         }
-        store.#entries.set(topLevelKey, entries)
-        const previousEntry = findEntry(key, entries, -Infinity)
+        const previousEntry = findEntry(key, entries, Date.now())
         if (previousEntry) {
           const index = entries.indexOf(previousEntry)
           entries.splice(index, 1, entry)
@@ -184,7 +177,16 @@ class MemoryCacheStore extends EventEmitter {
             store.#hasEmittedMaxSizeEvent = true
           }
 
-          store.#evict(entry)
+          // Perform eviction
+          for (const [key, entries] of store.#entries) {
+            for (const entry of entries.splice(0, entries.length / 2)) {
+              store.#size -= entry.size
+              store.#count -= 1
+            }
+            if (entries.length === 0) {
+              store.#entries.delete(key)
+            }
+          }
 
           // Reset the event flag after eviction
           if (store.#size < store.#maxSize && store.#count < store.#maxCount) {
@@ -195,43 +197,6 @@ class MemoryCacheStore extends EventEmitter {
         callback(null)
       }
     })
-  }
-
-  #evict (keep) {
-    const targetSize = this.#maxSize / 2
-    const targetCount = this.#maxCount / 2
-
-    for (const [key, entries] of this.#entries) {
-      for (let i = 0; i < entries.length && (this.#size > targetSize || this.#count > targetCount);) {
-        const entry = entries[i]
-        if (entry === keep) {
-          i++
-          continue
-        }
-        entries.splice(i, 1)
-        this.#size -= entry.size
-        this.#count -= 1
-      }
-
-      if (entries.length === 0) {
-        this.#entries.delete(key)
-      }
-
-      if (this.#size <= targetSize && this.#count <= targetCount) {
-        return
-      }
-    }
-
-    if (this.#size > this.#maxSize || this.#count > this.#maxCount) {
-      const topLevelKey = `${keep.origin}:${keep.path}`
-      const entries = this.#entries.get(topLevelKey)
-      entries.splice(entries.indexOf(keep), 1)
-      this.#size -= keep.size
-      this.#count -= 1
-      if (entries.length === 0) {
-        this.#entries.delete(topLevelKey)
-      }
-    }
   }
 
   /**

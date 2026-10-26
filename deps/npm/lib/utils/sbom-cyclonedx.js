@@ -106,7 +106,7 @@ const toCyclonedxItem = (node, { packageType }) => {
   const component = {
     'bom-ref': toCyclonedxID(node),
     type: packageType,
-    name: node.packageName,
+    name: node.name,
     version: node.version,
     scope: (node.optional || node.devOptional) ? 'optional' : 'required',
     author: (typeof node.package?.author === 'object')

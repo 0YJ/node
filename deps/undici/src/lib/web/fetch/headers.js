@@ -3,7 +3,7 @@
 'use strict'
 
 const { kConstruct } = require('../../core/symbols')
-const { kEnumerableProperty, setHeader } = require('../../core/util')
+const { kEnumerableProperty } = require('../../core/util')
 const {
   iteratorMixin,
   isValidHeaderName,
@@ -320,7 +320,7 @@ class HeadersList {
 
     if (this.headersMap.size !== 0) {
       for (const { name, value } of this.headersMap.values()) {
-        setHeader(headers, name, value)
+        headers[name] = value
       }
     }
 
@@ -423,8 +423,6 @@ class HeadersList {
   }
 }
 
-let getHeadersGuard, setHeadersGuard, getHeadersList, setHeadersList
-
 // https://fetch.spec.whatwg.org/#headers-class
 class Headers {
   #guard
@@ -460,7 +458,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-append
   append (name, value) {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     webidl.argumentLengthCheck(arguments, 2, 'Headers.append')
 
@@ -473,7 +471,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-delete
   delete (name) {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     webidl.argumentLengthCheck(arguments, 1, 'Headers.delete')
 
@@ -517,7 +515,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-get
   get (name) {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     webidl.argumentLengthCheck(arguments, 1, 'Headers.get')
 
@@ -540,7 +538,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-has
   has (name) {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     webidl.argumentLengthCheck(arguments, 1, 'Headers.has')
 
@@ -563,7 +561,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-set
   set (name, value) {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     webidl.argumentLengthCheck(arguments, 2, 'Headers.set')
 
@@ -611,7 +609,7 @@ class Headers {
 
   // https://fetch.spec.whatwg.org/#dom-headers-getsetcookie
   getSetCookie () {
-    webidl.brandCheck(this, webidl.is.Headers)
+    webidl.brandCheck(this, Headers)
 
     // 1. If this’s header list does not contain `Set-Cookie`, then return « ».
     // 2. Return the values of all headers in this’s header list whose name is
@@ -632,38 +630,37 @@ class Headers {
     return `Headers ${util.formatWithOptions(options, this.#headersList.entries)}`
   }
 
-  static {
-    /** @param {Headers} headers */
-    getHeadersGuard = (headers) => headers.#guard
+  static getHeadersGuard (o) {
+    return o.#guard
+  }
 
-    /**
-     * @param {Headers} headers
-     * @param {string} guard
-     */
-    setHeadersGuard = (headers, guard) => {
-      headers.#guard = guard
-    }
+  static setHeadersGuard (o, guard) {
+    o.#guard = guard
+  }
 
-    /**
-     * @param {Headers} headers
-     */
-    getHeadersList = (headers) => headers.#headersList
+  /**
+   * @param {Headers} o
+   */
+  static getHeadersList (o) {
+    return o.#headersList
+  }
 
-    /**
-     * @param {Headers} target
-     * @param {HeadersList} list
-     */
-    setHeadersList = (target, list) => {
-      target.#headersList = list
-    }
-
-    webidl.is.Headers = (arg) => {
-      return arg != null && typeof arg === 'object' && #guard in arg
-    }
+  /**
+   * @param {Headers} target
+   * @param {HeadersList} list
+   */
+  static setHeadersList (target, list) {
+    target.#headersList = list
   }
 }
 
-iteratorMixin('Headers', Headers, headersListSortAndCombine, 0, 1, webidl.is.Headers)
+const { getHeadersGuard, setHeadersGuard, getHeadersList, setHeadersList } = Headers
+Reflect.deleteProperty(Headers, 'getHeadersGuard')
+Reflect.deleteProperty(Headers, 'setHeadersGuard')
+Reflect.deleteProperty(Headers, 'getHeadersList')
+Reflect.deleteProperty(Headers, 'setHeadersList')
+
+iteratorMixin('Headers', Headers, headersListSortAndCombine, 0, 1)
 
 Object.defineProperties(Headers.prototype, {
   append: kEnumerableProperty,

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -206,16 +206,7 @@ static size_t c2i_ibuf(unsigned char *b, int *pneg,
 
 int ossl_i2c_ASN1_INTEGER(ASN1_INTEGER *a, unsigned char **pp)
 {
-    unsigned char *ptr = pp != NULL ? *pp : NULL;
-    size_t ret = i2c_ibuf(a->data, a->length, a->type & V_ASN1_NEG, &ptr);
-
-    if (ret > INT_MAX) {
-        ERR_raise(ERR_LIB_ASN1, ASN1_R_TOO_LARGE);
-        return 0;
-    }
-    if (pp != NULL)
-        *pp = ptr;
-    return (int)ret;
+    return i2c_ibuf(a->data, a->length, a->type & V_ASN1_NEG, pp);
 }
 
 /* Convert big endian buffer into uint64_t, return 0 on error */
@@ -316,7 +307,7 @@ ASN1_INTEGER *ossl_c2i_ASN1_INTEGER(ASN1_INTEGER **a, const unsigned char **pp,
     } else
         ret = *a;
 
-    if (ossl_asn1_string_set1_data(ret, NULL, r) == 0) {
+    if (ASN1_STRING_set(ret, NULL, r) == 0) {
         ERR_raise(ERR_LIB_ASN1, ERR_R_ASN1_LIB);
         goto err;
     }
@@ -371,7 +362,7 @@ static int asn1_string_set_int64(ASN1_STRING *a, int64_t r, int itype)
         off = asn1_put_uint64(tbuf, r);
         a->type &= ~V_ASN1_NEG;
     }
-    return ossl_asn1_string_set1_data(a, tbuf + off, (sizeof(tbuf) - off));
+    return ASN1_STRING_set(a, tbuf + off, sizeof(tbuf) - off);
 }
 
 static int asn1_string_get_uint64(uint64_t *pr, const ASN1_STRING *a,
@@ -399,7 +390,7 @@ static int asn1_string_set_uint64(ASN1_STRING *a, uint64_t r, int itype)
 
     a->type = itype;
     off = asn1_put_uint64(tbuf, r);
-    return ossl_asn1_string_set1_data(a, tbuf + off, (sizeof(tbuf) - off));
+    return ASN1_STRING_set(a, tbuf + off, sizeof(tbuf) - off);
 }
 
 /*
@@ -441,17 +432,11 @@ ASN1_INTEGER *d2i_ASN1_UINTEGER(ASN1_INTEGER **a, const unsigned char **pp,
         i = ASN1_R_ILLEGAL_NEGATIVE_VALUE;
         goto err;
     }
-#if INT_MAX < LONG_MAX
-    if (len > INT_MAX - 1) {
-        i = ASN1_R_TOO_LARGE;
-        goto err;
-    }
-#endif
     /*
      * We must OPENSSL_malloc stuff, even for 0 bytes otherwise it signifies
      * a missing NULL parameter.
      */
-    s = OPENSSL_malloc(len == 0 ? 1 : (size_t)len);
+    s = OPENSSL_malloc((int)len + 1);
     if (s == NULL)
         goto err;
     ret->type = V_ASN1_INTEGER;
@@ -460,11 +445,11 @@ ASN1_INTEGER *d2i_ASN1_UINTEGER(ASN1_INTEGER **a, const unsigned char **pp,
             p++;
             len--;
         }
-        memcpy(s, p, (size_t)len);
+        memcpy(s, p, (int)len);
         p += len;
     }
 
-    ASN1_STRING_set0(ret, s, (int)len); /* len <= INT_MAX checked above */
+    ASN1_STRING_set0(ret, s, (int)len);
     if (a != NULL)
         (*a) = ret;
     *pp = p;
@@ -503,7 +488,7 @@ static ASN1_STRING *bn_to_asn1_string(const BIGNUM *bn, ASN1_STRING *ai,
     if (len == 0)
         len = 1;
 
-    if (ossl_asn1_string_set1_data(ret, NULL, len) == 0) {
+    if (ASN1_STRING_set(ret, NULL, len) == 0) {
         ERR_raise(ERR_LIB_ASN1, ERR_R_ASN1_LIB);
         goto err;
     }
@@ -657,5 +642,5 @@ int ossl_i2c_uint64_int(unsigned char *p, uint64_t r, int neg)
     size_t off;
 
     off = asn1_put_uint64(buf, r);
-    return (int)i2c_ibuf(buf + off, sizeof(buf) - off, neg, &p);
+    return i2c_ibuf(buf + off, sizeof(buf) - off, neg, &p);
 }

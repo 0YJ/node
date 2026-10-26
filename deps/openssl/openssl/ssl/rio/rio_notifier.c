@@ -12,7 +12,6 @@
 #include <openssl/err.h>
 #include "internal/rio_notifier.h"
 
-#if !defined(OPENSSL_SYS_WINDOWS) || RIO_NOTIFIER_METHOD == RIO_NOTIFIER_METHOD_SOCKETPAIR
 /*
  * Sets a socket as close-on-exec, except that this is a no-op if we are certain
  * we do not need to do this or the OS does not support the concept.
@@ -25,7 +24,6 @@ static int set_cloexec(int fd)
     return 1;
 #endif
 }
-#endif
 
 #if defined(OPENSSL_SYS_WINDOWS)
 
@@ -41,7 +39,6 @@ static int do_wsa_startup(void)
 
     if (WSAStartup(versionreq, &wsadata) != 0)
         return 0;
-
     return 1;
 }
 
@@ -339,9 +336,6 @@ void ossl_rio_notifier_cleanup(RIO_NOTIFIER *nfy)
     BIO_closesocket(nfy->wfd);
     BIO_closesocket(nfy->rfd);
     nfy->rfd = nfy->wfd = -1;
-#if defined(OPENSSL_SYS_WINDOWS)
-    wsa_done();
-#endif
 }
 
 int ossl_rio_notifier_signal(RIO_NOTIFIER *nfy)

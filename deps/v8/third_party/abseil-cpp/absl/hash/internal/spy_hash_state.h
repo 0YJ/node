@@ -18,15 +18,10 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <optional>
 #include <ostream>
 #include <string>
-#include <type_traits>
-#include <utility>
 #include <vector>
 
-#include "absl/base/config.h"
 #include "absl/hash/hash.h"
 #include "absl/hash/internal/weakly_mixed_integer.h"
 #include "absl/strings/match.h"
@@ -49,8 +44,8 @@ namespace hash_internal {
 template <typename T>
 class SpyHashStateImpl : public HashStateBase<SpyHashStateImpl<T>> {
  public:
-  SpyHashStateImpl() : error_(std::make_shared<std::optional<std::string>>()) {
-    static_assert(std::is_void_v<T>);
+  SpyHashStateImpl() : error_(std::make_shared<absl::optional<std::string>>()) {
+    static_assert(std::is_void<T>::value, "");
   }
 
   // Move-only
@@ -203,7 +198,7 @@ class SpyHashStateImpl : public HashStateBase<SpyHashStateImpl<T>> {
     return state;
   }
 
-  std::optional<std::string> error() const {
+  absl::optional<std::string> error() const {
     if (moved_from_) {
       return "Returned a moved-from instance of the hash state object.";
     }
@@ -217,7 +212,7 @@ class SpyHashStateImpl : public HashStateBase<SpyHashStateImpl<T>> {
 
   struct UnorderedCombinerCallback {
     std::vector<std::string> element_hash_representations;
-    std::shared_ptr<std::optional<std::string>> error;
+    std::shared_ptr<absl::optional<std::string>> error;
 
     // The inner spy can have a different type.
     template <typename U>
@@ -247,7 +242,7 @@ class SpyHashStateImpl : public HashStateBase<SpyHashStateImpl<T>> {
   // This is a shared_ptr because we want all instances of the particular
   // SpyHashState run to share the field. This way we can set the error for
   // use-after-move and all the copies will see it.
-  std::shared_ptr<std::optional<std::string>> error_;
+  std::shared_ptr<absl::optional<std::string>> error_;
   bool moved_from_ = false;
 };
 
@@ -272,7 +267,7 @@ bool RunOnStartup<f>::run = (f(), true);
 template <
     typename T, typename U,
     // Only trigger for when (T != U),
-    typename = std::enable_if_t<!std::is_same_v<T, U>>,
+    typename = absl::enable_if_t<!std::is_same<T, U>::value>,
     // This statement works in two ways:
     //  - First, it instantiates RunOnStartup and forces the initialization of
     //    `run`, which set the global variable.

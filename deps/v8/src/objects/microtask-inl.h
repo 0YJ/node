@@ -11,7 +11,6 @@
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/contexts-inl.h"
 #include "src/objects/foreign-inl.h"
-#include "src/objects/js-generator-inl.h"
 #include "src/objects/js-objects-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -19,6 +18,8 @@
 
 namespace v8 {
 namespace internal {
+
+#include "torque-generated/src/objects/microtask-tq-inl.inc"
 
 #ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
 Tagged<Object> Microtask::continuation_preserved_embedder_data() const {
@@ -35,8 +36,8 @@ void CallbackTask::set_callback(Tagged<Foreign> value, WriteBarrierMode mode) {
   callback_.store(this, value, mode);
 }
 
-Tagged<Object> CallbackTask::data() const { return data_.load(); }
-void CallbackTask::set_data(Tagged<Object> value, WriteBarrierMode mode) {
+Tagged<Foreign> CallbackTask::data() const { return data_.load(); }
+void CallbackTask::set_data(Tagged<Foreign> value, WriteBarrierMode mode) {
   data_.store(this, value, mode);
 }
 
@@ -46,28 +47,9 @@ void CallableTask::set_callable(Tagged<JSReceiver> value,
   callable_.store(this, value, mode);
 }
 
-Tagged<NativeContext> CallableTask::context() const { return context_.load(); }
-void CallableTask::set_context(Tagged<NativeContext> value,
-                               WriteBarrierMode mode) {
+Tagged<Context> CallableTask::context() const { return context_.load(); }
+void CallableTask::set_context(Tagged<Context> value, WriteBarrierMode mode) {
   context_.store(this, value, mode);
-}
-
-Tagged<JSGeneratorObject> AsyncResumeTask::generator() const {
-  return generator_.load();
-}
-void AsyncResumeTask::set_generator(Tagged<JSGeneratorObject> value,
-                                    WriteBarrierMode mode) {
-  generator_.store(this, value, mode);
-}
-
-Tagged<Object> AsyncResumeTask::value() const { return value_.load(); }
-void AsyncResumeTask::set_value(Tagged<Object> val, WriteBarrierMode mode) {
-  value_.store(this, val, mode);
-}
-
-int AsyncResumeTask::kind() const { return kind_.load().value(); }
-void AsyncResumeTask::set_kind(int kind) {
-  kind_.store(this, Smi::FromInt(kind));
 }
 
 }  // namespace internal

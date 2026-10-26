@@ -67,10 +67,7 @@ void ReportException(v8::Isolate* isolate, v8::TryCatch* handler);
 static bool run_shell;
 
 int main(int argc, char* argv[]) {
-  if (!v8::V8::InitializeICUDefaultLocation(argv[0])) {
-    fprintf(stderr, "Failed to initialize ICU\n");
-    return 1;
-  }
+  v8::V8::InitializeICUDefaultLocation(argv[0]);
   v8::V8::InitializeExternalStartupData(argv[0]);
   std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(platform.get());

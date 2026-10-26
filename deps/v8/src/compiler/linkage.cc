@@ -434,12 +434,14 @@ CallDescriptor* Linkage::GetRuntimeCallDescriptor(
   const int return_count = function->result_size;
   const char* debug_name = function->name;
 
-  if (!lazy_deopt_on_throw && !Linkage::NeedsFrameStateInput(function_id)) {
+  if (lazy_deopt_on_throw == LazyDeoptOnThrow::kNo &&
+      !Linkage::NeedsFrameStateInput(function_id)) {
     flags = static_cast<CallDescriptor::Flags>(
         flags & ~CallDescriptor::kNeedsFrameState);
   }
 
-  DCHECK_IMPLIES(lazy_deopt_on_throw, flags & CallDescriptor::kNeedsFrameState);
+  DCHECK_IMPLIES(lazy_deopt_on_throw == LazyDeoptOnThrow::kYes,
+                 flags & CallDescriptor::kNeedsFrameState);
 
   CallDescriptor* descriptor =
       GetCEntryStubCallDescriptor<StackArgumentOrder::kDefault>(
@@ -806,8 +808,7 @@ bool Linkage::ParameterHasSecondaryLocation(int index) const {
            IsTaggedReg(loc, kContextRegister);
   }
 #if V8_ENABLE_WEBASSEMBLY
-  if (incoming_->IsAnyWasmFunctionCall() || incoming_->IsWasmImportWrapper() ||
-      incoming_->IsWasmCapiFunction()) {
+  if (incoming_->IsAnyWasmFunctionCall()) {
     LinkageLocation loc = GetParameterLocation(index);
     return IsTaggedReg(loc, kWasmImplicitArgRegister);
   }
@@ -837,8 +838,7 @@ LinkageLocation Linkage::GetParameterSecondaryLocation(int index) const {
 #if V8_ENABLE_WEBASSEMBLY
   static const int kWasmInstanceDataSlot =
       3 + StandardFrameConstants::kCPSlotCount;
-  if (incoming_->IsAnyWasmFunctionCall() || incoming_->IsWasmImportWrapper() ||
-      incoming_->IsWasmCapiFunction()) {
+  if (incoming_->IsAnyWasmFunctionCall()) {
     DCHECK(IsTaggedReg(loc, kWasmImplicitArgRegister));
     return LinkageLocation::ForCalleeFrameSlot(kWasmInstanceDataSlot,
                                                MachineType::AnyTagged());

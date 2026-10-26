@@ -23,15 +23,8 @@ const server = tls.createServer({
 })
   .listen(client)
   .on('secureConnection', common.mustCall((serverTlsSock) => {
-    serverTlsSock.once('data', common.mustCall((chunk) => {
-      assert.strictEqual(chunk.toString('latin1', 0, HEAD.length), HEAD);
-      // The start of the inner handshake can arrive in the same chunk as
-      // HEAD. Put it back so that the inner TLSSocket, which reads whatever
-      // is buffered on the socket it wraps, receives it.
-      if (chunk.length > HEAD.length) {
-        serverTlsSock.pause();
-        serverTlsSock.unshift(chunk.subarray(HEAD.length));
-      }
+    serverTlsSock.on('data', common.mustCallAtLeast((chunk) => {
+      assert.strictEqual(chunk.toString(), HEAD);
       subserver.emit('connection', serverTlsSock);
     }));
   }));

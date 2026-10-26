@@ -49,7 +49,6 @@ Pod::Spec.new do |s|
   s.tvos.deployment_target = '12.0'
   s.watchos.deployment_target = '4.0'
   s.visionos.deployment_target = '1.0'
-  s.exclude_files = [ 'absl/time/internal/cctz/src/*_win.cc' ]
   s.subspec 'xcprivacy' do |ss|
     ss.resource_bundles = {
       ss.module_name => 'PrivacyInfo.xcprivacy',
@@ -190,11 +189,7 @@ def write_podspec_rule(f, rule, depth):
   # Since CocoaPods treats header_files a bit differently from bazel,
   # this won't generate a header_files field so that all source_files
   # are considered as header files.
-  srcs = [
-      s
-      for s in sorted(set(rule.hdrs + rule.textual_hdrs + rule.srcs))
-      if not s.endswith("_win.cc")
-  ]
+  srcs = sorted(set(rule.hdrs + rule.textual_hdrs + rule.srcs))
   write_indented_list(
       f, "{indent}{var}.source_files = ".format(indent=indent, var=spec_var),
       srcs)

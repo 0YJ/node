@@ -420,10 +420,11 @@ GdbServer::DebugDelegate::~DebugDelegate() {
 }
 
 void GdbServer::DebugDelegate::ScriptCompiled(Local<debug::Script> script,
+                                              bool is_live_edited,
                                               bool has_compile_error) {
   // Executed in the isolate thread.
   if (script->IsWasm()) {
-    DCHECK_EQ(isolate_, Isolate::Current());
+    DCHECK_EQ(reinterpret_cast<v8::Isolate*>(isolate_), script->GetIsolate());
     gdb_server_->AddWasmModule(GetModuleId(script->Id()),
                                script.As<debug::WasmScript>());
   }

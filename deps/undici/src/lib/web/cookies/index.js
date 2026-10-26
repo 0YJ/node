@@ -3,19 +3,9 @@
 const { parseSetCookie } = require('./parse')
 const { stringify } = require('./util')
 const { webidl } = require('../webidl')
+const { Headers } = require('../fetch/headers')
 
-const globalHeadersBrandCheck = (arg) => webidl.brandCheck(arg, webidl.util.MakeTypeAssertion(globalThis.Headers))
-const undiciHeadersBrandCheck = (arg) => webidl.brandCheck(arg, webidl.is.Headers)
-
-function brandCheckHeaders (arg) {
-  try {
-    undiciHeadersBrandCheck(arg)
-    return
-  } catch {
-  }
-
-  globalHeadersBrandCheck(arg)
-}
+const brandChecks = webidl.brandCheckMultiple([Headers, globalThis.Headers].filter(Boolean))
 
 /**
  * @typedef {Object} Cookie
@@ -38,14 +28,12 @@ function brandCheckHeaders (arg) {
 function getCookies (headers) {
   webidl.argumentLengthCheck(arguments, 1, 'getCookies')
 
-  brandCheckHeaders(headers)
+  brandChecks(headers)
 
   const cookie = headers.get('cookie')
 
-  // A null prototype keeps a cookie named `__proto__` from hitting the
-  // Object.prototype setter, which would silently drop it.
   /** @type {Record<string, string>} */
-  const out = { __proto__: null }
+  const out = {}
 
   if (!cookie) {
     return out
@@ -67,7 +55,7 @@ function getCookies (headers) {
  * @returns {void}
  */
 function deleteCookie (headers, name, attributes) {
-  brandCheckHeaders(headers)
+  brandChecks(headers)
 
   const prefix = 'deleteCookie'
   webidl.argumentLengthCheck(arguments, 2, prefix)
@@ -92,7 +80,7 @@ function deleteCookie (headers, name, attributes) {
 function getSetCookies (headers) {
   webidl.argumentLengthCheck(arguments, 1, 'getSetCookies')
 
-  brandCheckHeaders(headers)
+  brandChecks(headers)
 
   const cookies = headers.getSetCookie()
 
@@ -121,7 +109,7 @@ function parseCookie (cookie) {
 function setCookie (headers, cookie) {
   webidl.argumentLengthCheck(arguments, 2, 'setCookie')
 
-  brandCheckHeaders(headers)
+  brandChecks(headers)
 
   cookie = webidl.converters.Cookie(cookie)
 

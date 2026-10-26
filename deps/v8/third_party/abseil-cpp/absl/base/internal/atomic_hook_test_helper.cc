@@ -15,7 +15,6 @@
 #include "absl/base/internal/atomic_hook_test_helper.h"
 
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
 #include "absl/base/internal/atomic_hook.h"
 
 namespace absl {

@@ -1,7 +1,5 @@
-use {
-    crate::{Array, SmallVec},
-    arbitrary::{Arbitrary, Unstructured},
-};
+use crate::{Array, SmallVec};
+use arbitrary::{Arbitrary, Unstructured};
 
 impl<'a, A: Array> Arbitrary<'a> for SmallVec<A>
 where

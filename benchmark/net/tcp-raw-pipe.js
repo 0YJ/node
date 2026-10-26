@@ -23,12 +23,7 @@ function main({ dur, len, type }) {
     TCPConnectWrap,
     constants: TCPConstants,
   } = common.binding('tcp_wrap');
-  const {
-    WriteWrap,
-    kReadBytesOrError,
-    kArrayBufferOffset,
-    streamBaseState,
-  } = common.binding('stream_wrap');
+  const { WriteWrap } = common.binding('stream_wrap');
   const PORT = common.PORT;
 
   function fail(err, syscall) {
@@ -55,11 +50,9 @@ function main({ dur, len, type }) {
       if (!buffer)
         fail('read');
 
-      const nread = streamBaseState[kReadBytesOrError];
-      const offset = streamBaseState[kArrayBufferOffset];
       const writeReq = new WriteWrap();
       writeReq.async = false;
-      err = clientHandle.writeBuffer(writeReq, Buffer.from(buffer, offset, nread));
+      err = clientHandle.writeBuffer(writeReq, Buffer.from(buffer));
 
       if (err)
         fail(err, 'write');
@@ -101,7 +94,7 @@ function main({ dur, len, type }) {
     if (!buffer)
       fail('read');
 
-    bytes += streamBaseState[kReadBytesOrError];
+    bytes += buffer.byteLength;
   };
 
   connectReq.oncomplete = function(err) {

@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstddef>
 #include <string>
 
 #include "absl/strings/internal/damerau_levenshtein_distance.h"

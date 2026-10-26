@@ -1,14 +1,11 @@
 /*
- * Copyright 2019-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-#if !defined(OSSL_LIBCRYPTO_PEM_PEM_LOCAL_H)
-#define OSSL_LIBCRYPTO_PEM_PEM_LOCAL_H
 
 #include <openssl/core_dispatch.h>
 #include <openssl/pem.h>
@@ -57,7 +54,7 @@
     if (kstr == NULL && cb == NULL) {                                   \
         if (u != NULL) {                                                \
             kstr = u;                                                   \
-            klen = (int)strlen(u);                                      \
+            klen = strlen(u);                                           \
         } else {                                                        \
             cb = PEM_def_callback;                                      \
         }                                                               \
@@ -165,5 +162,3 @@
 #define IMPLEMENT_PEM_provided_rw_cb(name, TYPE, type, str, asn1) \
     IMPLEMENT_PEM_read(name, TYPE, str, asn1)                     \
     IMPLEMENT_PEM_provided_write_cb(name, TYPE, type, str, asn1)
-
-#endif /* !defined(OSSL_LIBCRYPTO_PEM_PEM_LOCAL_H) */

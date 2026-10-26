@@ -1,13 +1,11 @@
 /*
- * Copyright 2023-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2023-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-#include <stdio.h>
 
 #include "internal/qlog_event_helpers.h"
 #include "internal/common.h"
@@ -132,7 +130,7 @@ void ossl_qlog_event_connectivity_connection_closed(QLOG *qlog,
 
         if (tcause->error_code >= OSSL_QUIC_ERR_CRYPTO_ERR_BEGIN
             && tcause->error_code <= OSSL_QUIC_ERR_CRYPTO_ERR_END) {
-            snprintf(ce, sizeof(ce), "crypto_error_0x%03llx",
+            BIO_snprintf(ce, sizeof(ce), "crypto_error_0x%03llx",
                 (unsigned long long)tcause->error_code);
             m = ce;
         }

@@ -1,14 +1,15 @@
 /*
    minizip.c
-   sample part of the MiniZip project - ( https://www.winimage.com/zLibDll/minizip.html )
+   Version 1.1, February 14h, 2010
+   sample part of the MiniZip project - ( http://www.winimage.com/zLibDll/minizip.html )
 
-         Copyright (C) 1998-2026 Gilles Vollant (minizip) ( https://www.winimage.com/zLibDll/minizip.html )
+         Copyright (C) 1998-2010 Gilles Vollant (minizip) ( http://www.winimage.com/zLibDll/minizip.html )
 
          Modifications of Unzip for Zip64
          Copyright (C) 2007-2008 Even Rouault
 
          Modifications for Zip64 support on both zip and unzip
-         Copyright (C) 2009-2010 Mathias Svensson ( https://result42.com )
+         Copyright (C) 2009-2010 Mathias Svensson ( http://result42.com )
 */
 
 #if (!defined(_WIN32)) && (!defined(WIN32)) && (!defined(__APPLE__)) && (!defined(__ANDROID_API__))
@@ -162,7 +163,7 @@ static int check_exist_file(const char* filename) {
 
 static void do_banner(void) {
     printf("MiniZip 1.1, demo of zLib + MiniZip64 package, written by Gilles Vollant\n");
-    printf("more info on MiniZip at https://www.winimage.com/zLibDll/minizip.html\n\n");
+    printf("more info on MiniZip at http://www.winimage.com/zLibDll/minizip.html\n\n");
 }
 
 static void do_help(void) {
@@ -433,7 +434,7 @@ int main(int argc, char *argv[]) {
                      }
                      if( lastslash != NULL )
                      {
-                         savefilenameinzip = lastslash+1; /* base filename follows last slash. */
+                         savefilenameinzip = lastslash+1; // base filename follows last slash.
                      }
                  }
 
@@ -506,5 +507,5 @@ int main(int argc, char *argv[]) {
     }
 
     free(buf);
-    return err;
+    return 0;
 }

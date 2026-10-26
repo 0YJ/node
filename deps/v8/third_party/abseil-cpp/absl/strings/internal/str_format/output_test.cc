@@ -14,13 +14,11 @@
 
 #include "absl/strings/internal/str_format/output.h"
 
-#include <algorithm>
 #include <sstream>
 #include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 #include "absl/strings/cord.h"
 
 namespace absl {

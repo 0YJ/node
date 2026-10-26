@@ -9,7 +9,6 @@
 #include "src/base/atomicops.h"
 #include "src/base/memory.h"
 #include "src/common/globals.h"
-#include "src/objects/objects.h"
 #include "src/runtime/runtime.h"
 #include "src/sandbox/external-entity-table.h"
 
@@ -19,7 +18,6 @@ namespace internal {
 class Isolate;
 class Counters;
 class Code;
-class HeapObject;
 enum class TieringBuiltin;
 
 /**
@@ -44,8 +42,7 @@ struct JSDispatchEntry {
   inline uint16_t GetParameterCount() const;
 
   inline void SetCodeAndEntrypointPointer(Address new_object,
-                                          Address new_entrypoint,
-                                          Isolate* isolate);
+                                          Address new_entrypoint);
   inline void SetEntrypointPointer(Address new_entrypoint);
 
   // Make this entry a freelist entry, containing the index of the next entry
@@ -54,11 +51,6 @@ struct JSDispatchEntry {
 
   // Returns true if this entry is a freelist entry.
   inline bool IsFreelistEntry() const;
-#ifdef V8_TARGET_ARCH_64_BIT
-  // Helper to check if an entry is a freelist entry using an already-loaded
-  // entrypoint value.
-  inline bool IsFreelistEntry(Address entrypoint) const;
-#endif
 
   // Get the index of the next entry on the freelist. This method may be
   // called even when the entry is not a freelist entry. However, the result
@@ -237,20 +229,16 @@ class V8_EXPORT_PRIVATE JSDispatchTable
   // Updates the entry referenced by the given handle to the given Code and its
   // entrypoint. The code must be compatible with the specified entry. In
   // particular, the two must use the same parameter count.
-  inline void SetCode(JSDispatchHandle handle, Tagged<Code> new_code,
-                      Tagged<HeapObject> host, Isolate* isolate,
-                      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  // NB: Callee must use WriteBarrier::ForJSDispatchHandle or similar.
+  // NB: Callee must emit JS_DISPATCH_HANDLE_WRITE_BARRIER if needed!
   inline void SetCodeNoWriteBarrier(JSDispatchHandle handle,
-                                    Tagged<Code> new_code, Isolate* isolate);
+                                    Tagged<Code> new_code);
 
   // Execute a tiering builtin instead of the actual code. Leaves the Code
   // pointer untouched and changes only the entrypoint.
   inline void SetTieringRequest(JSDispatchHandle handle, TieringBuiltin builtin,
                                 Isolate* isolate);
-  inline void SetCodeKeepTieringRequest(
-      JSDispatchHandle handle, Tagged<Code> new_code, Tagged<HeapObject> host,
-      Isolate* isolate, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline void SetCodeKeepTieringRequestNoWriteBarrier(JSDispatchHandle handle,
+                                                      Tagged<Code> new_code);
   // Resets the entrypoint to the code's entrypoint.
   inline void ResetTieringRequest(JSDispatchHandle handle);
   // Check if and/or which tiering builtin is installed.
@@ -318,17 +306,11 @@ class V8_EXPORT_PRIVATE JSDispatchTable
                           Space* ro_space);
 #endif  // defined(DEBUG) || defined(VERIFY_HEAP)
 
-  // Verifies that all entries in the given space are valid.
-  //
-  // In practice, this means that every active entry must point to a valid
-  // (e.g. not freed or corrupted) object of the expected type. As a general
-  // rule, the table must be in a consistent state (and so pass verification)
-  // whenever we can execute JS or Wasm code.
-  void Verify(Isolate* isolate, Space* space);
-
   void PrintEntry(JSDispatchHandle handle);
   void PrintCurrentTieringRequest(JSDispatchHandle handle, Isolate* isolate,
                                   std::ostream& os);
+
+  static constexpr bool kWriteBarrierSetsEntryMarkBit = true;
 
   static bool MaybeValidJSDispatchHandle(uint32_t handle) {
     return ((handle >> kJSDispatchHandleShift) << kJSDispatchHandleShift) ==
@@ -341,11 +323,7 @@ class V8_EXPORT_PRIVATE JSDispatchTable
 
   inline void SetCodeAndEntrypointNoWriteBarrier(JSDispatchHandle handle,
                                                  Tagged<Code> new_code,
-                                                 Address entrypoint,
-                                                 Isolate* isolate);
-  inline void SetCodeKeepTieringRequestNoWriteBarrier(JSDispatchHandle handle,
-                                                      Tagged<Code> new_code,
-                                                      Isolate* isolate);
+                                                 Address entrypoint);
 
   static uint32_t HandleToIndex(JSDispatchHandle handle) {
     uint32_t index = handle.value() >> kJSDispatchHandleShift;

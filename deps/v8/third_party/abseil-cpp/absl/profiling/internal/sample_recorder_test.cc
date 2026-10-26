@@ -14,7 +14,6 @@
 
 #include "absl/profiling/internal/sample_recorder.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -24,7 +23,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 #include "absl/base/thread_annotations.h"
 #include "absl/random/random.h"
 #include "absl/synchronization/internal/thread_pool.h"
@@ -51,17 +49,15 @@ struct Info : public Sample<Info> {
 
 std::vector<size_t> GetSizes(SampleRecorder<Info>* s) {
   std::vector<size_t> res;
-  EXPECT_EQ(s->Iterate([&](const Info& info) {
+  s->Iterate([&](const Info& info) {
     res.push_back(info.size.load(std::memory_order_acquire));
-  }),
-            0);
+  });
   return res;
 }
 
 std::vector<int64_t> GetWeights(SampleRecorder<Info>* s) {
   std::vector<int64_t> res;
-  EXPECT_EQ(s->Iterate([&](const Info& info) { res.push_back(info.weight); }),
-            0);
+  s->Iterate([&](const Info& info) { res.push_back(info.weight); });
   return res;
 }
 
@@ -145,10 +141,9 @@ TEST(SampleRecorderTest, MultiThreaded) {
           }
           case 2: {
             absl::Duration oldest = absl::ZeroDuration();
-            EXPECT_EQ(sampler.Iterate([&](const Info& info) {
+            sampler.Iterate([&](const Info& info) {
               oldest = std::max(oldest, absl::Now() - info.create_time);
-            }),
-                      0);
+            });
             ASSERT_GE(oldest, absl::ZeroDuration());
             break;
           }

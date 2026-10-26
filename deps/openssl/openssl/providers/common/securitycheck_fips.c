@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -19,6 +19,15 @@
 #include <openssl/obj_mac.h>
 #include "prov/securitycheck.h"
 
+int ossl_fips_config_securitycheck_enabled(OSSL_LIB_CTX *libctx)
+{
+#if !defined(OPENSSL_NO_FIPS_SECURITYCHECKS)
+    return ossl_fips_config_security_checks(libctx);
+#else
+    return 0;
+#endif /* OPENSSL_NO_FIPS_SECURITYCHECKS */
+}
+
 int ossl_digest_rsa_sign_get_md_nid(const EVP_MD *md)
 {
     return ossl_digest_get_approved_nid(md);
@@ -32,7 +41,7 @@ int ossl_fips_ind_rsa_key_check(OSSL_FIPS_IND *ind, int id,
 
     if (!key_approved) {
         if (!ossl_FIPS_IND_on_unapproved(ind, id, libctx, desc, "Key size",
-                FIPS_CONFIG_SECURITY_CHECKS)) {
+                ossl_fips_config_securitycheck_enabled)) {
             ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_KEY_LENGTH,
                 "operation: %s", desc);
             return 0;
@@ -57,7 +66,7 @@ int ossl_fips_ind_ec_key_check(OSSL_FIPS_IND *ind, int id,
 
     if (!strength_allowed || !curve_allowed) {
         if (!ossl_FIPS_IND_on_unapproved(ind, id, libctx, desc, "EC Key",
-                FIPS_CONFIG_SECURITY_CHECKS)) {
+                ossl_fips_config_securitycheck_enabled)) {
             if (!curve_allowed)
                 ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_CURVE);
             if (!strength_allowed)
@@ -78,7 +87,7 @@ int ossl_fips_ind_digest_exch_check(OSSL_FIPS_IND *ind, int id,
 
     if (!approved) {
         if (!ossl_FIPS_IND_on_unapproved(ind, id, libctx, desc, "Digest",
-                FIPS_CONFIG_SECURITY_CHECKS)) {
+                ossl_fips_config_securitycheck_enabled)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_DIGEST);
             return 0;
         }
@@ -91,7 +100,7 @@ int ossl_fips_ind_digest_sign_check(OSSL_FIPS_IND *ind, int id,
     int nid, int sha1_allowed,
     int sha512_trunc_allowed,
     const char *desc,
-    enum fips_config_id config_id)
+    OSSL_FIPS_IND_CHECK_CB *config_check_f)
 {
     int approved;
     const char *op = "none";
@@ -115,7 +124,8 @@ int ossl_fips_ind_digest_sign_check(OSSL_FIPS_IND *ind, int id,
     }
 
     if (!approved) {
-        if (!ossl_FIPS_IND_on_unapproved(ind, id, libctx, desc, op, config_id)) {
+        if (!ossl_FIPS_IND_on_unapproved(ind, id, libctx, desc, op,
+                config_check_f)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_DIGEST);
             return 0;
         }

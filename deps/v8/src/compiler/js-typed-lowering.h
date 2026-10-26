@@ -87,8 +87,6 @@ class V8_EXPORT_PRIVATE JSTypedLowering final
   Reduction ReduceUI32Shift(Node* node, Signedness signedness);
   Reduction ReduceObjectIsArray(Node* node);
   Reduction ReduceJSParseInt(Node* node);
-  Reduction ReduceJSAsyncFunctionAwait(Node* node);
-  Reduction ReduceJSFulfillPromise(Node* node);
   Reduction ReduceJSResolvePromise(Node* node);
 
   // Helper for ReduceJSLoadModule and ReduceJSStoreModule.

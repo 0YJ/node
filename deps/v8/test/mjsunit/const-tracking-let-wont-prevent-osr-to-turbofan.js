@@ -6,7 +6,8 @@
 // Flags: --turbofan --maglev --no-stress-maglev
 // Flags: --sparkplug --no-always-sparkplug
 // Flags: --no-baseline-batch-compilation --use-osr
-// Flags: --concurrent-osr --concurrent-recompilation
+// Flags: --osr-from-maglev --concurrent-osr --concurrent-recompilation
+// Flags: --always-osr-from-maglev
 
 let a = 0;
 var keep_going = 100000;  // A counter to avoid test hangs on failure.

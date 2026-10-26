@@ -15,7 +15,6 @@ void WasmRevecPhase::Run(PipelineData* data, Zone* temp_zone) {
   WasmRevecAnalyzer analyzer(data, temp_zone, data->graph());
 
   if (analyzer.ShouldReduce()) {
-    data->set_wasm_revec_percent(analyzer.revectorized_percent());
     data->set_wasm_revec_analyzer(&analyzer);
     UnparkedScopeIfNeeded scope(data->broker(),
                                 v8_flags.turboshaft_trace_reduction);

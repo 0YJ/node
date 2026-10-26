@@ -6,7 +6,7 @@
 
 use crate::{
     assert_syntax,
-    encoding::EncodingType,
+    core::EncodingType,
     parsers::{
         grammar::{
             is_a_key_char, is_a_key_leading_char, is_annotation_close,
@@ -78,11 +78,13 @@ pub(crate) fn parse_annotations<'a, T: EncodingType>(
                     _ => {}
                 }
             }
-            Some(unknown_kv) if unknown_kv.critical => {
+            Some(unknown_kv) => {
                 // Throw an error on any unrecognized annotations that are marked as critical.
-                return Err(ParseError::UnrecognizedCritical);
+                if unknown_kv.critical {
+                    return Err(ParseError::UnrecognizedCritical);
+                }
             }
-            _ => {}
+            None => {}
         }
     }
 

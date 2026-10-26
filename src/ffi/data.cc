@@ -15,8 +15,6 @@
 using v8::ArrayBuffer;
 using v8::ArrayBufferView;
 using v8::BackingStore;
-using v8::BackingStoreInitializationMode;
-using v8::BackingStoreOnFailureMode;
 using v8::BigInt;
 using v8::FunctionCallbackInfo;
 using v8::Integer;
@@ -41,7 +39,7 @@ Maybe<size_t> GetValidatedSize(Environment* env,
                                Local<Value> value,
                                const char* label) {
   if (!value->IsNumber()) {
-    THROW_ERR_INVALID_ARG_TYPE(env, "The %s must be a number", label);
+    THROW_ERR_INVALID_ARG_VALUE(env, "The %s must be a number", label);
     return Nothing<size_t>();
   }
 
@@ -52,10 +50,7 @@ Maybe<size_t> GetValidatedSize(Environment* env,
     return Nothing<size_t>();
   }
 
-  // Values beyond Number.MAX_SAFE_INTEGER may already have been rounded
-  // by the caller. On 32-bit platforms SIZE_MAX is the tighter bound.
-  if (length > kMaxSafeJsInteger ||
-      length > static_cast<double>(std::numeric_limits<size_t>::max())) {
+  if (length > static_cast<double>(std::numeric_limits<size_t>::max())) {
     THROW_ERR_OUT_OF_RANGE(env, "The %s is too large", label);
     return Nothing<size_t>();
   }
@@ -67,7 +62,7 @@ Maybe<uintptr_t> GetValidatedPointerAddress(Environment* env,
                                             Local<Value> value,
                                             const char* label) {
   if (!value->IsBigInt()) {
-    THROW_ERR_INVALID_ARG_TYPE(env, "The %s must be a bigint", label);
+    THROW_ERR_INVALID_ARG_VALUE(env, "The %s must be a bigint", label);
     return Nothing<uintptr_t>();
   }
 
@@ -168,7 +163,8 @@ Maybe<void> ValidateStringLength(Environment* env, size_t len) {
 Maybe<std::pair<uint8_t*, size_t>> GetValidatedPointerAndOffset(
     Environment* env, const FunctionCallbackInfo<Value>& args) {
   uintptr_t raw_ptr;
-  if (!GetValidatedPointerAddress(env, args[0], "pointer").To(&raw_ptr)) {
+  if (args.Length() < 1 ||
+      !GetValidatedPointerAddress(env, args[0], "pointer").To(&raw_ptr)) {
     return {};
   }
 
@@ -208,7 +204,8 @@ Maybe<PointerOffsetAndValue> GetValidatedPointerOffsetAndValue(
   size_t offset;
   Local<Value> value;
   uintptr_t raw_ptr;
-  if (!GetValidatedPointerAddress(env, args[0], "pointer").To(&raw_ptr)) {
+  if (args.Length() < 1 ||
+      !GetValidatedPointerAddress(env, args[0], "pointer").To(&raw_ptr)) {
     return {};
   }
 
@@ -538,19 +535,9 @@ void ToString(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(out);
 }
 
-// Foreign memory lies outside the V8 sandbox and cannot back an ArrayBuffer.
-static bool ZeroCopyUnavailable(Environment* env) {
-#ifdef V8_ENABLE_SANDBOX
-  THROW_ERR_OPERATION_FAILED(
-      env, "Zero-copy views are not available when the V8 sandbox is enabled");
-  return true;
-#else
-  return false;
-#endif
-}
-
 void ToBuffer(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
 
   THROW_IF_INSUFFICIENT_PERMISSIONS(env, permission::PermissionScope::kFFI, "");
 
@@ -569,7 +556,7 @@ void ToBuffer(const FunctionCallbackInfo<Value>& args) {
   }
 
   size_t len;
-  if (!GetValidatedSize(env, args[1], "length").To(&len)) {
+  if (args.Length() < 2 || !GetValidatedSize(env, args[1], "length").To(&len)) {
     return;
   }
 
@@ -593,16 +580,9 @@ void ToBuffer(const FunctionCallbackInfo<Value>& args) {
     return;
   }
 
-  if (!args[2]->IsUndefined() && !args[2]->IsBoolean()) {
-    THROW_ERR_INVALID_ARG_TYPE(env, "The copy argument must be a boolean");
-    return;
-  }
-
-  bool copy = !args[2]->IsFalse();
-  if (!copy && ZeroCopyUnavailable(env)) return;
-
   Local<Object> buf;
-  if (copy) {
+  if (args.Length() < 3 || args[2]->IsUndefined() ||
+      args[2]->BooleanValue(isolate)) {
     if (!Buffer::Copy(env, reinterpret_cast<char*>(ptr), len).ToLocal(&buf)) {
       return;
     }
@@ -638,7 +618,7 @@ void ToArrayBuffer(const FunctionCallbackInfo<Value>& args) {
   }
 
   size_t len;
-  if (!GetValidatedSize(env, args[1], "length").To(&len)) {
+  if (args.Length() < 2 || !GetValidatedSize(env, args[1], "length").To(&len)) {
     return;
   }
 
@@ -662,26 +642,13 @@ void ToArrayBuffer(const FunctionCallbackInfo<Value>& args) {
     return;
   }
 
-  if (!args[2]->IsUndefined() && !args[2]->IsBoolean()) {
-    THROW_ERR_INVALID_ARG_TYPE(env, "The copy argument must be a boolean");
-    return;
-  }
-
-  bool copy = !args[2]->IsFalse();
-  if (!copy && ZeroCopyUnavailable(env)) return;
-
   Local<ArrayBuffer> ab;
-  if (copy) {
-    std::unique_ptr<BackingStore> store = ArrayBuffer::NewBackingStore(
-        isolate,
-        len,
-        BackingStoreInitializationMode::kUninitialized,
-        BackingStoreOnFailureMode::kReturnNull);
-    if (!store) [[unlikely]] {
-      THROW_ERR_MEMORY_ALLOCATION_FAILED(env);
-      return;
-    }
-    if (len > 0) memcpy(store->Data(), reinterpret_cast<void*>(ptr), len);
+
+  if (args.Length() < 3 || args[2]->IsUndefined() ||
+      args[2]->BooleanValue(isolate)) {
+    std::unique_ptr<BackingStore> store =
+        ArrayBuffer::NewBackingStore(isolate, len);
+    memcpy(store->Data(), reinterpret_cast<void*>(ptr), len);
     ab = ArrayBuffer::New(isolate, std::move(store));
   } else {
     std::unique_ptr<BackingStore> store = ArrayBuffer::NewBackingStore(
@@ -729,12 +696,13 @@ void ExportBytes(const FunctionCallbackInfo<Value>& args) {
   }
 
   uintptr_t ptr;
-  if (!GetValidatedPointerAddress(env, args[1], "pointer").To(&ptr)) {
+  if (args.Length() < 2 ||
+      !GetValidatedPointerAddress(env, args[1], "pointer").To(&ptr)) {
     return;
   }
 
   size_t len;
-  if (!GetValidatedSize(env, args[2], "length").To(&len)) {
+  if (args.Length() < 3 || !GetValidatedSize(env, args[2], "length").To(&len)) {
     return;
   }
 
@@ -759,9 +727,7 @@ void ExportBytes(const FunctionCallbackInfo<Value>& args) {
     return;
   }
 
-  if (view.length() > 0) {
-    std::memcpy(reinterpret_cast<void*>(ptr), view.data(), view.length());
-  }
+  std::memcpy(reinterpret_cast<void*>(ptr), view.data(), view.length());
 }
 
 void GetRawPointer(const FunctionCallbackInfo<Value>& args) {

@@ -2,9 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-@cppObjectLayoutDefinition
+// This class does not use the generated verifier, so if you change anything
+// here, please also update DataHandlerVerify in objects-debug.cc.
 @abstract
-extern class DataHandler extends Struct {
-  smi_handler: Smi|Code;
-  validity_cell: Smi|Cell;
-}
+extern class DataHandler extends Struct;

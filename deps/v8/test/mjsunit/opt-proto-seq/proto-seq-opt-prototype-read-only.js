@@ -29,12 +29,7 @@ function test_prototype_read_only() {
   return new test_function();
 }
 
-// Keep the objects and their maps alive throughout the test so that GC
-// doesn't collect them, which would trigger a lazy deopt.
-let keep_alive = [];
-
 function assert_test_prototype_read_only(test_instance) {
-  keep_alive.push(test_instance);
   assertEquals(test_instance.func(), "test_function.prototype.func");
   assertEquals(
     test_instance.arrow_func(),
@@ -56,7 +51,7 @@ assert_test_prototype_read_only(test_prototype_read_only());
 %OptimizeMaglevOnNextCall(test_prototype_read_only);
 assert_test_prototype_read_only(test_prototype_read_only());
 assertOptimized(test_prototype_read_only);
-assertMaglevved(test_prototype_read_only);
+assertTrue(isMaglevved(test_prototype_read_only));
 assert_test_prototype_read_only(test_prototype_read_only());
 %OptimizeFunctionOnNextCall(test_prototype_read_only);
 assert_test_prototype_read_only(test_prototype_read_only());

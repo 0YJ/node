@@ -15,10 +15,10 @@
 
   %OptimizeMaglevOnNextCall(add);
   assertEquals(3, add(1, 2));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   assertEquals(0x40000000, add(1, 0x3FFFFFFF));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 })();
 
 // Checks when we deopt due to tagging.
@@ -32,9 +32,9 @@
 
   %OptimizeMaglevOnNextCall(add);
   assertEquals(3, add(1, 2));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   // We should deopt here in Int32Add.
   assertEquals(3.2, add(1.2, 2));
-  assertNotMaglevved(add);
+  assertFalse(isMaglevved(add));
 })();

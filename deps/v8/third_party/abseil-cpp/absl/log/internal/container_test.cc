@@ -15,11 +15,13 @@
 #include "absl/log/internal/container.h"
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <ostream>
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "gtest/gtest.h"

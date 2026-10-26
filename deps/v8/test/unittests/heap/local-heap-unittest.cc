@@ -197,13 +197,13 @@ TEST_F(LocalHeapTest, RootsProvider) {
   InvokeMinorGC(i_isolate());
 
   Tagged<Object> value = data->array()->get(2, kRelaxedLoad);
-  Tagged<HeapNumber> number = Cast<HeapNumber>(value);
+  Tagged<HeapNumber> number = Tagged<HeapNumber>::cast(value);
   CHECK_EQ(number->value(), 101);
 
   InvokeMajorGC(i_isolate());
 
   value = data->array()->get(2, kRelaxedLoad);
-  number = Cast<HeapNumber>(value);
+  number = Tagged<HeapNumber>::cast(value);
   CHECK_EQ(number->value(), 101);
 }
 

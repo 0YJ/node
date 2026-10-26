@@ -4,95 +4,82 @@
 
 #include "src/regexp/regexp-ast.h"
 
-#include "src/execution/isolate-inl.h"
-#include "src/regexp/regexp-ast.h"
+#include "src/zone/zone-list-inl.h"
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-#define MAKE_ACCEPT(Name)                            \
-  void* Name::Accept(Visitor* visitor, void* data) { \
-    return visitor->Visit##Name(this, data);         \
+#define MAKE_ACCEPT(Name)                                          \
+  void* RegExp##Name::Accept(RegExpVisitor* visitor, void* data) { \
+    return visitor->Visit##Name(this, data);                       \
   }
 FOR_EACH_REG_EXP_TREE_TYPE(MAKE_ACCEPT)
 #undef MAKE_ACCEPT
 
-#define MAKE_TYPE_CASE(Name)                 \
-  Name* Tree::As##Name() { return nullptr; } \
-  bool Tree::Is##Name() { return false; }
+#define MAKE_TYPE_CASE(Name)                               \
+  RegExp##Name* RegExpTree::As##Name() { return nullptr; } \
+  bool RegExpTree::Is##Name() { return false; }
 FOR_EACH_REG_EXP_TREE_TYPE(MAKE_TYPE_CASE)
 #undef MAKE_TYPE_CASE
 
-#define MAKE_TYPE_CASE(Name)              \
-  Name* Name::As##Name() { return this; } \
-  bool Name::Is##Name() { return true; }
+#define MAKE_TYPE_CASE(Name)                              \
+  RegExp##Name* RegExp##Name::As##Name() { return this; } \
+  bool RegExp##Name::Is##Name() { return true; }
 FOR_EACH_REG_EXP_TREE_TYPE(MAKE_TYPE_CASE)
 #undef MAKE_TYPE_CASE
-
-bool StackLimiter::IsOverflowed() {
-  if (V8_LIKELY(budget_ > 0)) return false;
-  // This can be a little slow so we don't do it until the soft budget has been
-  // exhausted.
-  return StackLimitCheck{Isolate::Current()}.HasOverflowed();
-}
-
-Interval Group::CaptureRegisters(StackLimiter limiter) {
-  if (limiter.IsOverflowed()) return Interval::Invalid();
-  return body_->CaptureRegisters(limiter - 1);
-}
 
 namespace {
 
-Interval ListCaptureRegisters(StackLimiter limiter, ZoneList<Tree*>* children) {
-  if (limiter.IsOverflowed()) return Interval::Invalid();
+Interval ListCaptureRegisters(ZoneList<RegExpTree*>* children) {
   Interval result = Interval::Empty();
-  for (int i = 0; i < children->length(); i++) {
-    result = result.Union(children->at(i)->CaptureRegisters(limiter - 1));
-  }
+  for (int i = 0; i < children->length(); i++)
+    result = result.Union(children->at(i)->CaptureRegisters());
   return result;
 }
 
 }  // namespace
 
-Interval Alternative::CaptureRegisters(StackLimiter limiter) {
-  return ListCaptureRegisters(limiter - 1, nodes());
+Interval RegExpAlternative::CaptureRegisters() {
+  return ListCaptureRegisters(nodes());
 }
 
-Interval Disjunction::CaptureRegisters(StackLimiter limiter) {
-  return ListCaptureRegisters(limiter - 1, alternatives());
+
+Interval RegExpDisjunction::CaptureRegisters() {
+  return ListCaptureRegisters(alternatives());
 }
 
-Interval Lookaround::CaptureRegisters(StackLimiter limiter) {
-  if (limiter.IsOverflowed()) return Interval::Invalid();
-  return body()->CaptureRegisters(limiter - 1);
+
+Interval RegExpLookaround::CaptureRegisters() {
+  return body()->CaptureRegisters();
 }
 
-Interval Capture::CaptureRegisters(StackLimiter limiter) {
-  if (limiter.IsOverflowed()) return Interval::Invalid();
+
+Interval RegExpCapture::CaptureRegisters() {
   Interval self(StartRegister(index()), EndRegister(index()));
-  return self.Union(body()->CaptureRegisters(limiter - 1));
+  return self.Union(body()->CaptureRegisters());
 }
 
-Interval Quantifier::CaptureRegisters(StackLimiter limiter) {
-  if (limiter.IsOverflowed()) return Interval::Invalid();
-  return body()->CaptureRegisters(limiter - 1);
+
+Interval RegExpQuantifier::CaptureRegisters() {
+  return body()->CaptureRegisters();
 }
 
-bool Assertion::IsCertainlyAnchoredAtStart(int budget) {
-  return assertion_type() == Assertion::Type::START_OF_INPUT;
+
+bool RegExpAssertion::IsAnchoredAtStart() {
+  return assertion_type() == RegExpAssertion::Type::START_OF_INPUT;
 }
 
-bool Assertion::IsCertainlyAnchoredAtEnd(int budget) {
-  return assertion_type() == Assertion::Type::END_OF_INPUT;
+
+bool RegExpAssertion::IsAnchoredAtEnd() {
+  return assertion_type() == RegExpAssertion::Type::END_OF_INPUT;
 }
 
-bool Alternative::IsCertainlyAnchoredAtStart(int budget) {
-  if (budget < 0) return false;
-  ZoneList<Tree*>* nodes = this->nodes();
+
+bool RegExpAlternative::IsAnchoredAtStart() {
+  ZoneList<RegExpTree*>* nodes = this->nodes();
   for (int i = 0; i < nodes->length(); i++) {
-    Tree* node = nodes->at(i);
-    if (node->IsCertainlyAnchoredAtStart(budget - 1)) {
+    RegExpTree* node = nodes->at(i);
+    if (node->IsAnchoredAtStart()) {
       return true;
     }
     if (node->max_match() > 0) {
@@ -102,12 +89,12 @@ bool Alternative::IsCertainlyAnchoredAtStart(int budget) {
   return false;
 }
 
-bool Alternative::IsCertainlyAnchoredAtEnd(int budget) {
-  if (budget < 0) return false;
-  ZoneList<Tree*>* nodes = this->nodes();
+
+bool RegExpAlternative::IsAnchoredAtEnd() {
+  ZoneList<RegExpTree*>* nodes = this->nodes();
   for (int i = nodes->length() - 1; i >= 0; i--) {
-    Tree* node = nodes->at(i);
-    if (node->IsCertainlyAnchoredAtEnd(budget - 1)) {
+    RegExpTree* node = nodes->at(i);
+    if (node->IsAnchoredAtEnd()) {
       return true;
     }
     if (node->max_match() > 0) {
@@ -117,52 +104,43 @@ bool Alternative::IsCertainlyAnchoredAtEnd(int budget) {
   return false;
 }
 
-bool Disjunction::IsCertainlyAnchoredAtStart(int budget) {
-  if (budget < 0) return false;
-  ZoneList<Tree*>* alternatives = this->alternatives();
+
+bool RegExpDisjunction::IsAnchoredAtStart() {
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
   for (int i = 0; i < alternatives->length(); i++) {
-    if (!alternatives->at(i)->IsCertainlyAnchoredAtStart(budget - 1)) {
-      return false;
-    }
+    if (!alternatives->at(i)->IsAnchoredAtStart()) return false;
   }
   return true;
 }
 
-bool Disjunction::IsCertainlyAnchoredAtEnd(int budget) {
-  if (budget < 0) return false;
-  ZoneList<Tree*>* alternatives = this->alternatives();
+
+bool RegExpDisjunction::IsAnchoredAtEnd() {
+  ZoneList<RegExpTree*>* alternatives = this->alternatives();
   for (int i = 0; i < alternatives->length(); i++) {
-    if (!alternatives->at(i)->IsCertainlyAnchoredAtEnd(budget - 1)) {
-      return false;
-    }
+    if (!alternatives->at(i)->IsAnchoredAtEnd()) return false;
   }
   return true;
 }
 
-bool Lookaround::IsCertainlyAnchoredAtStart(int budget) {
-  if (budget < 0) return false;
-  return is_positive() && type() == LOOKAHEAD &&
-         body()->IsCertainlyAnchoredAtStart(budget - 1);
+
+bool RegExpLookaround::IsAnchoredAtStart() {
+  return is_positive() && type() == LOOKAHEAD && body()->IsAnchoredAtStart();
 }
 
-bool Capture::IsCertainlyAnchoredAtStart(int budget) {
-  if (budget < 0) return false;
-  return body()->IsCertainlyAnchoredAtStart(budget - 1);
-}
 
-bool Capture::IsCertainlyAnchoredAtEnd(int budget) {
-  if (budget < 0) return false;
-  return body()->IsCertainlyAnchoredAtEnd(budget - 1);
-}
+bool RegExpCapture::IsAnchoredAtStart() { return body()->IsAnchoredAtStart(); }
 
-Disjunction::Disjunction(ZoneList<Tree*>* alternatives)
+
+bool RegExpCapture::IsAnchoredAtEnd() { return body()->IsAnchoredAtEnd(); }
+
+RegExpDisjunction::RegExpDisjunction(ZoneList<RegExpTree*>* alternatives)
     : alternatives_(alternatives) {
   DCHECK_LT(1, alternatives->length());
-  Tree* first_alternative = alternatives->at(0);
+  RegExpTree* first_alternative = alternatives->at(0);
   min_match_ = first_alternative->min_match();
   max_match_ = first_alternative->max_match();
   for (int i = 1; i < alternatives->length(); i++) {
-    Tree* alternative = alternatives->at(i);
+    RegExpTree* alternative = alternatives->at(i);
     min_match_ = std::min(min_match_, alternative->min_match());
     max_match_ = std::max(max_match_, alternative->max_match());
   }
@@ -171,8 +149,8 @@ Disjunction::Disjunction(ZoneList<Tree*>* alternatives)
 namespace {
 
 int IncreaseBy(int previous, int increase) {
-  if (Tree::kInfinity - previous < increase) {
-    return Tree::kInfinity;
+  if (RegExpTree::kInfinity - previous < increase) {
+    return RegExpTree::kInfinity;
   } else {
     return previous + increase;
   }
@@ -180,12 +158,13 @@ int IncreaseBy(int previous, int increase) {
 
 }  // namespace
 
-Alternative::Alternative(ZoneList<Tree*>* nodes) : nodes_(nodes) {
+RegExpAlternative::RegExpAlternative(ZoneList<RegExpTree*>* nodes)
+    : nodes_(nodes) {
   DCHECK_LT(1, nodes->length());
   min_match_ = 0;
   max_match_ = 0;
   for (int i = 0; i < nodes->length(); i++) {
-    Tree* node = nodes->at(i);
+    RegExpTree* node = nodes->at(i);
     int node_min_match = node->min_match();
     min_match_ = IncreaseBy(min_match_, node_min_match);
     int node_max_match = node->max_match();
@@ -193,8 +172,8 @@ Alternative::Alternative(ZoneList<Tree*>* nodes) : nodes_(nodes) {
   }
 }
 
-ClassSetOperand::ClassSetOperand(ZoneList<CharacterRange>* ranges,
-                                 CharacterClassStrings* strings)
+RegExpClassSetOperand::RegExpClassSetOperand(ZoneList<CharacterRange>* ranges,
+                                             CharacterClassStrings* strings)
     : ranges_(ranges), strings_(strings) {
   DCHECK_NOT_NULL(ranges);
   min_match_ = 0;
@@ -211,9 +190,9 @@ ClassSetOperand::ClassSetOperand(ZoneList<CharacterRange>* ranges,
   }
 }
 
-ClassSetExpression::ClassSetExpression(OperationType op, bool is_negated,
-                                       bool may_contain_strings,
-                                       ZoneList<Tree*>* operands)
+RegExpClassSetExpression::RegExpClassSetExpression(
+    OperationType op, bool is_negated, bool may_contain_strings,
+    ZoneList<RegExpTree*>* operands)
     : operation_(op),
       is_negated_(is_negated),
       may_contain_strings_(may_contain_strings),
@@ -234,25 +213,30 @@ ClassSetExpression::ClassSetExpression(OperationType op, bool is_negated,
 }
 
 // static
-ClassSetExpression* ClassSetExpression::Empty(Zone* zone, bool is_negated) {
+RegExpClassSetExpression* RegExpClassSetExpression::Empty(Zone* zone,
+                                                          bool is_negated) {
   ZoneList<CharacterRange>* ranges =
       zone->template New<ZoneList<CharacterRange>>(0, zone);
-  ClassSetOperand* op = zone->template New<ClassSetOperand>(ranges, nullptr);
-  ZoneList<Tree*>* operands = zone->template New<ZoneList<Tree*>>(1, zone);
+  RegExpClassSetOperand* op =
+      zone->template New<RegExpClassSetOperand>(ranges, nullptr);
+  ZoneList<RegExpTree*>* operands =
+      zone->template New<ZoneList<RegExpTree*>>(1, zone);
   operands->Add(op, zone);
-  return zone->template New<ClassSetExpression>(
-      ClassSetExpression::OperationType::kUnion, is_negated, false, operands);
+  return zone->template New<RegExpClassSetExpression>(
+      RegExpClassSetExpression::OperationType::kUnion, is_negated, false,
+      operands);
 }
 
-bool Text::StartsWithAtom() const {
+bool RegExpText::StartsWithAtom() const {
   if (elements_.length() == 0) return false;
   return elements_.at(0).text_type() == TextElement::ATOM;
 }
 
-Atom* Text::FirstAtom() const { return elements_.at(0).atom(); }
+RegExpAtom* RegExpText::FirstAtom() const { return elements_.at(0).atom(); }
 
-ClassRanges::ClassRanges(Zone* zone, ZoneList<CharacterRange>* ranges,
-                         ClassRanges::ClassRangesFlags class_ranges_flags)
+RegExpClassRanges::RegExpClassRanges(
+    Zone* zone, ZoneList<CharacterRange>* ranges,
+    RegExpClassRanges::ClassRangesFlags class_ranges_flags)
     : set_(ranges), class_ranges_flags_(class_ranges_flags) {
   // Convert the empty set of ranges to the negated Everything() range.
   if (ranges->is_empty()) {
@@ -275,6 +259,5 @@ ClassRanges::ClassRanges(Zone* zone, ZoneList<CharacterRange>* ranges,
   }
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8

@@ -14,7 +14,4 @@ specific_include_rules = {
     "+src/execution/isolate.h",
     "+src/heap/heap.h",
   ],
-  "task-runner\.cc": [
-    "+src/heap/local-heap-inl.h",
-  ],
 }

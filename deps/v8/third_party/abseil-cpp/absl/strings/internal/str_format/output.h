@@ -26,7 +26,6 @@
 #include <ostream>
 #include <string>
 
-#include "absl/base/config.h"
 #include "absl/base/port.h"
 #include "absl/strings/string_view.h"
 

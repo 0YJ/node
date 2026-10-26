@@ -40,8 +40,8 @@ assertFalse(strictEquals(undetectable, undefined));
 assertFalse(strictEquals(undetectable, normalObject));
 assertTrue(strictEquals(undetectable, undetectable));
 
-assertMaglevved(strictEquals);
+assertTrue(isMaglevved(strictEquals));
 
 // Passing an unexpected object deopts.
 assertFalse(strictEquals({}, ""));
-assertNotMaglevved(strictEquals);
+assertFalse(isMaglevved(strictEquals));

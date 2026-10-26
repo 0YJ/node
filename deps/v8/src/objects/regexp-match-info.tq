@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 @cppObjectLayoutDefinition
-extern class RegExpMatchInfo extends FixedArrayBase {
+extern class RegExpMatchInfo extends HeapObject {
   macro GetStartOfCapture(i: constexpr int31): Smi {
     return this.objects[i * 2];
   }
@@ -11,6 +11,7 @@ extern class RegExpMatchInfo extends FixedArrayBase {
     return this.objects[i * 2 + 1];
   }
 
+  const length: Smi;
   number_of_capture_registers: Smi;
   last_subject: String;
   last_input: Object;

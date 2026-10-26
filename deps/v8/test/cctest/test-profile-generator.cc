@@ -32,7 +32,6 @@
 #include "src/api/api-inl.h"
 #include "src/base/strings.h"
 #include "src/init/v8.h"
-#include "src/objects/abstract-code-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/profiler/cpu-profiler.h"
 #include "src/profiler/profile-generator-inl.h"
@@ -602,14 +601,13 @@ class MockPlatform final : public TestPlatform {
   }
 
   int posted_count() { return mock_task_runner_->posted_count(); }
-  void ClearTasks() { mock_task_runner_->ClearTasks(); }
 
  private:
   class MockTaskRunner : public v8::TaskRunner {
    public:
     void PostTaskImpl(std::unique_ptr<v8::Task> task,
                       const SourceLocation&) override {
-      tasks_.push_back(std::move(task));
+      task->Run();
       posted_count_++;
     }
 
@@ -632,16 +630,11 @@ class MockPlatform final : public TestPlatform {
     bool NonNestableDelayedTasksEnabled() const override { return true; }
 
     int posted_count() { return posted_count_; }
-    void ClearTasks() {
-      tasks_.clear();
-      task_.reset();
-    }
 
    private:
     int posted_count_ = 0;
     double delay_ = -1;
     std::unique_ptr<Task> task_;
-    std::vector<std::unique_ptr<v8::Task>> tasks_;
   };
 
   std::shared_ptr<MockTaskRunner> mock_task_runner_;
@@ -703,7 +696,6 @@ TEST_WITH_PLATFORM(MaxSamplesCallback, MockPlatform) {
 
   // Teardown
   profiles.StopProfiling(id);
-  platform.ClearTasks();
 }
 
 TEST(NoSamples) {
@@ -812,9 +804,8 @@ TEST(Issue51919) {
   }
   CHECK_EQ(CpuProfilingStatus::kErrorTooManyProfilers,
            collection.StartProfiling("maximum").status);
-  for (int i = 0; i < CpuProfilesCollection::kMaxSimultaneousProfiles; ++i) {
+  for (int i = 0; i < CpuProfilesCollection::kMaxSimultaneousProfiles; ++i)
     i::DeleteArray(titles[i]);
-  }
 }
 
 static const v8::CpuProfileNode* PickChild(const v8::CpuProfileNode* parent,
@@ -894,8 +885,9 @@ int GetFunctionLineNumber(CpuProfiler* profiler, LocalContext* env,
   i::DirectHandle<i::JSFunction> func = i::Cast<i::JSFunction>(
       v8::Utils::OpenDirectHandle(*v8::Local<v8::Function>::Cast(
           (*env)->Global()->Get(env->local(), v8_str(name)).ToLocalChecked())));
+  PtrComprCageBase cage_base(isolate);
   CodeEntry* func_entry = instruction_stream_map->FindEntry(
-      func->abstract_code(isolate)->InstructionStart());
+      func->abstract_code(isolate)->InstructionStart(cage_base));
   if (!func_entry) FATAL("%s", name);
   return func_entry->line_and_column().line;
 }

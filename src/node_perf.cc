@@ -4,7 +4,6 @@
 #include "histogram-inl.h"
 #include "memory_tracker-inl.h"
 #include "node_buffer.h"
-#include "node_errors.h"
 #include "node_external_reference.h"
 #include "node_internals.h"
 #include "node_process-inl.h"
@@ -15,7 +14,7 @@
 namespace node {
 namespace performance {
 
-using v8::BigInt;
+using v8::Array;
 using v8::Context;
 using v8::DontDelete;
 using v8::Function;
@@ -30,7 +29,6 @@ using v8::Object;
 using v8::ObjectTemplate;
 using v8::PropertyAttribute;
 using v8::ReadOnly;
-using v8::Uint32;
 using v8::Value;
 
 // Microseconds in a millisecond, as a float.
@@ -59,17 +57,7 @@ PerformanceState::PerformanceState(Isolate* isolate,
                 offsetof(performance_state_internal, observers),
                 NODE_PERFORMANCE_ENTRY_TYPE_INVALID,
                 root,
-                MAYBE_FIELD_PTR(info, observers)),
-      uv_metrics(isolate,
-                 offsetof(performance_state_internal, uv_metrics),
-                 3,
-                 root,
-                 MAYBE_FIELD_PTR(info, uv_metrics)),
-      uv_metrics_bigint(isolate,
-                        offsetof(performance_state_internal, uv_metrics_bigint),
-                        3,
-                        root,
-                        MAYBE_FIELD_PTR(info, uv_metrics_bigint)) {
+                MAYBE_FIELD_PTR(info, observers)) {
   if (info == nullptr) {
     // For performance states initialized from scratch, reset
     // all the milestones and initialize the time origin.
@@ -93,19 +81,9 @@ PerformanceState::SerializeInfo PerformanceState::Serialize(
   // We'll re-initialize them after deserialization.
   ResetMilestones();
 
-  // Do not retain runtime metrics in the snapshot.
-  for (size_t i = 0; i < uv_metrics.Length(); ++i) {
-    uv_metrics[i] = 0;
-  }
-  for (size_t i = 0; i < uv_metrics_bigint.Length(); ++i) {
-    uv_metrics_bigint[i] = 0;
-  }
-
   SerializeInfo info{root.Serialize(context, creator),
                      milestones.Serialize(context, creator),
-                     observers.Serialize(context, creator),
-                     uv_metrics.Serialize(context, creator),
-                     uv_metrics_bigint.Serialize(context, creator)};
+                     observers.Serialize(context, creator)};
   return info;
 }
 
@@ -127,8 +105,6 @@ void PerformanceState::Deserialize(v8::Local<v8::Context> context,
   root.Deserialize(context);
   milestones.Deserialize(context);
   observers.Deserialize(context);
-  uv_metrics.Deserialize(context);
-  uv_metrics_bigint.Deserialize(context);
 
   // Re-initialize the time origin and timestamp i.e. the process start time.
   Initialize(time_origin, time_origin_timestamp);
@@ -140,8 +116,6 @@ std::ostream& operator<<(std::ostream& o,
     << "  " << i.root << ",  // root\n"
     << "  " << i.milestones << ",  // milestones\n"
     << "  " << i.observers << ",  // observers\n"
-    << "  " << i.uv_metrics << ",  // uv_metrics\n"
-    << "  " << i.uv_metrics_bigint << ",  // uv_metrics_bigint\n"
     << "}";
   return o;
 }
@@ -242,41 +216,30 @@ void MarkGarbageCollectionEnd(
 
 void GarbageCollectionCleanupHook(void* data) {
   Environment* env = static_cast<Environment*>(data);
-  PerformanceState* state = env->performance_state();
-  if (!state->gc_tracking_installed) return;
   // Reset current_gc_type to 0
-  state->current_gc_type = 0;
+  env->performance_state()->current_gc_type = 0;
   env->isolate()->RemoveGCPrologueCallback(MarkGarbageCollectionStart, data);
   env->isolate()->RemoveGCEpilogueCallback(MarkGarbageCollectionEnd, data);
-  state->gc_tracking_installed = false;
 }
 
-// Registers the GC callbacks with V8 if and only if GC timing is needed,
-// i.e. there are 'gc' PerformanceObservers. This is idempotent, so it never
-// adds the callbacks twice or removes callbacks that are not registered.
-static void ReconcileGarbageCollectionTracking(Environment* env) {
-  PerformanceState* state = env->performance_state();
-  const bool wanted = state->observers[NODE_PERFORMANCE_ENTRY_TYPE_GC] > 0;
-  if (wanted == state->gc_tracking_installed) return;
-
-  if (wanted) {
-    // Reset current_gc_type to 0
-    state->current_gc_type = 0;
-    env->isolate()->AddGCPrologueCallback(MarkGarbageCollectionStart,
-                                          static_cast<void*>(env));
-    env->isolate()->AddGCEpilogueCallback(MarkGarbageCollectionEnd,
-                                          static_cast<void*>(env));
-    env->AddCleanupHook(GarbageCollectionCleanupHook, env);
-    state->gc_tracking_installed = true;
-  } else {
-    env->RemoveCleanupHook(GarbageCollectionCleanupHook, env);
-    GarbageCollectionCleanupHook(env);
-  }
-}
-
-static void UpdateGarbageCollectionTracking(
+static void InstallGarbageCollectionTracking(
     const FunctionCallbackInfo<Value>& args) {
-  ReconcileGarbageCollectionTracking(Environment::GetCurrent(args));
+  Environment* env = Environment::GetCurrent(args);
+  // Reset current_gc_type to 0
+  env->performance_state()->current_gc_type = 0;
+  env->isolate()->AddGCPrologueCallback(MarkGarbageCollectionStart,
+                                        static_cast<void*>(env));
+  env->isolate()->AddGCEpilogueCallback(MarkGarbageCollectionEnd,
+                                        static_cast<void*>(env));
+  env->AddCleanupHook(GarbageCollectionCleanupHook, env);
+}
+
+static void RemoveGarbageCollectionTracking(
+  const FunctionCallbackInfo<Value> &args) {
+  Environment* env = Environment::GetCurrent(args);
+
+  env->RemoveCleanupHook(GarbageCollectionCleanupHook, env);
+  GarbageCollectionCleanupHook(env);
 }
 
 // Notify a custom PerformanceEntry to observers
@@ -302,53 +265,31 @@ void LoopIdleTime(const FunctionCallbackInfo<Value>& args) {
 
 void UvMetricsInfo(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
   uv_metrics_t metrics;
   // uv_metrics_info always return 0
   CHECK_EQ(uv_metrics_info(env->event_loop(), &metrics), 0);
-  // libuv reports 64-bit counters. The doubles backing uvMetricsInfo are
-  // exact up to Number.MAX_SAFE_INTEGER, while the uint64_t values backing
-  // uvMetricsInfoBigInt carry the full range.
-  PerformanceState* state = env->performance_state();
-  const uint64_t values[] = {
-      metrics.loop_count, metrics.events, metrics.events_waiting};
-  for (size_t i = 0; i < arraysize(values); ++i) {
-    state->uv_metrics[i] = static_cast<double>(values[i]);
-    state->uv_metrics_bigint[i] = values[i];
-  }
+  Local<Value> data[] = {
+      Integer::New(isolate, metrics.loop_count),
+      Integer::New(isolate, metrics.events),
+      Integer::New(isolate, metrics.events_waiting),
+  };
+  Local<Array> arr = Array::New(env->isolate(), data, arraysize(data));
+  args.GetReturnValue().Set(arr);
 }
 
 void CreateELDHistogram(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   int64_t interval = args[0].As<Integer>()->Value();
   CHECK_GT(interval, 0);
-  CHECK(args[2]->IsBigInt());
-  CHECK(args[3]->IsBigInt());
-  CHECK(args[4]->IsUint32());
-  bool lossless = true;
-  const int64_t lowest = args[2].As<BigInt>()->Int64Value(&lossless);
-  CHECK(lossless);
-  const int64_t highest = args[3].As<BigInt>()->Int64Value(&lossless);
-  CHECK(lossless);
-  const int figures = static_cast<int>(args[4].As<Uint32>()->Value());
-
-  // The options are validated in JS, but hdr_init() still rejects some
-  // combinations, such as a very large lowest value.
-  std::shared_ptr<Histogram> histogram =
-      Histogram::Create(Histogram::Options{lowest, highest, figures});
-  if (!histogram) {
-    return THROW_ERR_INVALID_ARG_VALUE(env, "Invalid histogram options");
-  }
-
   if (args[1]->IsTrue()) {
-    BaseObjectPtr<IterationHistogram> eld =
-        IterationHistogram::Create(env, std::move(histogram));
-    if (eld) args.GetReturnValue().Set(eld->object());
+    BaseObjectPtr<IterationHistogram> histogram =
+        IterationHistogram::Create(env, Histogram::Options{1});
+    args.GetReturnValue().Set(histogram->object());
     return;
   }
-  BaseObjectPtr<IntervalHistogram> eld = IntervalHistogram::Create(
-      env,
-      interval,
-      [](Histogram& histogram) {
+  BaseObjectPtr<IntervalHistogram> histogram =
+      IntervalHistogram::Create(env, interval, [](Histogram& histogram) {
         uint64_t delta = histogram.RecordDelta();
         TRACE_COUNTER1(TRACING_CATEGORY_NODE2(perf, event_loop),
                         "delay", delta);
@@ -360,9 +301,8 @@ void CreateELDHistogram(const FunctionCallbackInfo<Value>& args) {
                       "mean", histogram.Mean());
         TRACE_COUNTER1(TRACING_CATEGORY_NODE2(perf, event_loop),
                       "stddev", histogram.Stddev());
-      },
-      std::move(histogram));
-  if (eld) args.GetReturnValue().Set(eld->object());
+      }, Histogram::Options { 1000 });
+  args.GetReturnValue().Set(histogram->object());
 }
 
 void MarkBootstrapComplete(const FunctionCallbackInfo<Value>& args) {
@@ -393,13 +333,16 @@ static void CreatePerIsolateProperties(IsolateData* isolate_data,
   Isolate* isolate = isolate_data->isolate();
 
   HistogramBase::Initialize(isolate_data, target);
-  SlidingWindowHistogram::Initialize(isolate_data, target);
 
   SetMethod(isolate, target, "setupObservers", SetupPerformanceObservers);
   SetMethod(isolate,
             target,
-            "updateGarbageCollectionTracking",
-            UpdateGarbageCollectionTracking);
+            "installGarbageCollectionTracking",
+            InstallGarbageCollectionTracking);
+  SetMethod(isolate,
+            target,
+            "removeGarbageCollectionTracking",
+            RemoveGarbageCollectionTracking);
   SetMethod(isolate, target, "notify", Notify);
   SetMethod(isolate, target, "loopIdleTime", LoopIdleTime);
   SetMethod(isolate, target, "createELDHistogram", CreateELDHistogram);
@@ -423,16 +366,6 @@ void CreatePerContextProperties(Local<Object> target,
   target->Set(context,
               FIXED_ONE_BYTE_STRING(isolate, "milestones"),
               state->milestones.GetJSArray()).Check();
-  target
-      ->Set(context,
-            FIXED_ONE_BYTE_STRING(isolate, "uvMetricsBuffer"),
-            state->uv_metrics.GetJSArray())
-      .Check();
-  target
-      ->Set(context,
-            FIXED_ONE_BYTE_STRING(isolate, "uvMetricsBigIntBuffer"),
-            state->uv_metrics_bigint.GetJSArray())
-      .Check();
 
   Local<Object> constants = Object::New(isolate);
 
@@ -476,7 +409,8 @@ void CreatePerContextProperties(Local<Object> target,
 
 void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(SetupPerformanceObservers);
-  registry->Register(UpdateGarbageCollectionTracking);
+  registry->Register(InstallGarbageCollectionTracking);
+  registry->Register(RemoveGarbageCollectionTracking);
   registry->Register(Notify);
   registry->Register(LoopIdleTime);
   registry->Register(CreateELDHistogram);
@@ -485,7 +419,6 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(SlowPerformanceNow);
   registry->Register(fast_performance_now);
   HistogramBase::RegisterExternalReferences(registry);
-  SlidingWindowHistogram::RegisterExternalReferences(registry);
   IntervalHistogram::RegisterExternalReferences(registry);
   IterationHistogram::RegisterExternalReferences(registry);
 }

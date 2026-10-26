@@ -5,7 +5,6 @@
 #include "src/snapshot/serializer-deserializer.h"
 
 #include "src/objects/embedder-data-array-inl.h"
-#include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/objects-inl.h"
 
 namespace v8 {
@@ -62,10 +61,6 @@ bool SerializerDeserializer::CanBeDeferred(Tagged<HeapObject> o,
   //   identify the object.
   // * ByteArray cannot be deferred as JSTypedArray needs the base_pointer
   //   ByteArray immediately if it's on heap.
-  // * JSArrayBuffer and JSTypedArray cannot be deferred because their
-  //   serializers may emit off-heap backing-store records before the object
-  //   itself. Deferred objects are serialized as top-level entries, where the
-  //   deserializer only expects NewObject or Synchronize bytecodes.
   // * Non-empty EmbdderDataArrays cannot be deferred because the serialize
   //   and deserialize callbacks need the back reference immediately to
   //   identify the object.
@@ -73,7 +68,7 @@ bool SerializerDeserializer::CanBeDeferred(Tagged<HeapObject> o,
   // were resolved after object post processing?
   return !IsInternalizedString(o) &&
          !(IsJSObject(o) && Cast<JSObject>(o)->GetEmbedderFieldCount() > 0) &&
-         !IsByteArray(o) && !IsJSArrayBuffer(o) && !IsJSTypedArray(o) &&
+         !IsByteArray(o) &&
          !(IsEmbedderDataArray(o) && Cast<EmbedderDataArray>(o)->length() > 0);
 }
 

@@ -9,7 +9,6 @@ export default [
       },
     },
     rules: {
-      'node-core/benchmark-n-config': 'error',
       'prefer-arrow-callback': 'error',
     },
   },

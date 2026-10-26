@@ -26,7 +26,6 @@ void SharedHeapDeserializer::DeserializeIntoIsolate() {
   IterateSharedHeapObjectCache(isolate(), this);
   DeserializeStringTable();
   DeserializeDeferredObjects();
-  PostProcessExposedTrustedObjects();
 
   if (should_rehash()) {
     // The hash seed has already been initialized in ReadOnlyDeserializer, thus
@@ -44,10 +43,10 @@ void SharedHeapDeserializer::DeserializeStringTable() {
   const int length = source()->GetUint30();
 
   // .. and the contents.
-  DirectHandleVector<InternalizedString> strings(isolate());
+  DirectHandleVector<String> strings(isolate());
   strings.reserve(length);
   for (int i = 0; i < length; ++i) {
-    strings.emplace_back(Cast<InternalizedString>(ReadObject()));
+    strings.emplace_back(Cast<String>(ReadObject()));
   }
 
   StringTable* t = isolate()->string_table();

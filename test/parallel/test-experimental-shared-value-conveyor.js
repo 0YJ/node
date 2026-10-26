@@ -1,23 +1,27 @@
 'use strict';
 const common = require('../common');
 const assert = require('assert');
-const { MessageChannel } = require('worker_threads');
+const { Worker, parentPort } = require('worker_threads');
 const { spawnSyncAndAssert } = require('../common/child_process');
 
 if (process.env.TEST_CHILD_PROCESS === '1') {
-  // --harmony-struct implies --shared-string-table. V8 currently does not
-  // support JSON.parse in worker isolates with that flag, and Node workers
-  // parse process.config during bootstrap.
-  const m = new globalThis.SharedArray(16);
-  const { port1, port2 } = new MessageChannel();
+  // Do not use isMainThread so that this test itself can be run inside a Worker.
+  if (!process.env.HAS_STARTED_WORKER) {
+    process.env.HAS_STARTED_WORKER = 1;
+    const m = new globalThis.SharedArray(16);
 
-  port1.once('message', common.mustCall((message) => {
-    assert.strictEqual(message, m);
-    port1.close();
-    port2.close();
-  }));
+    const worker = new Worker(__filename);
+    worker.once('message', common.mustCall((message) => {
+      assert.strictEqual(message, m);
+    }));
 
-  port2.postMessage(m);
+    worker.postMessage(m);
+  } else {
+    parentPort.once('message', common.mustCall((message) => {
+      // Simple echo.
+      parentPort.postMessage(message);
+    }));
+  }
 } else {
   if (process.config.variables.v8_enable_pointer_compression === 1) {
     common.skip('--harmony-struct cannot be used with pointer compression');

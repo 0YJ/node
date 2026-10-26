@@ -12,7 +12,6 @@
 #include "include/v8config.h"
 #include "src/base/logging.h"
 #include "src/common/globals.h"
-#include "src/common/synchronization-point-support.h"
 #include "src/execution/isolate-inl.h"
 #include "src/flags/flags.h"
 #include "src/heap/base-page.h"
@@ -39,7 +38,6 @@
 #include "src/heap/minor-mark-sweep.h"
 #include "src/heap/mutable-page.h"
 #include "src/heap/object-lock.h"
-#include "src/heap/pending-allocations.h"
 #include "src/heap/pretenuring-handler.h"
 #include "src/heap/weak-object-worklists.h"
 #include "src/heap/young-generation-marking-visitor.h"
@@ -255,10 +253,10 @@ class ConcurrentMarking::JobTaskMajor : public v8::JobTask {
                                     mark_compact_epoch_,
                                     should_keep_ages_unchanged_);
     } else {
-      TRACE_GC_EPOCH_WITH_FLOW(
-          concurrent_marking_->heap_->tracer(),
-          GCTracer::Scope::MC_BACKGROUND_MARKING, ThreadKind::kBackground,
-          perfetto::TerminatingFlow::ProcessScoped(trace_id_));
+      TRACE_GC_EPOCH_WITH_FLOW(concurrent_marking_->heap_->tracer(),
+                               GCTracer::Scope::MC_BACKGROUND_MARKING,
+                               ThreadKind::kBackground, trace_id_,
+                               TRACE_EVENT_FLAG_FLOW_IN);
       concurrent_marking_->RunMajor(delegate, code_flush_mode_,
                                     mark_compact_epoch_,
                                     should_keep_ages_unchanged_);
@@ -298,15 +296,15 @@ class ConcurrentMarking::JobTaskMinor : public v8::JobTask {
 
     if (delegate->IsJoiningThread()) {
       TRACE_GC_WITH_FLOW(concurrent_marking_->heap_->tracer(),
-                         GCTracer::Scope::MINOR_MS_MARK_PARALLEL,
-                         perfetto::TerminatingFlow::ProcessScoped(trace_id_));
+                         GCTracer::Scope::MINOR_MS_MARK_PARALLEL, trace_id_,
+                         TRACE_EVENT_FLAG_FLOW_IN);
       // TRACE_GC is not needed here because the caller opens the right scope.
       concurrent_marking_->RunMinor(delegate);
     } else {
-      TRACE_GC_EPOCH_WITH_FLOW(
-          concurrent_marking_->heap_->tracer(),
-          GCTracer::Scope::MINOR_MS_BACKGROUND_MARKING, ThreadKind::kBackground,
-          perfetto::TerminatingFlow::ProcessScoped(trace_id_));
+      TRACE_GC_EPOCH_WITH_FLOW(concurrent_marking_->heap_->tracer(),
+                               GCTracer::Scope::MINOR_MS_BACKGROUND_MARKING,
+                               ThreadKind::kBackground, trace_id_,
+                               TRACE_EVENT_FLAG_FLOW_IN);
       concurrent_marking_->RunMinor(delegate);
     }
   }
@@ -345,17 +343,15 @@ ConcurrentMarking::ConcurrentMarking(Heap* heap, WeakObjects* weak_objects)
   // Concurrent marking requires atomic object field writes.
   CHECK(!v8_flags.concurrent_marking);
 #endif
-  uint32_t max_tasks;
+  int max_tasks;
   if (v8_flags.concurrent_marking_max_worker_num == 0) {
-    int num_threads = V8::GetCurrentPlatform()->NumberOfWorkerThreads();
-    DCHECK_GE(num_threads, 0);
-    max_tasks = static_cast<uint32_t>(num_threads);
+    max_tasks = V8::GetCurrentPlatform()->NumberOfWorkerThreads();
   } else {
     max_tasks = v8_flags.concurrent_marking_max_worker_num;
   }
 
   task_state_.reserve(max_tasks + 1);
-  for (uint32_t i = 0; i <= max_tasks; ++i) {
+  for (int i = 0; i <= max_tasks; ++i) {
     task_state_.emplace_back(std::make_unique<TaskState>());
   }
 }
@@ -368,16 +364,13 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
                                  bool should_keep_ages_unchanged) {
   size_t kBytesUntilInterruptCheck = 64 * KB;
   int kObjectsUntilInterruptCheck = 1000;
-
-  const bool is_joining_thread = delegate->IsJoiningThread();
-  SYNCHRONIZATION_POINT(is_joining_thread ? "ConcurrentMarkerMajorMainThread"
-                                          : "ConcurrentMarkerMajorBgThread");
-
   uint8_t task_id = delegate->GetTaskId() + 1;
   TaskState* task_state = task_state_[task_id].get();
   auto* cpp_heap = CppHeap::From(heap_->cpp_heap());
   MarkingWorklists::Local local_marking_worklists(
-      marking_worklists_, cpp_heap->CreateCppMarkingState());
+      marking_worklists_, cpp_heap
+                              ? cpp_heap->CreateCppMarkingState()
+                              : MarkingWorklists::Local::kNoCppMarkingState);
   WeakObjects::Local local_weak_objects(weak_objects_);
   ConcurrentMarkingVisitor visitor(
       &local_marking_worklists, &local_weak_objects, heap_, mark_compact_epoch,
@@ -395,9 +388,9 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
                                 task_id);
   }
   bool another_ephemeron_iteration = false;
-  YoungPendingAllocations* const young_pending_allocations =
-      heap_->young_pending_allocations();
-  YoungPendingAllocations::Snapshot young_pending_snapshot;
+  MainAllocator* const new_space_allocator =
+      heap_->use_new_space() ? heap_->allocator()->new_space_allocator()
+                             : nullptr;
 
   {
     TimedScope scope(&time_ms);
@@ -423,22 +416,30 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
           done = true;
           break;
         }
-        SYNCHRONIZATION_POINT_TEST_ONLY(
-            is_joining_thread ? "ConcurrentMarkerMajorPerItemMainThread"
-                              : "ConcurrentMarkerMajorPerItemBgThread");
         DCHECK(!HeapLayout::InReadOnlySpace(object));
         DCHECK_EQ(HeapUtils::GetOwnerHeap(object), heap_);
         objects_processed++;
 
-        young_pending_allocations->UpdateSnapshotIfOutdated(
-            &young_pending_snapshot);
+        Address new_space_top = kNullAddress;
+        Address new_space_limit = kNullAddress;
+        Address new_large_object = kNullAddress;
+
+        if (new_space_allocator) {
+          std::tie(new_space_top, new_space_limit) =
+              new_space_allocator->GetOriginalTopAndLimit();
+        }
+
+        if (heap_->new_lo_space()) {
+          new_large_object = heap_->new_lo_space()->pending_object();
+        }
 
         Address addr = object.address();
 
-        if (young_pending_snapshot.Contains(addr)) {
+        if ((new_space_top <= addr && addr < new_space_limit) ||
+            addr == new_large_object) {
           local_marking_worklists.PushOnHold(object);
         } else {
-          Tagged<Map> map = object->map(kAcquireLoad);
+          Tagged<Map> map = object->map(cage_base, kAcquireLoad);
           // The marking worklist should never contain filler objects.
           CHECK(!IsFreeSpaceOrFillerMap(map));
           if (is_per_context_mode) {
@@ -494,26 +495,42 @@ void ConcurrentMarking::RunMajor(JobDelegate* delegate,
   DCHECK(task_state->local_pretenuring_feedback.empty());
 }
 
+namespace {
+
+V8_INLINE bool IsYoungObjectInLab(MainAllocator* new_space_allocator,
+                                  NewLargeObjectSpace* new_lo_space,
+                                  Tagged<HeapObject> heap_object) {
+  // The order of the two loads is important.
+  auto [new_space_top, new_space_limit] =
+      new_space_allocator->GetOriginalTopAndLimit();
+  Address new_large_object = new_lo_space->pending_object();
+
+  Address addr = heap_object.address();
+
+  return (new_space_top <= addr && addr < new_space_limit) ||
+         addr == new_large_object;
+}
+
+}  // namespace
 
 template <YoungGenerationMarkingVisitationMode marking_mode>
 V8_INLINE size_t ConcurrentMarking::RunMinorImpl(JobDelegate* delegate,
                                                  TaskState* task_state) {
   static constexpr size_t kBytesUntilInterruptCheck = 64 * KB;
   static constexpr int kObjectsUntilInterruptCheck = 1000;
-  [[maybe_unused]] const bool is_joining_thread = delegate->IsJoiningThread();
   size_t marked_bytes = 0;
   size_t current_marked_bytes = 0;
   int objects_processed = 0;
-  YoungPendingAllocations* const young_pending_allocations =
-      heap_->young_pending_allocations();
-  YoungPendingAllocations::Snapshot young_pending_snapshot;
   YoungGenerationMarkingVisitor<marking_mode> visitor(
-      heap_, &task_state->local_pretenuring_feedback, &young_pending_snapshot);
+      heap_, &task_state->local_pretenuring_feedback);
   YoungGenerationRememberedSetsMarkingWorklist::Local remembered_sets(
       heap_->minor_mark_sweep_collector()->remembered_sets_marking_handler());
   auto& marking_worklists_local = visitor.marking_worklists_local();
   Isolate* isolate = heap_->isolate();
   minor_marking_state_->MarkerStarted();
+  MainAllocator* const new_space_allocator =
+      heap_->allocator()->new_space_allocator();
+  NewLargeObjectSpace* const new_lo_space = heap_->new_lo_space();
 
   do {
     if (delegate->IsJoiningThread()) {
@@ -524,15 +541,10 @@ V8_INLINE size_t ConcurrentMarking::RunMinorImpl(JobDelegate* delegate,
                    GCTracer::Scope::MINOR_MS_BACKGROUND_MARKING_CLOSURE,
                    ThreadKind::kBackground);
     while (marking_worklists_local.Pop(&heap_object)) {
-      SYNCHRONIZATION_POINT_TEST_ONLY(
-          is_joining_thread ? "ConcurrentMarkerMinorPerItemMainThread"
-                            : "ConcurrentMarkerMinorPerItemBgThread");
-      young_pending_allocations->UpdateSnapshotIfOutdated(
-          &young_pending_snapshot);
-      if (young_pending_snapshot.Contains(heap_object->address())) {
+      if (IsYoungObjectInLab(new_space_allocator, new_lo_space, heap_object)) {
         visitor.marking_worklists_local().PushOnHold(heap_object);
       } else {
-        Tagged<Map> map = heap_object->map();
+        Tagged<Map> map = heap_object->map(isolate);
         const auto visited_size = visitor.Visit(map, heap_object);
         if (visited_size) {
           current_marked_bytes += visited_size;
@@ -696,8 +708,8 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
         heap_->mark_compact_collector()->code_flush_mode(),
         heap_->ShouldCurrentGCKeepAgesUnchanged());
     current_job_trace_id_.emplace(job->trace_id());
-    TRACE_GC_NOTE_WITH_FLOW("Major concurrent marking started",
-                            perfetto::Flow::ProcessScoped(job->trace_id()));
+    TRACE_GC_NOTE_WITH_FLOW("Major concurrent marking started", job->trace_id(),
+                            TRACE_EVENT_FLAG_FLOW_OUT);
     job_handle_ = V8::GetCurrentPlatform()->PostJob(priority, std::move(job));
   } else {
     DCHECK(garbage_collector == GarbageCollector::MINOR_MARK_SWEEPER);
@@ -707,8 +719,8 @@ void ConcurrentMarking::TryScheduleJob(GarbageCollector garbage_collector,
         heap_->minor_mark_sweep_collector()->marking_worklists();
     auto job = std::make_unique<JobTaskMinor>(this);
     current_job_trace_id_.emplace(job->trace_id());
-    TRACE_GC_NOTE_WITH_FLOW("Minor concurrent marking started",
-                            perfetto::Flow::ProcessScoped(job->trace_id()));
+    TRACE_GC_NOTE_WITH_FLOW("Minor concurrent marking started", job->trace_id(),
+                            TRACE_EVENT_FLAG_FLOW_OUT);
     job_handle_ = V8::GetCurrentPlatform()->PostJob(priority, std::move(job));
   }
   DCHECK(job_handle_->IsValid());
@@ -758,15 +770,15 @@ void ConcurrentMarking::RescheduleJobIfNeeded(
       heap_->minor_mark_sweep_collector()->local_marking_worklists()->Publish();
     }
     if (!IsWorkLeft()) return;
-    if (priority != TaskPriority::kUserVisible) {
+    if (priority != TaskPriority::kUserVisible)
       job_handle_->UpdatePriority(priority);
-    }
     DCHECK(current_job_trace_id_.has_value());
     TRACE_GC_NOTE_WITH_FLOW(
         garbage_collector_ == GarbageCollector::MARK_COMPACTOR
             ? "Major concurrent marking rescheduled"
             : "Minor concurrent marking rescheduled",
-        perfetto::Flow::ProcessScoped(current_job_trace_id_.value()));
+        current_job_trace_id_.value(),
+        TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
     job_handle_->NotifyConcurrencyIncrease();
   }
 }
@@ -804,11 +816,11 @@ bool ConcurrentMarking::Pause() {
 
   job_handle_->Cancel();
   DCHECK(current_job_trace_id_.has_value());
-  TRACE_GC_NOTE_WITH_FLOW(
-      garbage_collector_ == GarbageCollector::MARK_COMPACTOR
-          ? "Major concurrent marking paused"
-          : "Minor concurrent marking paused",
-      perfetto::Flow::ProcessScoped(current_job_trace_id_.value()));
+  TRACE_GC_NOTE_WITH_FLOW(garbage_collector_ == GarbageCollector::MARK_COMPACTOR
+                              ? "Major concurrent marking paused"
+                              : "Minor concurrent marking paused",
+                          current_job_trace_id_.value(),
+                          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
   return true;
 }
 
@@ -821,11 +833,11 @@ bool ConcurrentMarking::IsStopped() {
 void ConcurrentMarking::Resume() {
   DCHECK(garbage_collector_.has_value());
   DCHECK(current_job_trace_id_.has_value());
-  TRACE_GC_NOTE_WITH_FLOW(
-      garbage_collector_ == GarbageCollector::MARK_COMPACTOR
-          ? "Major concurrent marking resumed"
-          : "Minor concurrent marking resumed",
-      perfetto::Flow::ProcessScoped(current_job_trace_id_.value()));
+  TRACE_GC_NOTE_WITH_FLOW(garbage_collector_ == GarbageCollector::MARK_COMPACTOR
+                              ? "Major concurrent marking resumed"
+                              : "Minor concurrent marking resumed",
+                          current_job_trace_id_.value(),
+                          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
   RescheduleJobIfNeeded(garbage_collector_.value());
 }
 

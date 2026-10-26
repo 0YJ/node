@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --experimental-wasm-type-reflection
+
 utils.load('test/inspector/wasm-inspector-test.js');
 
 let {session, contextGroup, Protocol} = InspectorTest.start(
@@ -63,11 +65,9 @@ async function printPauseLocationsAndContinue(msg) {
 
 async function instantiateWasm() {
   var builder = new WasmModuleBuilder();
-  let imported_func = builder.addImport('import', 'func0', kSig_i_ii);
-  builder.addExport('func0', imported_func);
   builder.startRecGroup();
   let struct_type = builder.addStruct([makeField(kWasmI32, false)]);
-  let array_type = builder.addArray(kWasmI32, {mutable: false});
+  let array_type = builder.addArray(kWasmI32);
   let imported_ref_table =
       builder.addImportedTable('import', 'any_table', 4, 4, kWasmAnyRef);
   let imported_func_table =
@@ -149,7 +149,6 @@ async function instantiateWasm() {
 
   InspectorTest.log('Calling instantiate function.');
   let imports = `{'import' : {
-      'func0': (a, b) => a * b,
       'any_table': (() => {
         let js_table =
             new WebAssembly.Table({element: 'anyref', initial: 4, maximum: 4});
@@ -159,6 +158,9 @@ async function instantiateWasm() {
       'func_table': (() => {
         let func_table =
             new WebAssembly.Table({element: 'anyfunc', initial: 3, maximum: 3});
+        func_table.set(0, new WebAssembly.Function(
+          {parameters:['i32', 'i32'], results: ['i32']},
+          function /*anonymous*/ (a, b) { return a * b; }));
         return func_table;
       })(),
     }}`;
@@ -167,7 +169,9 @@ async function instantiateWasm() {
   await WasmInspectorTest.evalWithUrl(
     'instance.exports.fill_tables();', 'fill_tables');
   await WasmInspectorTest.evalWithUrl(
-      `instance.exports.exported_func_table.set(0, instance.exports.func0)`,
+      `instance.exports.exported_func_table.set(0, new WebAssembly.Function(
+          {parameters:['i32', 'i32'], results: ['i32']},
+          function external_fct(a, b) { return a * b; }))`,
       'add_func_to_table');
   InspectorTest.log('Tables populated.');
 }

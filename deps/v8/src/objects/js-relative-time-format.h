@@ -30,7 +30,11 @@ class RelativeDateTimeFormatter;
 namespace v8 {
 namespace internal {
 
-V8_OBJECT class JSRelativeTimeFormat : public JSObject {
+#include "torque-generated/src/objects/js-relative-time-format-tq.inc"
+
+class JSRelativeTimeFormat
+    : public TorqueGeneratedJSRelativeTimeFormat<JSRelativeTimeFormat,
+                                                 JSObject> {
  public:
   // Creates relative time format object with properties derived from input
   // locales and options.
@@ -43,12 +47,12 @@ V8_OBJECT class JSRelativeTimeFormat : public JSObject {
 
   Handle<String> NumericAsString(Isolate* isolate) const;
 
-  // https://tc39.es/ecma402/#sec-Intl.RelativeTimeFormat.prototype.format
+  // ecma402/#sec-Intl.RelativeTimeFormat.prototype.format
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<String> Format(
       Isolate* isolate, Handle<Object> value_obj, Handle<Object> unit_obj,
       DirectHandle<JSRelativeTimeFormat> format);
 
-  // https://tc39.es/ecma402/#sec-Intl.RelativeTimeFormat.prototype.formatToParts
+  // ecma402/#sec-Intl.RelativeTimeFormat.prototype.formatToParts
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSArray> FormatToParts(
       Isolate* isolate, Handle<Object> value_obj, Handle<Object> unit_obj,
       DirectHandle<JSRelativeTimeFormat> format);
@@ -56,27 +60,13 @@ V8_OBJECT class JSRelativeTimeFormat : public JSObject {
   V8_EXPORT_PRIVATE static const std::set<std::string>& GetAvailableLocales();
 
   // RelativeTimeFormat accessors.
-  inline Tagged<String> locale() const;
-  inline void set_locale(Tagged<String> value,
-                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<String> numberingSystem() const;
-  inline void set_numberingSystem(Tagged<String> value,
-                                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Managed<icu::RelativeDateTimeFormatter>> icu_formatter() const;
-  inline void set_icu_formatter(
-      Tagged<Managed<icu::RelativeDateTimeFormatter>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int flags() const;
-  inline void set_flags(int value);
+  DECL_ACCESSORS(icu_formatter, Tagged<Managed<icu::RelativeDateTimeFormatter>>)
 
   // Numeric: identifying whether numerical descriptions are always used, or
   // used only when no more specific version is available (e.g., "1 day ago" vs
   // "yesterday").
   //
-  // https://tc39.es/ecma402/#sec-properties-of-intl-relativetimeformat-instances
+  // ecma402/#sec-properties-of-intl-relativetimeformat-instances
   enum class Numeric {
     ALWAYS,  // numerical descriptions are always used ("1 day ago")
     AUTO     // numerical descriptions are used only when no more specific
@@ -86,26 +76,15 @@ V8_OBJECT class JSRelativeTimeFormat : public JSObject {
   inline Numeric numeric() const;
 
   // Bit positions in |flags|.
-  using NumericBit =
-      base::BitField<JSRelativeTimeFormat::Numeric, 0, 1, uint32_t>;
+  DEFINE_TORQUE_GENERATED_JS_RELATIVE_TIME_FORMAT_FLAGS()
 
   static_assert(NumericBit::is_valid(Numeric::AUTO));
   static_assert(NumericBit::is_valid(Numeric::ALWAYS));
 
   DECL_PRINTER(JSRelativeTimeFormat)
-  DECL_VERIFIER(JSRelativeTimeFormat)
 
-  static const int kHeaderSize;
-
- public:
-  TaggedMember<String> locale_;
-  TaggedMember<String> numberingSystem_;
-  TaggedMember<Foreign> icu_formatter_;
-  TaggedMember<Smi> flags_;
-} V8_OBJECT_END;
-
-inline constexpr int JSRelativeTimeFormat::kHeaderSize =
-    sizeof(JSRelativeTimeFormat);
+  TQ_OBJECT_CONSTRUCTORS(JSRelativeTimeFormat)
+};
 
 }  // namespace internal
 }  // namespace v8

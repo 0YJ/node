@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -85,43 +85,43 @@ class LIEF_API Header : public Object {
   ~Header() override;
 
   private:
-  magic_t magic_{};
-  art_version_t version_ = 0;
+  magic_t       magic_;
+  art_version_t version_;
 
-  uint32_t image_begin_ = 0;
-  uint32_t image_size_ = 0;
+  uint32_t image_begin_;
+  uint32_t image_size_;
 
-  uint32_t oat_checksum_ = 0;
+  uint32_t oat_checksum_;
 
-  uint32_t oat_file_begin_ = 0;
-  uint32_t oat_file_end_ = 0;
+  uint32_t oat_file_begin_;
+  uint32_t oat_file_end_;
 
-  uint32_t oat_data_begin_ = 0;
-  uint32_t oat_data_end_ = 0;
+  uint32_t oat_data_begin_;
+  uint32_t oat_data_end_;
 
-  int32_t patch_delta_ = 0;
-  uint32_t image_roots_ = 0;
+  int32_t patch_delta_;
+  uint32_t image_roots_;
 
-  uint32_t pointer_size_ = 0;
+  uint32_t pointer_size_;
 
-  bool compile_pic_ = false;
+  bool compile_pic_;
 
-  uint32_t nb_sections_ = 0;
-  uint32_t nb_methods_ = 0;
+  uint32_t nb_sections_;
+  uint32_t nb_methods_;
 
-  bool is_pic_ = false;
+  bool is_pic_;
 
   // From ART 29
   // ===========
-  uint32_t boot_image_begin_ = 0;
-  uint32_t boot_image_size_ = 0;
+  uint32_t boot_image_begin_;
+  uint32_t boot_image_size_;
 
-  uint32_t boot_oat_begin_ = 0;
-  uint32_t boot_oat_size_ = 0;
+  uint32_t boot_oat_begin_;
+  uint32_t boot_oat_size_;
 
-  STORAGE_MODES storage_mode_ = STORAGE_MODES::STORAGE_UNCOMPRESSED;
+  STORAGE_MODES storage_mode_;
 
-  uint32_t data_size_ = 0;
+  uint32_t data_size_;
 };
 
 } // Namespace ART

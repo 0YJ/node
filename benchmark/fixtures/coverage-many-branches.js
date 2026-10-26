@@ -30,7 +30,7 @@ class CoveredClass {
   }
 }
 
-// Exercise coverage of functions:
+// Excercise coverage of functions:
 function add(x, y) {
   const mt = new CoveredClass(x, y);
   return mt.add();

@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,11 +26,7 @@ namespace types {
 /// instance -- to represent integers or primitive types.
 class LIEF_API Base : public Type {
   public:
-  template<typename... Args,
-           typename = typename std::
-               enable_if<std::is_constructible<Type, Args&&...>::value>::type>
-  Base(Args&&... args) :
-    Type(std::forward<Args>(args)...) {}
+  using Type::Type;
 
   enum class ENCODING {
     NONE = 0,
@@ -57,12 +53,6 @@ class LIEF_API Base : public Type {
     ADDRESS,
   };
 
-  Base(const Base&) = delete;
-  Base& operator=(const Base&) = delete;
-
-  Base(Base&&) noexcept = default;
-  Base& operator=(Base&&) noexcept = default;
-
   static bool classof(const Type* type) {
     return type->kind() == Type::KIND::BASE;
   }
@@ -77,3 +67,5 @@ class LIEF_API Base : public Type {
 }
 }
 #endif
+
+

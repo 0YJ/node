@@ -16,7 +16,9 @@ const {
 } = require('../common/crypto');
 const fips3 = hasFIPS(3);
 const fips35 = hasFIPS(3, 5);
+const fips30 = fips3 && !fips35;
 const fips4 = hasFIPS(4);
+const fipsDigestErrorCode = 'ERR_OSSL_DIGEST_NOT_ALLOWED';
 const wrongPassphrase = 'wrong-password';
 
 // Test certificates
@@ -25,38 +27,70 @@ const keyPem = fixtures.readKey('rsa_private.pem');
 const rsaKeySize = 2048;
 const rsaPubPem = fixtures.readKey('rsa_public.pem', 'ascii');
 const rsaKeyPem = fixtures.readKey('rsa_private.pem', 'ascii');
-// Fixed ciphertexts keep wrong passwords from occasionally producing valid
-// padding and a decoder error instead of the expected bad decrypt.
-const rsaKeyPemEncrypted = fixtures.readKey(
+const rsaKeyPemEncryptedLegacy = fixtures.readKey(
   'rsa_private_encrypted.pem', 'ascii');
+const rsaKeyPemEncrypted = fips3 ?
+  crypto.createPrivateKey(rsaKeyPem).export({
+    type: 'pkcs8',
+    format: 'pem',
+    cipher: 'aes-256-cbc',
+    passphrase: 'password',
+  }) : rsaKeyPemEncryptedLegacy;
 const dsaPubPem = fixtures.readKey('dsa_public.pem', 'ascii');
 const dsaKeyPem = fixtures.readKey('dsa_private.pem', 'ascii');
-const dsaKeyPemEncrypted = fixtures.readKey(
+const dsaKeyPemEncryptedLegacy = fixtures.readKey(
   'dsa_private_encrypted.pem', 'ascii');
+const dsaKeyPemEncrypted = fips3 ?
+  crypto.createPrivateKey(dsaKeyPem).export({
+    type: 'pkcs8',
+    format: 'pem',
+    cipher: 'aes-256-cbc',
+    passphrase: 'password',
+  }) : dsaKeyPemEncryptedLegacy;
 const rsaPkcs8KeyPem = fixtures.readKey('rsa_private_pkcs8.pem');
 const dsaPkcs8KeyPem = fixtures.readKey('dsa_private_pkcs8.pem');
 
 const ec = new TextEncoder();
 
+if (fips3) {
+  for (const key of [rsaKeyPemEncryptedLegacy, dsaKeyPemEncryptedLegacy]) {
+    assert.throws(() => crypto.createPrivateKey({
+      key,
+      passphrase: 'password',
+    }), {
+      code: 'ERR_OSSL_EVP_UNSUPPORTED',
+    });
+  }
+}
+
+const openssl1DecryptError = {
+  message: 'error:06065064:digital envelope routines:EVP_DecryptFinal_ex:' +
+    'bad decrypt',
+  code: 'ERR_OSSL_EVP_BAD_DECRYPT',
+  reason: 'bad decrypt',
+  function: 'EVP_DecryptFinal_ex',
+  library: 'digital envelope routines',
+};
+
 const decryptError = fips4 ?
-  { code: 'ERR_OSSL_BAD_DECRYPT' } :
-  isBoringSSL ? {
-    message: 'error:1e000065:Cipher functions:OPENSSL_internal:BAD_DECRYPT',
-    code: 'ERR_OSSL_BAD_DECRYPT',
-    reason: 'BAD_DECRYPT',
-    function: 'OPENSSL_internal',
-    library: 'Cipher functions',
-  } : {
-    message: 'error:1C800064:Provider routines::bad decrypt',
-  };
+  { code: 'ERR_OSSL_BAD_DECRYPT' } : hasOpenSSL(3) ?
+    { message: 'error:1C800064:Provider routines::bad decrypt' } :
+    isBoringSSL ? {
+      message: 'error:1e000065:Cipher functions:OPENSSL_internal:BAD_DECRYPT',
+      code: 'ERR_OSSL_BAD_DECRYPT',
+      reason: 'BAD_DECRYPT',
+      function: 'OPENSSL_internal',
+      library: 'Cipher functions',
+    } :
+      openssl1DecryptError;
 
 const decryptPrivateKeyError = fips4 ? {
   code: 'ERR_OSSL_BAD_DECRYPT',
+} : hasOpenSSL(3) ? {
+  message: 'error:1C800064:Provider routines::bad decrypt',
 } : isBoringSSL ? {
   message: 'error:1e000065:Cipher functions:OPENSSL_internal:BAD_DECRYPT',
-} : {
-  message: 'error:1C800064:Provider routines::bad decrypt',
-};
+} : openssl1DecryptError;
 
 function getBufferCopy(buf) {
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
@@ -157,8 +191,10 @@ function getBufferCopy(buf) {
   }, encryptedBuffer);
   assert.strictEqual(decryptedBufferWithPassword.toString(), input);
 
-  // BoringSSL does not apply OpenSSL's rsa_check_padding validation here.
-  if (isBoringSSL) {
+  // Now with RSA_NO_PADDING. Plaintext needs to match key size.
+  // OpenSSL 3.x has a rsa_check_padding that will cause an error if
+  // RSA_NO_PADDING is used.
+  if (!hasOpenSSL(3)) {
     {
       const plaintext = 'x'.repeat(rsaKeySize / 8);
       encryptedBuffer = crypto.privateEncrypt({
@@ -528,6 +564,21 @@ if (!isBoringSSL) {
 
   assert.strictEqual(verify.verify(dsaPubPem, signature, 'hex'), true);
 
+  // Test the legacy 'DSS1' name.
+  const sign2 = crypto.createSign('DSS1');
+  sign2.update(input);
+  if (fips30) {
+    assert.throws(() => sign2.sign(dsaKeyPem, 'hex'), {
+      code: fipsDigestErrorCode,
+    });
+  } else {
+    const signature2 = sign2.sign(dsaKeyPem, 'hex');
+
+    const verify2 = crypto.createVerify('DSS1');
+    verify2.update(input);
+
+    assert.strictEqual(verify2.verify(dsaPubPem, signature2, 'hex'), true);
+  }
 } else {
   common.printSkipMessage('Skipping unsupported DSA test case');
 }

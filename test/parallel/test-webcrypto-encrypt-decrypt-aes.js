@@ -5,7 +5,7 @@ const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
-const { isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL } = require('../common/crypto');
 
 const assert = require('assert');
 const { getFips } = require('crypto');
@@ -230,7 +230,7 @@ async function testDecrypt({ keyBuffer, algorithm, result }) {
 }
 
 // Test aes-ocb vectors
-if (!isBoringSSL) {
+if (hasOpenSSL(3)) {
   const {
     passing,
     failing,
@@ -241,7 +241,8 @@ if (!isBoringSSL) {
     if (getFips() === 1) {
       await assert.rejects(
         testEncrypt(passing[0]),
-        { name: 'NotSupportedError', message: 'Unrecognized algorithm name' });
+        (err) => err.name === 'OperationError' &&
+                 err.cause?.code === 'ERR_OSSL_EVP_UNSUPPORTED');
       return;
     }
 

@@ -26,9 +26,9 @@ pub fn expand_derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<To
     replace_receiver(input);
 
     let ctxt = Ctxt::new();
-    let Some(cont) = Container::from_ast(&ctxt, input, Derive::Deserialize, &private.ident())
-    else {
-        return Err(ctxt.check().unwrap_err());
+    let cont = match Container::from_ast(&ctxt, input, Derive::Deserialize, &private.ident()) {
+        Some(cont) => cont,
+        None => return Err(ctxt.check().unwrap_err()),
     };
     precondition(&ctxt, &cont);
     ctxt.check()?;
@@ -75,7 +75,10 @@ pub fn expand_derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<To
         }
     };
 
-    Ok(dummy::wrap_in_const(cont.attrs.custom_serde_path(), impl_block))
+    Ok(dummy::wrap_in_const(
+        cont.attrs.custom_serde_path(),
+        impl_block,
+    ))
 }
 
 fn precondition(cx: &Ctxt, cont: &Container) {
@@ -87,7 +90,10 @@ fn precondition_sized(cx: &Ctxt, cont: &Container) {
     if let Data::Struct(_, fields) = &cont.data {
         if let Some(last) = fields.last() {
             if let syn::Type::Slice(_) = ungroup(last.ty) {
-                cx.error_spanned_by(cont.original, "cannot deserialize a dynamically sized struct");
+                cx.error_spanned_by(
+                    cont.original,
+                    "cannot deserialize a dynamically sized struct",
+                );
             }
         }
     }
@@ -145,7 +151,15 @@ impl Parameters {
         let has_getter = cont.data.has_getter();
         let is_packed = cont.attrs.is_packed();
 
-        Parameters { local, this_type, this_value, generics, borrowed, has_getter, is_packed }
+        Parameters {
+            local,
+            this_type,
+            this_value,
+            generics,
+            borrowed,
+            has_getter,
+            is_packed,
+        }
     }
 
     /// Type name to use in error messages and `&'static str` arguments to
@@ -159,7 +173,12 @@ impl Parameters {
     /// as the `Deserialize` trait's lifetime.
     fn generics_with_de_lifetime(
         &self,
-    ) -> (DeImplGenerics, DeTypeGenerics, syn::TypeGenerics, Option<&syn::WhereClause>) {
+    ) -> (
+        DeImplGenerics,
+        DeTypeGenerics,
+        syn::TypeGenerics,
+        Option<&syn::WhereClause>,
+    ) {
         let de_impl_generics = DeImplGenerics(self);
         let de_ty_generics = DeTypeGenerics(self);
         let (_, ty_generics, where_clause) = self.generics.split_for_impl();
@@ -320,7 +339,10 @@ fn deserialize_in_place_body(cont: &Container, params: &Parameters) -> Option<St
         || cont.attrs.type_from().is_some()
         || cont.attrs.type_try_from().is_some()
         || cont.attrs.identifier().is_some()
-        || cont.data.all_fields().all(|f| f.attrs.deserialize_with().is_some())
+        || cont
+            .data
+            .all_fields()
+            .all(|f| f.attrs.deserialize_with().is_some())
     {
         return None;
     }
@@ -357,8 +379,7 @@ fn deserialize_in_place_body(_cont: &Container, _params: &Parameters) -> Option<
     None
 }
 
-/// Generates `Deserialize::deserialize` body for a type with
-/// `#[serde(transparent)]` attribute
+/// Generates `Deserialize::deserialize` body for a type with `#[serde(transparent)]` attribute
 fn deserialize_transparent(cont: &Container, params: &Parameters) -> Fragment {
     let fields = match &cont.data {
         Data::Struct(_, fields) => fields,
@@ -401,8 +422,7 @@ fn deserialize_transparent(cont: &Container, params: &Parameters) -> Fragment {
     }
 }
 
-/// Generates `Deserialize::deserialize` body for a type with `#[serde(from)]`
-/// attribute
+/// Generates `Deserialize::deserialize` body for a type with `#[serde(from)]` attribute
 fn deserialize_from(type_from: &syn::Type) -> Fragment {
     quote_block! {
         _serde::#private::Result::map(
@@ -411,8 +431,7 @@ fn deserialize_from(type_from: &syn::Type) -> Fragment {
     }
 }
 
-/// Generates `Deserialize::deserialize` body for a type with
-/// `#[serde(try_from)]` attribute
+/// Generates `Deserialize::deserialize` body for a type with `#[serde(try_from)]` attribute
 fn deserialize_try_from(type_try_from: &syn::Type) -> Fragment {
     quote_block! {
         _serde::#private::Result::and_then(
@@ -439,8 +458,10 @@ fn deserialize_seq(
 ) -> Fragment {
     let vars = (0..fields.len()).map(field_i as fn(_) -> _);
 
-    let deserialized_count =
-        fields.iter().filter(|field| !field.attrs.skip_deserializing()).count();
+    let deserialized_count = fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing())
+        .count();
     let expecting = if deserialized_count == 1 {
         format!("{} with 1 element", expecting)
     } else {
@@ -537,8 +558,10 @@ fn deserialize_seq_in_place(
     cattrs: &attr::Container,
     expecting: &str,
 ) -> Fragment {
-    let deserialized_count =
-        fields.iter().filter(|field| !field.attrs.skip_deserializing()).count();
+    let deserialized_count = fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing())
+        .count();
     let expecting = if deserialized_count == 1 {
         format!("{} with 1 element", expecting)
     } else {
@@ -571,15 +594,12 @@ fn deserialize_seq_in_place(
                     let (wrapper, wrapper_ty) = wrap_deserialize_field_with(params, field.ty, path);
                     quote!({
                         #wrapper
-                        match _serde::de::SeqAccess::next_element::<#wrapper_ty>(&mut __seq) {
-                            _serde::#private::Ok(_serde::#private::Some(__wrap)) => {
+                        match _serde::de::SeqAccess::next_element::<#wrapper_ty>(&mut __seq)? {
+                            _serde::#private::Some(__wrap) => {
                                 self.place.#member = __wrap.value;
                             }
-                            _serde::#private::Ok(_serde::#private::None) => {
+                            _serde::#private::None => {
                                 #value_if_none;
-                            }
-                            _serde::#private::Err(__err) => {
-                                return _serde::#private::Err(__err);
                             }
                         }
                     })
@@ -632,7 +652,7 @@ struct FieldWithAliases<'a> {
     aliases: &'a BTreeSet<Name>,
 }
 
-pub(crate) fn field_i(i: usize) -> Ident {
+fn field_i(i: usize) -> Ident {
     Ident::new(&format!("__field{}", i), Span::call_site())
 }
 
@@ -708,8 +728,12 @@ fn unwrap_to_variant_closure(
         (quote! { __wrap: (#(#field_tys),*) }, quote! { __wrap })
     };
 
-    let field_access = (0..variant.fields.len())
-        .map(|n| Member::Unnamed(Index { index: n as u32, span: Span::call_site() }));
+    let field_access = (0..variant.fields.len()).map(|n| {
+        Member::Unnamed(Index {
+            index: n as u32,
+            span: Span::call_site(),
+        })
+    });
 
     match variant.style {
         Style::Struct if variant.fields.len() == 1 => {
@@ -821,7 +845,9 @@ fn effective_style(variant: &Variant) -> Style {
 /// True if there is any field with a `#[serde(flatten)]` attribute, other than
 /// fields which are skipped.
 fn has_flatten(fields: &[Field]) -> bool {
-    fields.iter().any(|field| field.attrs.flatten() && !field.attrs.skip_deserializing())
+    fields
+        .iter()
+        .any(|field| field.attrs.flatten() && !field.attrs.skip_deserializing())
 }
 
 struct DeImplGenerics<'a>(&'a Parameters);
@@ -855,9 +881,9 @@ impl<'a> ToTokens for InPlaceImplGenerics<'a> {
                     param.bounds.push(place_lifetime.lifetime.clone());
                 }
                 syn::GenericParam::Type(param) => {
-                    param
-                        .bounds
-                        .push(syn::TypeParamBound::Lifetime(place_lifetime.lifetime.clone()));
+                    param.bounds.push(syn::TypeParamBound::Lifetime(
+                        place_lifetime.lifetime.clone(),
+                    ));
                 }
                 syn::GenericParam::Const(_) => {}
             }
@@ -901,8 +927,10 @@ fn de_type_generics_to_tokens(
             bounds: Punctuated::new(),
         };
         // Prepend 'de lifetime to list of generics
-        generics.params =
-            Some(syn::GenericParam::Lifetime(def)).into_iter().chain(generics.params).collect();
+        generics.params = Some(syn::GenericParam::Lifetime(def))
+            .into_iter()
+            .chain(generics.params)
+            .collect();
     }
     let (_, ty_generics, _) = generics.split_for_impl();
     ty_generics.to_tokens(tokens);

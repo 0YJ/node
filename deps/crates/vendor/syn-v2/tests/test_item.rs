@@ -1,5 +1,4 @@
 #![recursion_limit = "256"]
-#![feature(negative_impls)]
 #![allow(
     clippy::elidable_lifetime_names,
     clippy::needless_lifetimes,

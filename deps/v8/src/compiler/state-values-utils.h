@@ -118,10 +118,7 @@ class V8_EXPORT_PRIVATE StateValuesAccess {
     int current_depth_;
   };
 
-  explicit StateValuesAccess(Node* node) : node_(node) {
-    // We must not iterate parameters if they have been dead code eliminated.
-    CHECK_NE(node->opcode(), IrOpcode::kDeadValue);
-  }
+  explicit StateValuesAccess(Node* node) : node_(node) {}
 
   size_t size() const;
   iterator begin() const { return iterator(node_); }

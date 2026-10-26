@@ -10,9 +10,6 @@
 #endif  // !V8_ENABLE_WEBASSEMBLY
 
 #include "src/wasm/turboshaft-graph-interface.h"
-// Include the non-inl header before the rest of the headers.
-
-#include "src/base/logging.h"
 
 namespace v8::internal::wasm {
 
@@ -49,8 +46,8 @@ auto WasmGraphBuilderBase<Assembler>::BuildChangeInt64ToBigInt(
           Operator::kNoProperties,   // properties
           stub_mode);
   const TSCallDescriptor* ts_call_descriptor = TSCallDescriptor::Create(
-      call_descriptor, compiler::CanThrow{false},
-      compiler::LazyDeoptOnThrow{false}, __ graph_zone());
+      call_descriptor, compiler::CanThrow::kNo, compiler::LazyDeoptOnThrow::kNo,
+      __ graph_zone());
   if constexpr (Is64()) {
     return V<BigInt>::Cast(__ Call(target, {input}, ts_call_descriptor));
   }
@@ -111,12 +108,11 @@ inline auto WasmGraphBuilderBase<Assembler>::BuildFunctionTargetAndImplicitArg(
   V<ExposedTrustedObject> implicit_arg =
       V<ExposedTrustedObject>::Cast(__ LoadProtectedPointerField(
           internal_function, LoadOp::Kind::TaggedBase().Immutable(),
-          offsetof(WasmInternalFunction, protected_implicit_arg_)));
+          WasmInternalFunction::kProtectedImplicitArgOffset));
 
-  V<Word32> target =
-      __ Load(internal_function, LoadOp::Kind::TaggedBase().Immutable(),
-              MemoryRepresentation::Uint32(),
-              offsetof(WasmInternalFunction, raw_call_target_));
+  V<Word32> target = __ Load(internal_function, LoadOp::Kind::TaggedBase(),
+                             MemoryRepresentation::Uint32(),
+                             WasmInternalFunction::kRawCallTargetOffset);
 
   return {target, implicit_arg};
 }
@@ -146,7 +142,6 @@ WasmGraphBuilderBase<Assembler>::RepresentationFor(ValueTypeBase type) {
     case kBottom:
       UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 template <typename Assembler>
@@ -165,8 +160,8 @@ inline auto WasmGraphBuilderBase<Assembler>::CallC(
   const CallDescriptor* call_descriptor =
       compiler::Linkage::GetSimplifiedCDescriptor(__ graph_zone(), sig);
   const TSCallDescriptor* ts_call_descriptor = TSCallDescriptor::Create(
-      call_descriptor, compiler::CanThrow{false},
-      compiler::LazyDeoptOnThrow{false}, __ graph_zone());
+      call_descriptor, compiler::CanThrow::kNo, compiler::LazyDeoptOnThrow::kNo,
+      __ graph_zone());
   return __ Call(function, OpIndex::Invalid(), base::VectorOf(args),
                  ts_call_descriptor);
 }
@@ -191,9 +186,7 @@ auto WasmGraphBuilderBase<Assembler>::BuildSwitchToTheCentralStack(
     V<WordPtr> old_limit) -> V<compiler::turboshaft::WordPtr> {
   // The switch involves a write to the StackMemory object, so use the
   // privileged external C call if the sandbox hardware support is enabled.
-  // On Windows, the C call also updates the TEB which is not supported in
-  // generated code yet.
-#if defined(V8_ENABLE_SANDBOX_HARDWARE_SUPPORT) || V8_TARGET_OS_WIN
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
   auto sig = FixedSizeSignature<MachineType>::Params(MachineType::Pointer(),
                                                      MachineType::Pointer())
                  .Returns(MachineType::Pointer());
@@ -261,9 +254,7 @@ void WasmGraphBuilderBase<Assembler>::BuildSwitchBackFromCentralStack(
     V<WordPtr> old_sp, V<WordPtr> old_limit) {
   // The switch involves a write to the StackMemory object, so use the
   // privileged external C call if the sandbox hardware support is enabled.
-  // On Windows, the C call also updates the TEB which is not supported in
-  // generated code yet.
-#if defined(V8_ENABLE_SANDBOX_HARDWARE_SUPPORT) || V8_TARGET_OS_WIN
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
   auto sig = FixedSizeSignature<MachineType>::Params(MachineType::Pointer());
   IF_NOT (LIKELY(__ WordPtrEqual(old_sp, __ IntPtrConstant(0)))) {
     CallC(&sig, ExternalReference::wasm_switch_from_the_central_stack_for_js(),

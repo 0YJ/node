@@ -30,16 +30,16 @@ assertEquals(10, foo(10));
 assertEquals(3, foo(3));
 assertEquals(10, foo(10));
 
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 
 // We don't optimize loading from the constant typed array, so we then also
 // don't deopt if we read out of bounds, the array buffer is detached, etc.
 assertEquals(undefined, foo(1000));
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 
 ab.resize(50);
 assertEquals(undefined, foo(30));
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 
 %ArrayBufferDetach(ab);
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));

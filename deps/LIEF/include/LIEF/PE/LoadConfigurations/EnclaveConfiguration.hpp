@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -72,8 +72,7 @@ class LIEF_API EnclaveConfiguration {
   /// If `MinimumRequiredConfigSize` is zero, the minimum size of the
   /// `IMAGE_ENCLAVE_CONFIG(32,64)` structure that the image loader must be able
   /// to process in order for the enclave to be usable is assumed to be the size
-  /// of the structure through and including the `MinimumRequiredConfigSize`
-  /// member.
+  /// of the structure through and including the `MinimumRequiredConfigSize` member.
   uint32_t min_required_config_size() const {
     return min_req_size_;
   }
@@ -107,22 +106,22 @@ class LIEF_API EnclaveConfiguration {
   }
 
   /// Return an iterator over the enclave's imports
-  it_imports imports() LIEF_LIFETIMEBOUND {
+  it_imports imports() {
     return imports_;
   }
 
-  it_const_imports imports() const LIEF_LIFETIMEBOUND {
+  it_const_imports imports() const {
     return imports_;
   }
 
   /// The family identifier that the author of the enclave assigned to the
   /// enclave.
-  const id_array_t& family_id() const LIEF_LIFETIMEBOUND {
+  const id_array_t& family_id() const {
     return family_id_;
   }
 
   /// The image identifier that the author of the enclave assigned to the enclave.
-  const id_array_t& image_id() const LIEF_LIFETIMEBOUND {
+  const id_array_t& image_id() const {
     return image_id_;
   }
 
@@ -154,7 +153,7 @@ class LIEF_API EnclaveConfiguration {
     return enclave_flags_;
   }
 
-  EnclaveConfiguration& size(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& size(uint32_t value) {
     size_ = value;
     return *this;
   }
@@ -164,68 +163,69 @@ class LIEF_API EnclaveConfiguration {
     return *this;
   }
 
-  EnclaveConfiguration& policy_flags(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& policy_flags(uint32_t value) {
     policy_flags_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& import_list_rva(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& import_list_rva(uint32_t value) {
     imports_list_rva_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& import_entry_size(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& import_entry_size(uint32_t value) {
     import_entry_size_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& family_id(const id_array_t& value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& family_id(const id_array_t& value) {
     family_id_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& image_id(const id_array_t& value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& image_id(const id_array_t& value) {
     image_id_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& image_version(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& image_version(uint32_t value) {
     image_version_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& security_version(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& security_version(uint32_t value) {
     security_version_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& enclave_size(uint64_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& enclave_size(uint64_t value) {
     enclave_size_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& nb_threads(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& nb_threads(uint32_t value) {
     nb_threads_ = value;
     return *this;
   }
 
-  EnclaveConfiguration& enclave_flags(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveConfiguration& enclave_flags(uint32_t value) {
     enclave_flags_ = value;
     return *this;
   }
 
   std::string to_string() const;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const EnclaveConfiguration& meta) {
+  LIEF_API friend
+    std::ostream& operator<<(std::ostream& os, const EnclaveConfiguration& meta)
+  {
     os << meta.to_string();
     return os;
   }
 
-  /// @private
+  /// \private
   template<class PE_T>
   LIEF_LOCAL static std::unique_ptr<EnclaveConfiguration>
-      parse(Parser& ctx, BinaryStream& stream);
+    parse(Parser& ctx, BinaryStream& stream);
 
   private:
   uint32_t size_ = 0;

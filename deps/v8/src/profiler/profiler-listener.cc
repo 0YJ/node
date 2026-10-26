@@ -11,8 +11,8 @@
 #include "src/codegen/source-position-table.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/handles/handles-inl.h"
-#include "src/objects/abstract-code-inl.h"
 #include "src/objects/code-inl.h"
+#include "src/objects/code.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/script-inl.h"
 #include "src/objects/shared-function-info-inl.h"
@@ -45,11 +45,12 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
                                        const char* name) {
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeCreation);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
-  rec->instruction_start = code->InstructionStart();
+  PtrComprCageBase cage_base(isolate_);
+  rec->instruction_start = code->InstructionStart(cage_base);
   rec->entry =
       code_entries_.Create(tag, GetName(name), CodeEntry::kEmptyResourceName,
                            LineAndColumn{}, nullptr);
-  rec->instruction_size = code->InstructionSize();
+  rec->instruction_size = code->InstructionSize(cage_base);
   weak_code_registry_.Track(rec->entry, code);
   DispatchCodeEvent(evt_rec);
 }
@@ -59,11 +60,12 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
                                        DirectHandle<Name> name) {
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeCreation);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
-  rec->instruction_start = code->InstructionStart();
+  PtrComprCageBase cage_base(isolate_);
+  rec->instruction_start = code->InstructionStart(cage_base);
   rec->entry =
       code_entries_.Create(tag, GetName(*name), CodeEntry::kEmptyResourceName,
                            LineAndColumn{}, nullptr);
-  rec->instruction_size = code->InstructionSize();
+  rec->instruction_size = code->InstructionSize(cage_base);
   weak_code_registry_.Track(rec->entry, code);
   DispatchCodeEvent(evt_rec);
 }
@@ -72,15 +74,16 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
                                        DirectHandle<AbstractCode> code,
                                        DirectHandle<SharedFunctionInfo> shared,
                                        DirectHandle<Name> script_name) {
+  PtrComprCageBase cage_base(isolate_);
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeCreation);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
-  rec->instruction_start = code->InstructionStart();
+  rec->instruction_start = code->InstructionStart(cage_base);
   rec->entry =
       code_entries_.Create(tag, GetName(shared->DebugNameCStr().get()),
                            GetName(InferScriptName(*script_name, *shared)),
                            LineAndColumn{}, nullptr);
   rec->entry->FillFunctionInfo(*shared);
-  rec->instruction_size = code->InstructionSize();
+  rec->instruction_size = code->InstructionSize(cage_base);
   weak_code_registry_.Track(rec->entry, code);
   DispatchCodeEvent(evt_rec);
 }
@@ -109,19 +112,21 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
                                        int column) {
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeCreation);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
-  rec->instruction_start = abstract_code->InstructionStart();
+  PtrComprCageBase cage_base(isolate_);
+  rec->instruction_start = abstract_code->InstructionStart(cage_base);
   std::unique_ptr<SourcePositionTable> line_table;
   std::unordered_map<int, std::vector<CodeEntryAndPosition>> inline_stacks;
   std::unordered_set<CodeEntry*, CodeEntry::Hasher, CodeEntry::Equals>
       cached_inline_entries;
   bool is_shared_cross_origin = false;
-  if (IsScript(shared->script())) {
-    DirectHandle<Script> script(Cast<Script>(shared->script()), isolate_);
+  if (IsScript(shared->script(cage_base), cage_base)) {
+    DirectHandle<Script> script(Cast<Script>(shared->script(cage_base)),
+                                isolate_);
     line_table.reset(new SourcePositionTable());
 
     is_shared_cross_origin = script->origin_options().IsSharedCrossOrigin();
 
-    bool is_baseline = abstract_code->kind() == CodeKind::BASELINE;
+    bool is_baseline = abstract_code->kind(cage_base) == CodeKind::BASELINE;
     Handle<TrustedByteArray> source_position_table(
         abstract_code->SourcePositionTable(isolate_, *shared), isolate_);
     std::unique_ptr<baseline::BytecodeOffsetIterator> baseline_iterator;
@@ -158,7 +163,7 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
                                 inlining_id);
       } else {
         DCHECK(!is_baseline);
-        DCHECK(IsCode(*abstract_code));
+        DCHECK(IsCode(*abstract_code, cage_base));
         std::vector<SourcePositionInfo> stack =
             it.source_position().InliningStack(isolate_,
                                                abstract_code->GetCode());
@@ -227,7 +232,7 @@ void ProfilerListener::CodeCreateEvent(CodeTag tag,
   }
 
   rec->entry->FillFunctionInfo(*shared);
-  rec->instruction_size = abstract_code->InstructionSize();
+  rec->instruction_size = abstract_code->InstructionSize(cage_base);
   weak_code_registry_.Track(rec->entry, abstract_code);
   DispatchCodeEvent(evt_rec);
 }
@@ -284,17 +289,17 @@ void ProfilerListener::SetterCallbackEvent(DirectHandle<Name> name,
   DispatchCodeEvent(evt_rec);
 }
 
-void ProfilerListener::RegExpCodeCreateEvent(
-    DirectHandle<AbstractCode> code, DirectHandle<String> escaped_source,
-    regexp::Flags flags) {
+void ProfilerListener::RegExpCodeCreateEvent(DirectHandle<AbstractCode> code,
+                                             DirectHandle<String> source,
+                                             RegExpFlags flags) {
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeCreation);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
-  rec->instruction_start = code->InstructionStart();
-  rec->entry = code_entries_.Create(LogEventListener::CodeTag::kRegExp,
-                                    GetConsName("RegExp: ", *escaped_source),
-                                    CodeEntry::kEmptyResourceName,
-                                    LineAndColumn{}, nullptr);
-  rec->instruction_size = code->InstructionSize();
+  PtrComprCageBase cage_base(isolate_);
+  rec->instruction_start = code->InstructionStart(cage_base);
+  rec->entry = code_entries_.Create(
+      LogEventListener::CodeTag::kRegExp, GetConsName("RegExp: ", *source),
+      CodeEntry::kEmptyResourceName, LineAndColumn{}, nullptr);
+  rec->instruction_size = code->InstructionSize(cage_base);
   weak_code_registry_.Track(rec->entry, code);
   DispatchCodeEvent(evt_rec);
 }
@@ -330,7 +335,8 @@ void ProfilerListener::CodeDisableOptEvent(
     DirectHandle<AbstractCode> code, DirectHandle<SharedFunctionInfo> shared) {
   CodeEventsContainer evt_rec(CodeEventRecord::Type::kCodeDisableOpt);
   CodeDisableOptEventRecord* rec = &evt_rec.CodeDisableOptEventRecord_;
-  rec->instruction_start = code->InstructionStart();
+  PtrComprCageBase cage_base(isolate_);
+  rec->instruction_start = code->InstructionStart(cage_base);
   rec->bailout_reason =
       GetBailoutReason(shared->disabled_optimization_reason());
   DispatchCodeEvent(evt_rec);

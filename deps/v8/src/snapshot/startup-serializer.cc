@@ -106,8 +106,9 @@ StartupSerializer::~StartupSerializer() {
 
 void StartupSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
                                             SlotType slot_type) {
+  PtrComprCageBase cage_base(isolate());
 #ifdef DEBUG
-  if (IsJSFunction(*obj)) {
+  if (IsJSFunction(*obj, cage_base)) {
     v8::base::OS::PrintError("Reference stack:\n");
     PrintStack(std::cerr);
     Print(*obj, std::cerr);
@@ -128,24 +129,25 @@ void StartupSerializer::SerializeObjectImpl(Handle<HeapObject> obj,
   if (SerializeUsingSharedHeapObjectCache(&sink_, obj)) return;
   if (SerializeBackReference(*obj)) return;
 
-  if (USE_SIMULATOR_BOOL && IsAccessorInfo(*obj)) {
+  if (USE_SIMULATOR_BOOL && IsAccessorInfo(*obj, cage_base)) {
     // Wipe external reference redirects in the accessor info.
     auto info = Cast<AccessorInfo>(obj);
     info->RemoveCallbackRedirectionForSerialization(isolate());
     accessor_infos_.Push(*info);
-  } else if (USE_SIMULATOR_BOOL && IsInterceptorInfo(*obj)) {
+  } else if (USE_SIMULATOR_BOOL && IsInterceptorInfo(*obj, cage_base)) {
     // Wipe external reference redirects in the interceptor info.
     auto info = Cast<InterceptorInfo>(obj);
     info->RemoveCallbackRedirectionForSerialization(isolate());
     interceptor_infos_.Push(*info);
-  } else if (USE_SIMULATOR_BOOL && IsFunctionTemplateInfo(*obj)) {
+  } else if (USE_SIMULATOR_BOOL && IsFunctionTemplateInfo(*obj, cage_base)) {
     auto info = Cast<FunctionTemplateInfo>(obj);
     info->RemoveCallbackRedirectionForSerialization(isolate());
     function_template_infos_.Push(*info);
-  } else if (IsScript(*obj) && Cast<Script>(obj)->IsUserJavaScript()) {
+  } else if (IsScript(*obj, cage_base) &&
+             Cast<Script>(obj)->IsUserJavaScript()) {
     Cast<Script>(obj)->set_context_data(
         ReadOnlyRoots(isolate()).uninitialized_symbol());
-  } else if (IsSharedFunctionInfo(*obj)) {
+  } else if (IsSharedFunctionInfo(*obj, cage_base)) {
     // Clear inferred name for native functions.
     auto shared = Cast<SharedFunctionInfo>(obj);
     if (!shared->IsSubjectToDebugging() &&
@@ -218,14 +220,15 @@ void StartupSerializer::SerializeUsingStartupObjectCache(
 
 void StartupSerializer::CheckNoDirtyFinalizationRegistries() {
   Isolate* isolate = this->isolate();
-  CHECK(IsUndefined(isolate->heap()->dirty_js_finalization_registries_list()));
+  CHECK(IsUndefined(isolate->heap()->dirty_js_finalization_registries_list(),
+                    isolate));
   CHECK(IsUndefined(
-      isolate->heap()->dirty_js_finalization_registries_list_tail()));
+      isolate->heap()->dirty_js_finalization_registries_list_tail(), isolate));
 }
 
 void SerializedHandleChecker::AddToSet(Tagged<FixedArray> serialized) {
-  uint32_t length = serialized->ulength().value();
-  for (uint32_t i = 0; i < length; i++) serialized_.insert(serialized->get(i));
+  int length = serialized->length();
+  for (int i = 0; i < length; i++) serialized_.insert(serialized->get(i));
 }
 
 void SerializedHandleChecker::VisitRootPointers(Root root,
@@ -234,7 +237,8 @@ void SerializedHandleChecker::VisitRootPointers(Root root,
                                                 FullObjectSlot end) {
   for (FullObjectSlot p = start; p < end; ++p) {
     if (serialized_.find(*p) != serialized_.end()) continue;
-    PrintF("%s handle not serialized: ", RootVisitor::RootName(root));
+    PrintF("%s handle not serialized: ",
+           root == Root::kGlobalHandles ? "global" : "eternal");
     Print(*p);
     PrintF("\n");
     ok_ = false;

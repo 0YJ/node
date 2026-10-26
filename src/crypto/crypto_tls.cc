@@ -81,7 +81,7 @@ namespace {
 // that the user user Connection::VerifyError after the `secure`
 // callback has been made.
 int VerifyCallback(int preverify_ok, X509_STORE_CTX* ctx) {
-  // From https://www.openssl.org/docs/man3.0/man3/SSL_verify_cb:
+  // From https://www.openssl.org/docs/man1.1.1/man3/SSL_verify_cb:
   //
   //   If VerifyCallback returns 1, the verification process is continued. If
   //   VerifyCallback always returns 1, the TLS/SSL handshake will not be
@@ -330,10 +330,6 @@ int TLSExtStatusCallback(SSL* s, void* arg) {
 void ConfigureSecureContext(SecureContext* sc) {
   // OCSP stapling
   sc->ctx().setStatusCallback(TLSExtStatusCallback);
-  // The cert-verify callback (SPKI blocklist and the OpenSSL 4.1 CN name
-  // constraint handling) is installed once per SSL_CTX in
-  // SecureContext::Init, so that it also covers contexts created without a
-  // TLSWrap.
 }
 
 inline bool Set(
@@ -544,9 +540,9 @@ void TLSWrap::InitSSL() {
   SSL_set_mode(ssl_.get(), SSL_MODE_RELEASE_BUFFERS);
 #endif  // SSL_MODE_RELEASE_BUFFERS
 
-  // Set SSL_MODE_AUTO_RETRY explicitly because Cycle() doesn't currently
-  // re-call ClearIn() if SSL_read() returns SSL_ERROR_WANT_READ, so data can
-  // be left sitting in the incoming enc_in_ and never get processed.
+  // This is default in 1.1.1, but set it anyway, Cycle() doesn't currently
+  // re-call ClearIn() if SSL_read() returns SSL_ERROR_WANT_READ, so data can be
+  // left sitting in the incoming enc_in_ and never get processed.
   // - https://wiki.openssl.org/index.php/TLS1.3#Non-application_data_records
   SSL_set_mode(ssl_.get(), SSL_MODE_AUTO_RETRY);
 
@@ -678,8 +674,8 @@ void TLSWrap::SSLInfoCallback(const SSL* ssl_, int where, int ret) {
     }
   }
 
-  // SSL_CB_HANDSHAKE_START and SSL_CB_HANDSHAKE_DONE are called when sending
-  // HelloRequest.
+  // SSL_CB_HANDSHAKE_START and SSL_CB_HANDSHAKE_DONE are called
+  // sending HelloRequest in OpenSSL-1.1.1.
   // We need to check whether this is in a renegotiation state or not.
   if (where & SSL_CB_HANDSHAKE_DONE && !SSL_renegotiate_pending(ssl)) {
     Debug(c, "SSLInfoCallback(SSL_CB_HANDSHAKE_DONE);");
@@ -851,14 +847,17 @@ void TLSWrap::ClearOut() {
   MarkPopErrorOnReturn mark_pop_error_on_return;
 
   char out[kClearOutChunkSize];
-  int length = 0;
   int read;
+  for (;;) {
+    read = SSL_read(ssl_.get(), out, sizeof(out));
+    Debug(this, "Read %d bytes of cleartext output", read);
 
-  // Emits out[0, length). Returns false if JS destroyed the SSL context.
-  auto emit = [&]() {
+    if (read <= 0)
+      break;
+
     char* current = out;
-    while (length > 0) {
-      int avail = length;
+    while (read > 0) {
+      int avail = read;
 
       uv_buf_t buf = EmitAlloc(avail);
       if (static_cast<int>(buf.len) < avail)
@@ -871,44 +870,12 @@ void TLSWrap::ClearOut() {
       // check that ssl_ != nullptr afterwards.
       if (ssl_ == nullptr) {
         Debug(this, "Returning from read loop, ssl_ == nullptr");
-        return false;
+        return;
       }
 
-      length -= avail;
+      read -= avail;
       current += avail;
     }
-    return true;
-  };
-
-  for (;;) {
-    {
-      SSLLibraryCallScope ssl_library_call_scope(this);
-      read = SSL_read(ssl_.get(), out + length, kClearOutChunkSize - length);
-    }
-    Debug(this, "Read %d bytes of cleartext output", read);
-
-    if (read <= 0) break;
-    length += read;
-
-    // SSL_read() returns at most one record. If the next record is already
-    // buffered, decrypt it into the same chunk instead of emitting one read
-    // per record. This is limited to application data records that are too
-    // long to be empty: other record types can trigger callbacks, e.g. for
-    // renegotiation, that have to run after the preceding data has been
-    // emitted, and SSL_read() skips over empty records to whatever follows.
-    // With read-ahead disabled, enc_in_ is at a record boundary after a
-    // successful read. The header need not be followed by a complete record:
-    // SSL_read() can return WANT_READ, and the path below emits the batch.
-    size_t pending;
-    const unsigned char* next = reinterpret_cast<const unsigned char*>(
-        NodeBIO::FromBIO(enc_in_)->Peek(&pending));
-    if (length < kClearOutChunkSize && pending >= SSL3_RT_HEADER_LENGTH &&
-        next[0] == SSL3_RT_APPLICATION_DATA &&
-        (next[3] << 8 | next[4]) > SSL3_RT_MAX_ENCRYPTED_OVERHEAD) {
-      continue;
-    }
-
-    if (!emit()) return;
   }
 
   // We need to check whether an error occurred or the connection was
@@ -916,15 +883,13 @@ void TLSWrap::ClearOut() {
   // See node#1642 and SSL_read(3SSL) for details. SSL_get_error must be
   // called immediately after SSL_read, without calling into JS, which may
   // change OpenSSL's error queue, modify ssl_, or even destroy ssl_
-  // altogether. Data that was read before the failure is emitted once the
-  // error has been captured, before it is reported.
+  // altogether.
   if (read <= 0) {
     HandleScope handle_scope(env()->isolate());
     Local<Value> error;
     int err = SSL_get_error(ssl_.get(), read);
     switch (err) {
       case SSL_ERROR_ZERO_RETURN:
-        if (!emit()) return;
         if (!flags_.eof) {
           flags_.eof = true;
           EmitRead(UV_EOF);
@@ -951,9 +916,9 @@ void TLSWrap::ClearOut() {
             return;
 
           const char* ls = ERR_lib_error_string(ssl_err);
-#if NCRYPTO_USE_OPENSSL_PROVIDER
+#if NCRYPTO_USE_OPENSSL3_PROVIDER
           const char* fs = nullptr;
-#elif NCRYPTO_USE_BORINGSSL
+#else
           const char* fs = ERR_func_error_string(ssl_err);
 #endif
           const char* rs = ERR_reason_error_string(ssl_err);
@@ -974,13 +939,7 @@ void TLSWrap::ClearOut() {
         break;
 
       default:
-        emit();
         return;
-    }
-
-    if (!emit()) {
-      Debug(this, "Got SSL error (%d) but not calling onerror", err);
-      return;
     }
 
     Debug(this, "Got SSL error (%d), calling onerror", err);
@@ -1011,11 +970,7 @@ void TLSWrap::ClearIn() {
   MarkPopErrorOnReturn mark_pop_error_on_return;
 
   NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(bs->ByteLength());
-  int written;
-  {
-    SSLLibraryCallScope ssl_library_call_scope(this);
-    written = SSL_write(ssl_.get(), bs->Data(), bs->ByteLength());
-  }
+  int written = SSL_write(ssl_.get(), bs->Data(), bs->ByteLength());
   Debug(this, "Writing %zu bytes, written = %d", bs->ByteLength(), written);
   CHECK(written == -1 || written == static_cast<int>(bs->ByteLength()));
 
@@ -1118,33 +1073,6 @@ int TLSWrap::DoWrite(WriteWrap* w,
     }
   }
 
-  // If we got here from a call inside the OpenSSL/BoringSSL stack, we need to
-  // defer reentrant write calls:
-  if (in_ssl_library_call()) {
-    Debug(this, "Deferring write issued from the SSL library's stack");
-    CHECK(!current_write_);
-    current_write_.reset(w->GetAsyncWrap());
-
-    if (length > 0) {
-      CHECK(!pending_cleartext_input_ ||
-            pending_cleartext_input_->ByteLength() == 0);
-      std::unique_ptr<BackingStore> bs = ArrayBuffer::NewBackingStore(
-          env()->isolate(),
-          length,
-          BackingStoreInitializationMode::kUninitialized);
-      size_t offset = 0;
-      for (i = 0; i < count; i++) {
-        memcpy(
-            static_cast<char*>(bs->Data()) + offset, bufs[i].base, bufs[i].len);
-        offset += bufs[i].len;
-      }
-      pending_cleartext_input_ = std::move(bs);
-    }
-
-    ScheduleDeferredCycle();
-    return 0;
-  }
-
   // We want to trigger a Write() on the underlying stream to drive the stream
   // system, but don't want to encrypt empty buffers into a TLS frame, so see
   // if we can find something to Write().
@@ -1210,18 +1138,12 @@ int TLSWrap::DoWrite(WriteWrap* w,
     }
 
     NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(length);
-    {
-      SSLLibraryCallScope ssl_library_call_scope(this);
-      written = SSL_write(ssl_.get(), bs->Data(), length);
-    }
+    written = SSL_write(ssl_.get(), bs->Data(), length);
   } else {
     // Only one buffer: try to write directly, only store if it fails
     uv_buf_t* buf = &bufs[nonempty_i];
     NodeBIO::FromBIO(enc_out_)->set_allocate_tls_hint(buf->len);
-    {
-      SSLLibraryCallScope ssl_library_call_scope(this);
-      written = SSL_write(ssl_.get(), buf->base, buf->len);
-    }
+    written = SSL_write(ssl_.get(), buf->base, buf->len);
 
     if (written == -1) {
       bs = ArrayBuffer::NewBackingStore(
@@ -1307,55 +1229,14 @@ ShutdownWrap* TLSWrap::CreateShutdownWrap(Local<Object> req_wrap_object) {
 
 int TLSWrap::DoShutdown(ShutdownWrap* req_wrap) {
   Debug(this, "DoShutdown()");
-
-  // We must not call SSL_shutdown from inside the TLS library stack, so
-  // defer if required:
-  if (in_ssl_library_call()) {
-    Debug(this, "Deferring shutdown issued from the SSL library's stack");
-    CHECK(!pending_shutdown_);
-    pending_shutdown_.reset(req_wrap->GetAsyncWrap());
-    flags_.shutdown = true;
-    ScheduleDeferredCycle();
-    return 0;
-  }
-
   MarkPopErrorOnReturn mark_pop_error_on_return;
 
-  if (ssl_) {
-    SSLLibraryCallScope ssl_library_call_scope(this);
-    if (SSL_shutdown(ssl_.get()) == 0) SSL_shutdown(ssl_.get());
-  }
+  if (ssl_ && SSL_shutdown(ssl_.get()) == 0)
+    SSL_shutdown(ssl_.get());
 
   flags_.shutdown = true;
   EncOut();
   return underlying_stream()->DoShutdown(req_wrap);
-}
-
-void TLSWrap::ScheduleDeferredCycle() {
-  if (flags_.deferred_cycle_scheduled) return;
-  flags_.deferred_cycle_scheduled = true;
-
-  BaseObjectPtr<TLSWrap> strong_ref{this};
-  env()->SetImmediate([this, strong_ref](Environment* env) {
-    flags_.deferred_cycle_scheduled = false;
-    if (ssl_) Cycle();
-  });
-}
-
-void TLSWrap::FlushPendingShutdown() {
-  if (!pending_shutdown_ || !ssl_) return;
-
-  const bool can_send_close_notify =
-      SSL_is_init_finished(ssl_.get()) && !is_awaiting_new_session();
-  if (!can_send_close_notify) {
-    Debug(this, "Holding deferred shutdown, cannot send close_notify yet");
-    return;
-  }
-
-  BaseObjectPtr<AsyncWrap> pending = std::move(pending_shutdown_);
-  ShutdownWrap* req_wrap = ShutdownWrap::FromObject(pending);
-  int err = DoShutdown(req_wrap);
-  if (err != 0) req_wrap->Done(err);
 }
 
 void TLSWrap::SetVerifyMode(const FunctionCallbackInfo<Value>& args) {
@@ -1453,13 +1334,6 @@ void TLSWrap::Destroy() {
 
   // And destroy
   InvokeQueued(UV_ECANCELED, "Canceled because of SSL destruction");
-
-  // A shutdown held back off the SSL library's stack will never be replayed
-  // now, so complete it here rather than leaving the stream waiting on it.
-  if (pending_shutdown_) {
-    BaseObjectPtr<AsyncWrap> pending = std::move(pending_shutdown_);
-    ShutdownWrap::FromObject(pending)->Done(UV_ECANCELED);
-  }
 
   env()->external_memory_accounter()->Decrease(env()->isolate(), kExternalSize);
   ssl_.reset();
@@ -2080,19 +1954,19 @@ void TLSWrap::GetSharedSigalgs(const FunctionCallbackInfo<Value>& args) {
                            nullptr);
 
     switch (sign_nid) {
-      case NID_rsaEncryption:
+      case EVP_PKEY_RSA:
         sig_with_md = "RSA+";
         break;
 
-      case NID_rsassaPss:
+      case EVP_PKEY_RSA_PSS:
         sig_with_md = "RSA-PSS+";
         break;
 
-      case NID_dsa:
+      case EVP_PKEY_DSA:
         sig_with_md = "DSA+";
         break;
 
-      case NID_X9_62_id_ecPublicKey:
+      case EVP_PKEY_EC:
         sig_with_md = "ECDSA+";
         break;
 
@@ -2303,13 +2177,6 @@ void TLSWrap::WritesIssuedByPrevListenerDone(
 }
 
 void TLSWrap::Cycle() {
-  // With no loop to extend, cycling now would re-enter the SSL library.
-  if (cycle_depth_ == 0 && in_ssl_library_call()) {
-    Debug(this, "Deferring cycle requested from the SSL library's stack");
-    ScheduleDeferredCycle();
-    return;
-  }
-
   // Prevent recursion
   if (++cycle_depth_ > 1)
     return;
@@ -2317,10 +2184,6 @@ void TLSWrap::Cycle() {
   for (; cycle_depth_ > 0; cycle_depth_--) {
     ClearIn();
     ClearOut();
-    // ClearOut() could defer a write/shutdown, so we ClearIn() again now
-    // to avoid needing a second pass:
-    ClearIn();
-    FlushPendingShutdown();
     // EncIn() doesn't exist, it happens via stream listener callbacks.
     EncOut();
   }

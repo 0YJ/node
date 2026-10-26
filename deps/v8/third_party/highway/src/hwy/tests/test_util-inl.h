@@ -16,6 +16,7 @@
 // Target-specific helper functions for use by *_test.cc.
 
 #include <stdio.h>
+#include <string.h>  // memset
 
 // IWYU pragma: begin_exports
 #include <stddef.h>
@@ -119,19 +120,11 @@ VFromD<D> IotaForSpecial(D d, First first) {
   return DemoteTo(d, Set(df, static_cast<float>(first)));
 }
 
-// Workaround for Clang SVE bug: unless inlined, SVE vectors are truncated at
-// 128 bits.
-#undef HWY_ASSERT_INLINE
-#if HWY_TARGET & HWY_ALL_SVE
-#define HWY_ASSERT_INLINE HWY_INLINE
-#else
-#define HWY_ASSERT_INLINE HWY_NOINLINE
-#endif
-
 // Compare expected array to vector.
+// TODO(b/287462770): inline to work around incorrect SVE codegen.
 template <class D, typename T = TFromD<D>>
-HWY_ASSERT_INLINE void AssertVecEqual(D d, const T* expected, Vec<D> actual,
-                                      const char* filename, const int line) {
+HWY_INLINE void AssertVecEqual(D d, const T* expected, Vec<D> actual,
+                               const char* filename, const int line) {
   const size_t N = Lanes(d);
   auto actual_lanes = AllocateAligned<T>(N);
   HWY_ASSERT(actual_lanes);
@@ -144,9 +137,10 @@ HWY_ASSERT_INLINE void AssertVecEqual(D d, const T* expected, Vec<D> actual,
 }
 
 // Compare expected vector to vector.
+// TODO(b/287462770): inline to work around incorrect SVE codegen.
 template <class D, typename T = TFromD<D>>
-HWY_ASSERT_INLINE void AssertVecEqual(D d, Vec<D> expected, Vec<D> actual,
-                                      const char* filename, int line) {
+HWY_INLINE void AssertVecEqual(D d, Vec<D> expected, Vec<D> actual,
+                               const char* filename, int line) {
   const size_t N = Lanes(d);
   auto expected_lanes = AllocateAligned<T>(N);
   auto actual_lanes = AllocateAligned<T>(N);
@@ -162,9 +156,8 @@ HWY_ASSERT_INLINE void AssertVecEqual(D d, Vec<D> expected, Vec<D> actual,
 
 // Only checks the valid mask elements (those whose index < Lanes(d)).
 template <class D>
-HWY_ASSERT_INLINE void AssertMaskEqual(D d, VecArg<Mask<D>> a,
-                                       VecArg<Mask<D>> b, const char* filename,
-                                       int line) {
+HWY_NOINLINE void AssertMaskEqual(D d, VecArg<Mask<D>> a, VecArg<Mask<D>> b,
+                                  const char* filename, int line) {
   // lvalues prevented MSAN failure in farm_sve.
   const Vec<D> va = VecFromMask(d, a);
   const Vec<D> vb = VecFromMask(d, b);
@@ -185,8 +178,8 @@ HWY_ASSERT_INLINE void AssertMaskEqual(D d, VecArg<Mask<D>> a,
   auto bits_a = AllocateAligned<uint8_t>(HWY_MAX(size_t{8}, N8));
   auto bits_b = AllocateAligned<uint8_t>(size_t{HWY_MAX(8, N8)});
   HWY_ASSERT(bits_a && bits_b);
-  ZeroBytes(bits_a.get(), N8);
-  ZeroBytes(bits_b.get(), N8);
+  memset(bits_a.get(), 0, N8);
+  memset(bits_b.get(), 0, N8);
   const size_t num_bytes_a = StoreMaskBits(d, a, bits_a.get());
   const size_t num_bytes_b = StoreMaskBits(d, b, bits_b.get());
   AssertEqual(num_bytes_a, num_bytes_b, target_name, filename, line);

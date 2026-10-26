@@ -23,7 +23,6 @@
 #include "absl/base/config.h"
 #include "absl/base/internal/tracing.h"
 #include "absl/synchronization/mutex.h"
-#include "absl/time/clock.h"
 #include "absl/time/time.h"
 
 namespace absl {

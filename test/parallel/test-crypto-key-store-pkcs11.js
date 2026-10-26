@@ -3,9 +3,9 @@
 const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
-const { isBoringSSL } = require('../common/crypto');
-if (isBoringSSL)
-  common.skip('OpenSSL provider support is required');
+const { hasOpenSSL } = require('../common/crypto');
+if (!hasOpenSSL(3, 0))
+  common.skip('requires OpenSSL 3.x');
 
 // The PKCS#11 token, the OpenSSL configuration that activates a provider for
 // it, and the PIN that unlocks it are all provided by the environment. See
@@ -413,12 +413,9 @@ function assertPermissionModel() {
     });
   `;
 
-  // SoftHSM locates its configuration through SOFTHSM2_CONF, which the
-  // permission model would otherwise scrub from the environment at startup.
   assertChild([
     `--openssl-config=${kOpenSSLConfig}`,
     '--permission',
-    '--allow-env=SOFTHSM2_CONF',
     '--allow-fs-read=*',
     '-e',
     code,
@@ -427,7 +424,6 @@ function assertPermissionModel() {
   assertChild([
     `--openssl-config=${kOpenSSLConfig}`,
     '--permission',
-    '--allow-env=SOFTHSM2_CONF',
     '--allow-openssl-store',
     '--allow-fs-read=*',
     '-e',

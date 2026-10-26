@@ -5,11 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <span>
-
 #include "include/v8-wasm.h"
 #include "src/api/api-inl.h"
-#include "src/objects/managed.h"
 #include "src/objects/objects-inl.h"
 #include "src/snapshot/code-serializer.h"
 #include "src/utils/version.h"
@@ -22,7 +19,6 @@
 #include "src/wasm/wasm-serialization.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/heap/heap-utils.h"
-#include "test/common/version-utils.h"
 #include "test/common/wasm/flag-utils.h"
 #include "test/common/wasm/test-signatures.h"
 #include "test/common/wasm/wasm-macro-gen.h"
@@ -33,11 +29,9 @@ namespace v8::internal::wasm {
 // Approximate gtest TEST_F style, in case we adopt gtest.
 class WasmSerializationTest {
  public:
-  explicit WasmSerializationTest(
-      const char* embedder_string = Version::GetEmbedder())
-      : zone_(&allocator_, ZONE_NAME) {
+  WasmSerializationTest() : zone_(&allocator_, ZONE_NAME) {
     // Don't call here if we move to gtest.
-    SetUp(embedder_string);
+    SetUp();
   }
 
   static constexpr const char* kFunctionName = "increment";
@@ -89,10 +83,8 @@ class WasmSerializationTest {
     CHECK(Deserialize().ToHandle(&module_object));
     {
       DisallowGarbageCollection assume_no_gc;
-      CppGCManaged<wasm::NativeModule>::Ptr native_module =
-          module_object->native_module();
       base::Vector<const uint8_t> deserialized_module_wire_bytes =
-          native_module->wire_bytes();
+          module_object->native_module()->wire_bytes();
       CHECK_EQ(deserialized_module_wire_bytes.size(), wire_bytes_.size());
       CHECK_EQ(memcmp(deserialized_module_wire_bytes.begin(),
                       wire_bytes_.data(), wire_bytes_.size()),
@@ -101,7 +93,8 @@ class WasmSerializationTest {
     DirectHandle<WasmInstanceObject> instance =
         GetWasmEngine()
             ->SyncInstantiate(CcTest::i_isolate(), &thrower, module_object,
-                              DirectHandle<JSReceiver>::null())
+                              DirectHandle<JSReceiver>::null(),
+                              MaybeDirectHandle<JSArrayBuffer>())
             .ToHandleChecked();
     DirectHandle<Object> params[] = {
         direct_handle(Smi::FromInt(41), CcTest::i_isolate())};
@@ -117,14 +110,14 @@ class WasmSerializationTest {
     heap::InvokeMemoryReducingMajorGCs(CcTest::heap());
   }
 
-  std::span<const uint8_t> wire_bytes() const { return wire_bytes_; }
+  v8::MemorySpan<const uint8_t> wire_bytes() const { return wire_bytes_; }
 
   CompileTimeImports MakeCompileTimeImports() { return CompileTimeImports{}; }
 
  private:
   Zone* zone() { return &zone_; }
 
-  void SetUp(const char* embedder_string) {
+  void SetUp() {
     CcTest::InitIsolateOnce();
     ZoneBuffer buffer(&zone_);
     WasmSerializationTest::BuildWireBytes(zone(), &buffer);
@@ -154,7 +147,7 @@ class WasmSerializationTest {
               MakeCompileTimeImports(), &thrower, base::OwnedCopyOf(buffer));
       DirectHandle<WasmModuleObject> module_object =
           maybe_module_object.ToHandleChecked();
-      weak_native_module = module_object->native_module().as_shared_ptr();
+      weak_native_module = module_object->shared_native_module();
       // Check that the native module exists at this point.
       CHECK(weak_native_module.lock());
 
@@ -166,7 +159,7 @@ class WasmSerializationTest {
           v8_module_obj.As<v8::WasmModuleObject>();
       v8::CompiledWasmModule compiled_module =
           v8_module_object->GetCompiledModule();
-      std::span<const uint8_t> uncompiled_bytes =
+      v8::MemorySpan<const uint8_t> uncompiled_bytes =
           compiled_module.GetWireBytesRef();
       uint8_t* bytes_copy =
           zone()->AllocateArray<uint8_t>(uncompiled_bytes.size());
@@ -177,13 +170,12 @@ class WasmSerializationTest {
       DirectHandle<WasmInstanceObject> instance =
           GetWasmEngine()
               ->SyncInstantiate(serialization_isolate, &thrower, module_object,
-                                {})
+                                {}, {})
               .ToHandleChecked();
       CHECK_EQ(0, data_.size);
       while (data_.size == 0) {
         testing::CallWasmFunctionForTesting(serialization_isolate, instance,
                                             kFunctionName, {});
-        ScopedVersionEmbedderString embedder(embedder_string);
         data_ = compiled_module.Serialize();
       }
       CHECK_LT(0, data_.size);
@@ -213,8 +205,8 @@ class WasmSerializationTest {
   // imports.
   CompileTimeImports compile_imports_;
   v8::OwnedBuffer data_;
-  std::span<const uint8_t> wire_bytes_ = {};
-  std::span<const uint8_t> serialized_bytes_ = {};
+  v8::MemorySpan<const uint8_t> wire_bytes_ = {nullptr, 0};
+  v8::MemorySpan<const uint8_t> serialized_bytes_ = {nullptr, 0};
   FlagScope<int> tier_up_quickly_{&v8_flags.wasm_tiering_budget, 1000};
 };
 
@@ -248,32 +240,6 @@ TEST(DeserializeMismatchingVersion) {
     CHECK(test.Deserialize().is_null());
   }
   test.CollectGarbage();
-}
-
-TEST(DeserializeEmbedderString) {
-  {
-    WasmSerializationTest test("");
-    {
-      HandleScope scope(CcTest::i_isolate());
-      ScopedVersionEmbedderString embedder("");
-      CHECK(!test.Deserialize().is_null());
-      ScopedVersionEmbedderString mismatching_embedder("-test");
-      CHECK(test.Deserialize().is_null());
-    }
-    test.CollectGarbage();
-  }
-
-  {
-    WasmSerializationTest test("-test");
-    {
-      HandleScope scope(CcTest::i_isolate());
-      ScopedVersionEmbedderString embedder("-test");
-      CHECK(!test.Deserialize().is_null());
-      ScopedVersionEmbedderString mismatching_embedder("-test.2");
-      CHECK(test.Deserialize().is_null());
-    }
-    test.CollectGarbage();
-  }
 }
 
 TEST(DeserializeNoSerializedData) {
@@ -322,7 +288,7 @@ UNINITIALIZED_TEST(CompiledWasmModulesTransfer) {
   create_params.array_buffer_allocator = CcTest::array_buffer_allocator();
   v8::Isolate* from_isolate = v8::Isolate::New(create_params);
   std::vector<v8::CompiledWasmModule> store;
-  CppGCManaged<NativeModule>::Ptr original_native_module;
+  std::shared_ptr<NativeModule> original_native_module;
   {
     v8::Isolate::Scope isolate_scope(from_isolate);
     v8::HandleScope scope(from_isolate);
@@ -340,7 +306,7 @@ UNINITIALIZED_TEST(CompiledWasmModulesTransfer) {
         v8::Local<v8::WasmModuleObject>::Cast(
             v8::Utils::ToLocal(Cast<JSObject>(module_object)));
     store.push_back(v8_module->GetCompiledModule());
-    original_native_module = module_object->native_module();
+    original_native_module = module_object->shared_native_module();
   }
 
   {
@@ -355,13 +321,13 @@ UNINITIALIZED_TEST(CompiledWasmModulesTransfer) {
       CHECK(!transferred_module.IsEmpty());
       DirectHandle<WasmModuleObject> module_object = Cast<WasmModuleObject>(
           v8::Utils::OpenDirectHandle(*transferred_module.ToLocalChecked()));
-      CppGCManaged<NativeModule>::Ptr transferred_native_module =
-          module_object->native_module();
+      std::shared_ptr<NativeModule> transferred_native_module =
+          module_object->shared_native_module();
       CHECK_EQ(original_native_module, transferred_native_module);
     }
     to_isolate->Dispose();
   }
-  original_native_module.Reset();
+  original_native_module.reset();
   from_isolate->Dispose();
 }
 
@@ -373,13 +339,12 @@ TEST(TierDownAfterDeserialization) {
   DirectHandle<WasmModuleObject> module_object;
   CHECK(test.Deserialize().ToHandle(&module_object));
 
-  CppGCManaged<wasm::NativeModule>::Ptr native_module =
-      module_object->native_module();
+  auto* native_module = module_object->native_module();
   CHECK_EQ(3, native_module->module()->functions.size());
   WasmCodeRefScope code_ref_scope;
   // The deserialized code must be TurboFan (we wait for tier-up before
   // serializing).
-  WasmCode* turbofan_code = native_module->GetCode(2);
+  auto* turbofan_code = native_module->GetCode(2);
   CHECK_NOT_NULL(turbofan_code);
   CHECK_EQ(ExecutionTier::kTurbofan, turbofan_code->tier());
 
@@ -411,9 +376,8 @@ TEST(SerializeLiftoffModuleFails) {
   DirectHandle<WasmModuleObject> module_object =
       maybe_module_object.ToHandleChecked();
 
-  CppGCManaged<wasm::NativeModule>::Ptr native_module =
-      module_object->native_module();
-  WasmSerializer wasm_serializer(native_module.raw());
+  NativeModule* native_module = module_object->native_module();
+  WasmSerializer wasm_serializer(native_module);
   size_t buffer_size = wasm_serializer.GetSerializedNativeModuleSize();
   std::unique_ptr<uint8_t[]> buffer(new uint8_t[buffer_size]);
   // Serialization is expected to fail if there is no TurboFan function to
@@ -432,8 +396,7 @@ TEST(SerializeTieringBudget) {
     DirectHandle<WasmModuleObject> module_object;
     CHECK(test.Deserialize().ToHandle(&module_object));
 
-    CppGCManaged<wasm::NativeModule>::Ptr native_module =
-        module_object->native_module();
+    auto* native_module = module_object->native_module();
     memcpy(native_module->tiering_budget_array(), mock_budget,
            arraysize(mock_budget) * sizeof(uint32_t));
     v8::Local<v8::Object> v8_module_obj =
@@ -464,8 +427,7 @@ TEST(SerializeTieringBudget) {
           wire_bytes_copy, compile_imports, {})
           .ToHandle(&module_object));
 
-  CppGCManaged<wasm::NativeModule>::Ptr native_module =
-      module_object->native_module();
+  auto* native_module = module_object->native_module();
   for (size_t i = 0; i < arraysize(mock_budget); ++i) {
     CHECK_EQ(mock_budget[i], native_module->tiering_budget_array()[i]);
   }
@@ -541,7 +503,9 @@ TEST(DeserializeIndirectCallWithDifferentCanonicalId) {
     builder.AddExport(base::CStrVector("call_indirect"), f);
     // Add a function table.
     uint32_t table_id = builder.AddTable(kWasmFuncRef, 1);
-    builder.SetIndirectFunction(table_id, 0, f->func_index());
+    builder.SetIndirectFunction(
+        table_id, 0, f->func_index(),
+        WasmModuleBuilder::WasmElemSegment::kRelativeToImports);
     // Write the final module into {buffer}.
     builder.WriteTo(&zone_buffer);
   }
@@ -568,19 +532,19 @@ TEST(DeserializeIndirectCallWithDifferentCanonicalId) {
                             CompileTimeImports{}, &thrower,
                             base::OwnedCopyOf(zone_buffer))
               .ToHandleChecked();
-      CppGCManaged<wasm::NativeModule>::Ptr native_module =
-          module_object->native_module();
-      weak_native_module = native_module.as_shared_ptr();
+      weak_native_module = module_object->shared_native_module();
 
       // Retrieve the canonicalized signature ID.
       const std::vector<CanonicalTypeIndex>& canonical_type_ids =
-          native_module->module()->isorecursive_canonical_type_ids;
+          module_object->native_module()
+              ->module()
+              ->isorecursive_canonical_type_ids;
       CHECK_EQ(1, canonical_type_ids.size());
       canonical_sig_id_before_serialization = canonical_type_ids[0];
 
       // Check that the embedded constant in the code is right.
       WasmCodeRefScope code_ref_scope;
-      WasmCode* code = native_module->GetCode(0);
+      WasmCode* code = module_object->native_module()->GetCode(0);
       RelocIterator reloc_it{
           code->instructions(), code->reloc_info(), code->constant_pool(),
           RelocInfo::ModeMask(RelocInfo::WASM_CANONICAL_SIG_ID)};
@@ -654,16 +618,16 @@ TEST(DeserializeIndirectCallWithDifferentCanonicalId) {
             .ToHandleChecked();
 
     // Check that the signature ID got canonicalized to index 1.
-    CppGCManaged<wasm::NativeModule>::Ptr native_module =
-        module_object->native_module();
     const std::vector<CanonicalTypeIndex>& canonical_type_ids =
-        native_module->module()->isorecursive_canonical_type_ids;
+        module_object->native_module()
+            ->module()
+            ->isorecursive_canonical_type_ids;
     CHECK_EQ(1, canonical_type_ids.size());
     CHECK_EQ(canonical_sig_id_after_deserialization, canonical_type_ids[0]);
 
     // Check that the embedded constant in the code is right.
     WasmCodeRefScope code_ref_scope;
-    WasmCode* code = native_module->GetCode(0);
+    WasmCode* code = module_object->native_module()->GetCode(0);
     RelocIterator reloc_it{
         code->instructions(), code->reloc_info(), code->constant_pool(),
         RelocInfo::ModeMask(RelocInfo::WASM_CANONICAL_SIG_ID)};
@@ -677,7 +641,8 @@ TEST(DeserializeIndirectCallWithDifferentCanonicalId) {
     DirectHandle<WasmInstanceObject> instance =
         GetWasmEngine()
             ->SyncInstantiate(i_isolate, &thrower, module_object,
-                              DirectHandle<JSReceiver>::null())
+                              DirectHandle<JSReceiver>::null(),
+                              MaybeDirectHandle<JSArrayBuffer>())
             .ToHandleChecked();
     DirectHandle<Object> params[] = {direct_handle(Smi::FromInt(1), i_isolate)};
     int32_t result = testing::CallWasmFunctionForTesting(
@@ -746,14 +711,15 @@ TEST(SerializeDetectedFeatures) {
                module_object->native_module()
                    ->compilation_state()
                    ->detected_features());
-      weak_native_module = module_object->native_module().as_shared_ptr();
+      weak_native_module = module_object->shared_native_module();
 
       // Now call the tail-calling function "b". This triggers lazy compilation,
       // which should not DCHECK because of a new detected feature.
       DirectHandle<WasmInstanceObject> instance =
           GetWasmEngine()
               ->SyncInstantiate(i_isolate, &thrower, module_object,
-                                DirectHandle<JSReceiver>::null())
+                                DirectHandle<JSReceiver>::null(),
+                                MaybeDirectHandle<JSArrayBuffer>())
               .ToHandleChecked();
 
       v8::Local<v8::WasmModuleObject> v8_module_object =
@@ -821,7 +787,8 @@ TEST(SerializeDetectedFeatures) {
     DirectHandle<WasmInstanceObject> instance =
         GetWasmEngine()
             ->SyncInstantiate(i_isolate, &thrower, module_object,
-                              DirectHandle<JSReceiver>::null())
+                              DirectHandle<JSReceiver>::null(),
+                              MaybeDirectHandle<JSArrayBuffer>())
             .ToHandleChecked();
     int32_t result =
         testing::CallWasmFunctionForTesting(i_isolate, instance, "b", {});

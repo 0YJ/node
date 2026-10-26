@@ -90,13 +90,19 @@ impl PartialEq for Name {
 
 impl From<&Ident> for Name {
     fn from(ident: &Ident) -> Self {
-        Name { value: ident.to_string(), span: ident.span() }
+        Name {
+            value: ident.to_string(),
+            span: ident.span(),
+        }
     }
 }
 
 impl From<&LitStr> for Name {
     fn from(lit: &LitStr) -> Self {
-        Name { value: lit.value(), span: lit.span() }
+        Name {
+            value: lit.value(),
+            span: lit.span(),
+        }
     }
 }
 

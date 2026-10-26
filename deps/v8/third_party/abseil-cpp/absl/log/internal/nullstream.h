@@ -23,6 +23,11 @@
 #ifndef ABSL_LOG_INTERNAL_NULLSTREAM_H_
 #define ABSL_LOG_INTERNAL_NULLSTREAM_H_
 
+#ifdef _WIN32
+#include <cstdlib>
+#else
+#include <unistd.h>
+#endif
 #include <ios>
 #include <ostream>
 
@@ -30,12 +35,6 @@
 #include "absl/base/config.h"
 #include "absl/base/log_severity.h"
 #include "absl/strings/string_view.h"
-
-#ifdef _WIN32
-#include <cstdlib>
-#else
-#include <unistd.h>
-#endif
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -126,4 +125,4 @@ class NullStreamFatal final : public NullStream {
 ABSL_NAMESPACE_END
 }  // namespace absl
 
-#endif  // ABSL_LOG_INTERNAL_NULLSTREAM_H_
+#endif  // ABSL_LOG_INTERNAL_GLOBALS_H_

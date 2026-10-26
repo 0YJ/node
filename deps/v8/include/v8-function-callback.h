@@ -35,8 +35,6 @@ class ConsoleCallArguments;
 namespace api_internal {
 V8_EXPORT v8::Local<v8::Value> GetFunctionTemplateData(
     v8::Isolate* isolate, v8::Local<v8::Data> raw_target);
-V8_EXPORT v8::Local<v8::Data> GetFunctionTemplateDataV2(
-    v8::Isolate* isolate, v8::Local<v8::Data> raw_target);
 }  // namespace api_internal
 
 template <typename T>
@@ -136,10 +134,7 @@ class FunctionCallbackInfo {
   /** Indicates whether this is a regular call or a construct call. */
   V8_INLINE bool IsConstructCall() const;
   /** The data argument specified when creating the callback. */
-  V8_DEPRECATE_SOON("Use DataV2 instead")
   V8_INLINE Local<Value> Data() const;
-  /** The data argument specified when creating the callback as `v8::Data`. */
-  V8_INLINE Local<v8::Data> DataV2() const;
   /** The current Isolate. */
   V8_INLINE Isolate* GetIsolate() const;
   /** The ReturnValue for the call. */
@@ -238,13 +233,7 @@ class PropertyCallbackInfo {
    * `NamedPropertyHandlerConfiguration` or
    * `IndexedPropertyHandlerConfiguration.`
    */
-  V8_DEPRECATE_SOON("Use DataV2 instead")
   V8_INLINE Local<Value> Data() const;
-
-  /**
-   * \return The data set in the callback configuration as `v8::Data`.
-   */
-  V8_INLINE Local<v8::Data> DataV2() const;
 
   /**
    * \return The object in the prototype chain of the receiver that has the
@@ -252,8 +241,9 @@ class PropertyCallbackInfo {
    * has an interceptor. Then `info.This()` is `x` and `info.Holder()` is `y`.
    * In case the property is installed on the global object the Holder()
    * would return the global proxy.
+   * TODO(http://crbug.com/333672197): rename back to Holder().
    */
-  V8_INLINE Local<Object> Holder() const;
+  V8_INLINE Local<Object> HolderV2() const;
 
   /**
    * \return The return value of the callback.
@@ -654,12 +644,6 @@ Local<Value> FunctionCallbackInfo<T>::Data() const {
 }
 
 template <typename T>
-Local<v8::Data> FunctionCallbackInfo<T>::DataV2() const {
-  auto target = Local<v8::Data>::FromSlot(&values_[kTargetIndex]);
-  return api_internal::GetFunctionTemplateDataV2(GetIsolate(), target);
-}
-
-template <typename T>
 Isolate* FunctionCallbackInfo<T>::GetIsolate() const {
   return reinterpret_cast<Isolate*>(values_[kIsolateIndex]);
 }
@@ -699,15 +683,7 @@ Local<Value> PropertyCallbackInfo<T>::Data() const {
 }
 
 template <typename T>
-Local<v8::Data> PropertyCallbackInfo<T>::DataV2() const {
-  internal::Address callback_info = args_[kCallbackInfoIndex];
-  internal::Address data =
-      I::ReadTaggedPointerField(callback_info, I::kCallbackInfoDataOffset);
-  return Local<v8::Data>::New(GetIsolate(), data);
-}
-
-template <typename T>
-Local<Object> PropertyCallbackInfo<T>::Holder() const {
+Local<Object> PropertyCallbackInfo<T>::HolderV2() const {
   return Local<Object>::FromSlot(&args_[kHolderIndex]);
 }
 

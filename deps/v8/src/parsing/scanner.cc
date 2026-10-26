@@ -12,7 +12,6 @@
 #include <optional>
 
 #include "src/ast/ast-value-factory.h"
-#include "src/base/logging.h"
 #include "src/base/strings.h"
 #include "src/base/vlq-base64.h"
 #include "src/numbers/conversions-inl.h"
@@ -316,9 +315,8 @@ void Scanner::TryToParseMagicComment(base::uc32 hash_or_at_sign) {
   } else {
     return;
   }
-  if (c0_ != '=') {
+  if (c0_ != '=')
     return;
-  }
   value->Start();
   Advance();
   while (IsWhiteSpace(c0_)) {
@@ -557,18 +555,19 @@ Token::Value Scanner::ScanString() {
 
   next().literal_chars.Start();
   while (true) {
-    // Consumed ASCII characters are bulk-appended to the literal buffer via
-    // the range callback. Non-ASCII characters terminate the range scan and
-    // are handled by the outer loop below (via the final AddLiteralChar),
-    // which keeps the common all-ASCII scan fast.
-    AdvanceUntilRange(
-        [](base::uc32 c0) {
-          if (V8_UNLIKELY(static_cast<uint32_t>(c0) > kMaxAscii)) return true;
-          return MayTerminateString(character_scan_flags[c0]);
-        },
-        [this](const uint16_t* start, const uint16_t* end) {
-          next().literal_chars.AddRangeFromUtf16(start, end);
-        });
+    AdvanceUntil([this](base::uc32 c0) {
+      if (V8_UNLIKELY(static_cast<uint32_t>(c0) > kMaxAscii)) {
+        if (V8_UNLIKELY(unibrow::IsStringLiteralLineTerminator(c0))) {
+          return true;
+        }
+        AddLiteralChar(c0);
+        return false;
+      }
+      uint8_t char_flags = character_scan_flags[c0];
+      if (MayTerminateString(char_flags)) return true;
+      AddLiteralChar(c0);
+      return false;
+    });
 
     while (c0_ == '\\') {
       Advance();
@@ -947,7 +946,7 @@ Token::Value Scanner::ScanNumber(bool seen_period) {
     // Check that the literal is within our limits for BigInt length.
     // For simplicity, use 4 bits per character to calculate the maximum
     // allowed literal length.
-    static const int kMaxBigIntCharacters = BigInt::kMaxBits / 4;
+    static const int kMaxBigIntCharacters = BigInt::kMaxLengthBits / 4;
     int length = source_pos() - start_pos - (kind != DECIMAL ? 2 : 0);
     if (length > kMaxBigIntCharacters) {
       ReportScannerError(Location(start_pos, source_pos()),
@@ -1105,15 +1104,15 @@ bool Scanner::ScanRegExpPattern() {
   return true;
 }
 
-std::optional<regexp::Flags> Scanner::ScanRegExpFlags() {
+std::optional<RegExpFlags> Scanner::ScanRegExpFlags() {
   DCHECK_EQ(Token::kRegExpLiteral, next().token);
 
-  regexp::Flags flags;
+  RegExpFlags flags;
   next().literal_chars.Start();
   while (IsIdentifierPart(c0_)) {
-    std::optional<regexp::Flag> maybe_flag = JSRegExp::FlagFromChar(c0_);
+    std::optional<RegExpFlag> maybe_flag = JSRegExp::FlagFromChar(c0_);
     if (!maybe_flag.has_value()) return {};
-    regexp::Flag flag = maybe_flag.value();
+    RegExpFlag flag = maybe_flag.value();
     if (flags & flag) return {};
     AddLiteralCharAdvance();
     flags |= flag;
@@ -1163,7 +1162,6 @@ double Scanner::DoubleValue() {
     case DECIMAL_WITH_LEADING_ZERO:
       return StringToDouble(literal_one_byte_string(), NO_CONVERSION_FLAG);
   }
-  UNREACHABLE();
 }
 
 const char* Scanner::CurrentLiteralAsCString(Zone* zone) const {

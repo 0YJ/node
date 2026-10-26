@@ -5,9 +5,6 @@
       'sources': ['ffi_test_library.c'],
       'type': 'shared_library',
       'conditions': [
-        ['OS == "linux"', {
-          'sources': ['deny_executable_memory.c'],
-        }],
         ['OS in "aix os400"', {
           'product_extension': 'so',
           'ldflags': [ '-Wl,-G' ],

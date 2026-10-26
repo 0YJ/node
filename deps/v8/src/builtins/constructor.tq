@@ -116,7 +116,7 @@ builtin CreateShallowObjectLiteral(
   }
 }
 
-// https://tc39.es/ecma262/#sec-object-constructor
+// ES #sec-object-constructor
 transitioning javascript builtin ObjectConstructor(
     js-implicit context: NativeContext, receiver: JSAny, newTarget: JSAny,
     target: JSFunction)(...arguments): JSAny {
@@ -139,7 +139,7 @@ builtin CreateEmptyLiteralObject(implicit context: Context)(): JSAny {
   return CreateEmptyObjectLiteral(context);
 }
 
-// https://tc39.es/ecma262/#sec-number-constructor
+// ES #sec-number-constructor
 transitioning javascript builtin NumberConstructor(
     js-implicit context: NativeContext, receiver: JSAny, newTarget: JSAny,
     target: JSFunction)(...arguments): JSAny {

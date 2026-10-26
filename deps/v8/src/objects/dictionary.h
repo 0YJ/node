@@ -36,7 +36,11 @@ class EXPORT_TEMPLATE_DECLARE(V8_EXPORT_PRIVATE) Dictionary
   using TodoShape = Shape;
   using Key = typename TodoShape::Key;
   inline Tagged<Object> ValueAt(InternalIndex entry);
+  inline Tagged<Object> ValueAt(PtrComprCageBase cage_base,
+                                InternalIndex entry);
   inline Tagged<Object> ValueAt(InternalIndex entry, SeqCstAccessTag);
+  inline Tagged<Object> ValueAt(PtrComprCageBase cage_base, InternalIndex entry,
+                                SeqCstAccessTag);
   // Returns {} if we would be reading out of the bounds of the object.
   inline std::optional<Tagged<Object>> TryValueAt(InternalIndex entry);
 
@@ -257,7 +261,7 @@ class SimpleNameDictionaryShape : public BaseNameDictionaryShape {
 EXTERN_DECLARE_DICTIONARY(SimpleNameDictionary, SimpleNameDictionaryShape)
 
 // A simple Name-to-Object dictionary.
-V8_OBJECT class SimpleNameDictionary
+class SimpleNameDictionary
     : public Dictionary<SimpleNameDictionary, SimpleNameDictionaryShape> {
  public:
   static inline DirectHandle<Map> GetMap(RootsTable& roots);
@@ -272,7 +276,7 @@ V8_OBJECT class SimpleNameDictionary
                   SimpleNameDictionaryShape>::FindInsertionEntry;
 
   static const int kEntryValueIndex = 1;
-} V8_OBJECT_END;
+};
 
 #define EXTERN_DECLARE_BASE_NAME_DICTIONARY(DERIVED, SHAPE)        \
   EXTERN_DECLARE_DICTIONARY(DERIVED, SHAPE)                        \
@@ -281,7 +285,7 @@ V8_OBJECT class SimpleNameDictionary
 
 EXTERN_DECLARE_BASE_NAME_DICTIONARY(NameDictionary, NameDictionaryShape)
 
-V8_OBJECT class V8_EXPORT_PRIVATE NameDictionary
+class V8_EXPORT_PRIVATE NameDictionary
     : public BaseNameDictionary<NameDictionary, NameDictionaryShape> {
  public:
   static inline DirectHandle<Map> GetMap(RootsTable& roots);
@@ -294,6 +298,7 @@ V8_OBJECT class V8_EXPORT_PRIVATE NameDictionary
   static const int kInitialCapacity = 2;
 
   inline Tagged<Name> NameAt(InternalIndex entry);
+  inline Tagged<Name> NameAt(PtrComprCageBase cage_base, InternalIndex entry);
 
   inline void set_hash(int hash);
   inline int hash() const;
@@ -313,7 +318,7 @@ V8_OBJECT class V8_EXPORT_PRIVATE NameDictionary
       IsolateT* isolate, int at_least_space_for,
       AllocationType allocation = AllocationType::kYoung,
       MinimumCapacity capacity_option = USE_DEFAULT_MINIMUM_CAPACITY);
-} V8_OBJECT_END;
+};
 
 class V8_EXPORT_PRIVATE GlobalDictionaryShape : public BaseNameDictionaryShape {
  public:
@@ -338,7 +343,7 @@ class V8_EXPORT_PRIVATE GlobalDictionaryShape : public BaseNameDictionaryShape {
 
 EXTERN_DECLARE_BASE_NAME_DICTIONARY(GlobalDictionary, GlobalDictionaryShape)
 
-V8_OBJECT class V8_EXPORT_PRIVATE GlobalDictionary
+class V8_EXPORT_PRIVATE GlobalDictionary
     : public BaseNameDictionary<GlobalDictionary, GlobalDictionaryShape> {
  public:
   static inline DirectHandle<Map> GetMap(RootsTable& roots);
@@ -346,7 +351,11 @@ V8_OBJECT class V8_EXPORT_PRIVATE GlobalDictionary
   DECL_PRINTER(GlobalDictionary)
 
   inline Tagged<Object> ValueAt(InternalIndex entry);
+  inline Tagged<Object> ValueAt(PtrComprCageBase cage_base,
+                                InternalIndex entry);
   inline Tagged<PropertyCell> CellAt(InternalIndex entry);
+  inline Tagged<PropertyCell> CellAt(PtrComprCageBase cage_base,
+                                     InternalIndex entry);
   inline void SetEntry(InternalIndex entry, Tagged<Object> key,
                        Tagged<Object> value, PropertyDetails details);
   inline void SetEntry(InternalIndex entry, Tagged<Object> key,
@@ -355,13 +364,14 @@ V8_OBJECT class V8_EXPORT_PRIVATE GlobalDictionary
                        const DisallowGarbageCollection& no_gc);
   inline void ClearEntry(InternalIndex entry);
   inline Tagged<Name> NameAt(InternalIndex entry);
+  inline Tagged<Name> NameAt(PtrComprCageBase cage_base, InternalIndex entry);
   inline void ValueAtPut(InternalIndex entry, Tagged<Object> value);
 
   std::optional<Tagged<PropertyCell>>
   TryFindPropertyCellForConcurrentLookupIterator(Isolate* isolate,
                                                  DirectHandle<Name> name,
                                                  RelaxedLoadTag tag);
-} V8_OBJECT_END;
+};
 
 class NumberDictionaryBaseShape : public BaseDictionaryShape<uint32_t> {
  public:
@@ -407,7 +417,7 @@ class SimpleNumberDictionaryShape : public NumberDictionaryBaseShape {
 EXTERN_DECLARE_DICTIONARY(SimpleNumberDictionary, SimpleNumberDictionaryShape)
 
 // SimpleNumberDictionary is used to map number to an entry.
-V8_OBJECT class SimpleNumberDictionary
+class SimpleNumberDictionary
     : public Dictionary<SimpleNumberDictionary, SimpleNumberDictionaryShape> {
  public:
   static inline DirectHandle<Map> GetMap(RootsTable& roots);
@@ -418,13 +428,13 @@ V8_OBJECT class SimpleNumberDictionary
       DirectHandle<Object> value);
 
   static const int kEntryValueIndex = 1;
-} V8_OBJECT_END;
+};
 
 EXTERN_DECLARE_DICTIONARY(NumberDictionary, NumberDictionaryShape)
 
 // NumberDictionary is used as elements backing store and provides a bitfield
 // and stores property details for every entry.
-V8_OBJECT class NumberDictionary
+class NumberDictionary
     : public Dictionary<NumberDictionary, NumberDictionaryShape> {
  public:
   static inline DirectHandle<Map> GetMap(RootsTable& roots);
@@ -480,7 +490,7 @@ V8_OBJECT class NumberDictionary
   // JSObjects prefer dictionary elements if the dictionary saves this much
   // memory compared to a fast elements backing store.
   static const uint32_t kPreferFastElementsSizeFactor = 3;
-} V8_OBJECT_END;
+};
 
 // The comparator is passed two indices |a| and |b|, and it returns < 0 when the
 // property at index |a| comes before the property at index |b| in the

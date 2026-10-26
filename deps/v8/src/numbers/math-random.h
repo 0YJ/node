@@ -19,8 +19,7 @@ class MathRandom : public AllStatic {
   static void ResetContext(Tagged<Context> native_context);
   // Takes native context as a raw Address for ExternalReference usage.
   // Returns a tagged Smi as a raw Address.
-  static Address InitializeAndMaybeRefillCache(Isolate* isolate,
-                                               Address raw_native_context);
+  static Address RefillCache(Isolate* isolate, Address raw_native_context);
 
   static const int kCacheSize = 64;
   static const int kStateSize = 2 * kInt64Size;

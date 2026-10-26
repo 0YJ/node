@@ -9,9 +9,7 @@ let {contextGroup, Protocol} = InspectorTest.start('Regression test for crbug.co
 InspectorTest.runAsyncTestSuite([
   async function testInvalidSamplingInterval() {
     await Protocol.HeapProfiler.enable();
-    let message = await Protocol.HeapProfiler.startSampling({samplingInterval: 0});
-    InspectorTest.logMessage(message);
-    message = await Protocol.HeapProfiler.startSampling({samplingInterval: 0.5});
+    const message = await Protocol.HeapProfiler.startSampling({samplingInterval: 0});
     InspectorTest.logMessage(message);
     await Protocol.HeapProfiler.disable();
   }

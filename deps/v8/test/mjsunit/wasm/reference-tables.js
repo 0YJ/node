@@ -145,7 +145,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
 
-  let array_type = builder.addArray(kWasmI32, {mutable: false});
+  let array_type = builder.addArray(kWasmI32);
   let struct_type = builder.addStruct([makeField(kWasmI32, false)]);
 
   let table = builder.addTable(kWasmAnyRef, 4, 4);
@@ -206,7 +206,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
 
-  let array_type = builder.addArray(kWasmI32, {mutable: false});
+  let array_type = builder.addArray(kWasmI32);
   let struct_type = builder.addStruct([makeField(kWasmI32, false)]);
 
   let table = builder.addTable(wasmRefType(kWasmAnyRef), 3, 6,
@@ -357,7 +357,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
 
-  let array_type = builder.addArray(kWasmI32, {mutable: false});
+  let array_type = builder.addArray(kWasmI32);
 
   let table = builder.addTable(wasmRefNullType(array_type), 4, 4);
   builder.addActiveElementSegment(
@@ -459,8 +459,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   let struct_type = builder.addStruct([makeField(kWasmI32, false)]);
   let struct_type_invalid = builder.addStruct([makeField(kWasmI64, false)]);
   let struct_type_sub = builder.addStruct(
-      {fields: [makeField(kWasmI32, false), makeField(kWasmI32, false)],
-       supertype: struct_type});
+      [makeField(kWasmI32, false), makeField(kWasmI32, false)], struct_type);
   builder.addImportedTable(
       'imports', 'table', 1, 100, wasmRefNullType(struct_type));
 
@@ -504,16 +503,16 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   let exporting_instance = (() => {
     let builder = new WasmModuleBuilder();
     let struct_type_base = builder.addStruct([makeField(kWasmI32, false)]);
-    let struct_type = builder.addStruct(
-        {fields: [makeField(kWasmI32, false)], supertype: struct_type_base});
+    let struct_type =
+        builder.addStruct([makeField(kWasmI32, false)], struct_type_base);
     builder.addTable(wasmRefNullType(struct_type), 1, 100).exportAs('table');
     return builder.instantiate({});
   })();
 
   let builder = new WasmModuleBuilder();
   let struct_type_base = builder.addStruct([makeField(kWasmI32, false)]);
-  let struct_type = builder.addStruct(
-      {fields: [makeField(kWasmI32, false)], supertype: struct_type_base});
+  let struct_type =
+      builder.addStruct([makeField(kWasmI32, false)], struct_type_base);
   builder.addImportedTable(
       'imports', 'table', 1, 100, wasmRefNullType(struct_type));
 
@@ -580,8 +579,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
   let super_struct = builder.addStruct([makeField(kWasmI32, false)]);
   let sub_struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, false), makeField(kWasmI32, false)],
-       supertype: super_struct});
+    [makeField(kWasmI32, false), makeField(kWasmI32, false)], super_struct);
   let super_sig = builder.addType(
     makeSig([kWasmI32], [wasmRefType(super_struct)]), kNoSuperType, false);
   let sub_sig = builder.addType(
@@ -623,6 +621,6 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   assertEquals(11, instance.exports.call_indirect_sub(1, 10));
   assertTraps(kTrapFuncSigMismatch,
               () => instance.exports.call_indirect_sub(0, 10));
-  assertTraps(kTrapNullFunc,
+  assertTraps(kTrapFuncSigMismatch,
               () => instance.exports.call_indirect_sub(2, 10));
 })();

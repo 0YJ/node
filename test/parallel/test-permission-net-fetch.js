@@ -25,7 +25,6 @@ const server = http.createServer((req, res) => {
     process.execPath,
     [
       '--permission',
-      '--allow-env=URL',
       '--allow-fs-read=*',
       file,
     ],

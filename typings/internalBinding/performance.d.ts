@@ -41,9 +41,6 @@ declare namespace InternalPerformanceBinding {
     ewmaMean(): number;
     ewmaStddev(): number;
     ewmaErrorRate(): number;
-    snapshot(): Histogram;
-    diff(other: HistogramBase): Histogram;
-    resetCount(): number;
   }
 
   interface ELDHistogram extends HistogramBase {
@@ -77,20 +74,6 @@ declare namespace InternalPerformanceBinding {
     ): void;
     add(other: Histogram): number;
     subtract(other: Histogram): number;
-  }
-
-  class SlidingWindowHistogram {
-    constructor(
-      lowest: number | bigint,
-      highest: number | bigint,
-      figures: number,
-      chunks: number,
-      timeBased: boolean,
-      rotateAt: bigint,
-    );
-    record(value: number | bigint): void;
-    snapshot(): Histogram;
-    reset(): void;
   }
 
   interface Constants {
@@ -133,25 +116,19 @@ type PerformanceObserverCallback =
 
 export interface PerformanceBinding {
   Histogram: typeof InternalPerformanceBinding.Histogram;
-  SlidingWindowHistogram:
-    typeof InternalPerformanceBinding.SlidingWindowHistogram;
   constants: InternalPerformanceBinding.Constants;
   observerCounts: Uint32Array;
   milestones: Float64Array;
   setupObservers(callback: PerformanceObserverCallback): void;
-  updateGarbageCollectionTracking(): void;
+  installGarbageCollectionTracking(): void;
+  removeGarbageCollectionTracking(): void;
   notify(type: string, entry: unknown): void;
   loopIdleTime(): number;
   createELDHistogram(
     interval: number,
     samplePerIteration: boolean,
-    lowest: bigint,
-    highest: bigint,
-    figures: number,
   ): InternalPerformanceBinding.ELDHistogram;
   markBootstrapComplete(): void;
-  uvMetricsInfo(): void;
-  uvMetricsBuffer: Float64Array;
-  uvMetricsBigIntBuffer: BigUint64Array;
+  uvMetricsInfo(): [number, number, number];
   now(): number;
 }

@@ -18,9 +18,6 @@
  * This header is "private" to stacktrace.cc.
  * DO NOT include it into any other files.
 */
-
-// SKIP_ABSL_INLINE_NAMESPACE_CHECK
-
 #ifndef ABSL_DEBUGGING_INTERNAL_STACKTRACE_CONFIG_H_
 #define ABSL_DEBUGGING_INTERNAL_STACKTRACE_CONFIG_H_
 
@@ -62,7 +59,7 @@
 #define ABSL_STACKTRACE_INL_HEADER \
   "absl/debugging/internal/stacktrace_libunwind-inl.inc"
 #define STACKTRACE_USES_LIBUNWIND 1
-#elif defined(NO_FRAME_POINTER)
+#elif defined(NO_FRAME_POINTER) && defined(__has_include)
 #if __has_include(<execinfo.h>) && defined(ABSL_HAVE_THREAD_LOCAL)
 // Note: When using glibc this may require -funwind-tables to function properly.
 #define ABSL_STACKTRACE_INL_HEADER \
@@ -80,13 +77,13 @@
 #elif defined(__riscv)
 #define ABSL_STACKTRACE_INL_HEADER \
   "absl/debugging/internal/stacktrace_riscv-inl.inc"
-#else
+#elif defined(__has_include)
 #if __has_include(<execinfo.h>) && defined(ABSL_HAVE_THREAD_LOCAL)
 // Note: When using glibc this may require -funwind-tables to function properly.
 #define ABSL_STACKTRACE_INL_HEADER \
   "absl/debugging/internal/stacktrace_generic-inl.inc"
 #endif  // __has_include(<execinfo.h>) && defined(ABSL_HAVE_THREAD_LOCAL)
-#endif
+#endif  // defined(__has_include)
 
 #endif  // defined(__linux__) && !defined(__ANDROID__)
 

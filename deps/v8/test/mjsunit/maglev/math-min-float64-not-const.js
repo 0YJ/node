@@ -33,4 +33,4 @@ assertSame(-Infinity, min2(-Infinity, Infinity));
 assertSame(-Infinity, min2(-Infinity, -Infinity));
 
 // No deopts.
-assertMaglevved(min2);
+assertTrue(isMaglevved(min2));

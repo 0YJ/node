@@ -42,7 +42,6 @@ server.listen(0, function() {
   const port = this.address().port;
   // username = "user", password = "pass:"
   const testURL = url.parse(`http://user:pass%3A@localhost:${port}`);
-  testURL.agent = false;
 
   // make the request
   http.request(testURL).end();

@@ -1,4 +1,4 @@
-#include "arch/arm_arch.h"
+#include "arm_arch.h"
 
 .text
 .globl	_ossl_md5_block_asm_data_order

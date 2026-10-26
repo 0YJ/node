@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -54,6 +54,7 @@ typedef enum OPTION_choice {
     OPT_INDEF,
     OPT_NOINDEF,
     OPT_CRLFEOL,
+    OPT_ENGINE,
     OPT_PASSIN,
     OPT_TO,
     OPT_FROM,
@@ -94,7 +95,10 @@ const OPTIONS smime_options[] = {
         "Output format SMIME (default), PEM or DER" },
     { "inkey", OPT_INKEY, 's',
         "Input private key (if not signer or recipient)" },
-    { "keyform", OPT_KEYFORM, 'f', "Input private key format (DER/PEM)" },
+    { "keyform", OPT_KEYFORM, 'f', "Input private key format (ENGINE, other values ignored)" },
+#ifndef OPENSSL_NO_ENGINE
+    { "engine", OPT_ENGINE, 's', "Use engine, possibly a hardware device" },
+#endif
     { "stream", OPT_STREAM, '-', "Enable CMS streaming" },
     { "indef", OPT_INDEF, '-', "Same as -stream" },
     { "noindef", OPT_NOINDEF, '-', "Disable CMS streaming" },
@@ -117,7 +121,7 @@ const OPTIONS smime_options[] = {
     { "nodetach", OPT_NODETACH, '-', "Use opaque signing" },
     { "noattr", OPT_NOATTR, '-', "Don't include any signed attributes" },
     { "binary", OPT_BINARY, '-', "Don't translate message to text" },
-    { "signer", OPT_SIGNER, 's', "Signer certificate" },
+    { "signer", OPT_SIGNER, 's', "Signer certificate file" },
     { "content", OPT_CONTENT, '<',
         "Supply or override content for detached signature" },
     { "nocerts", OPT_NOCERTS, '-',
@@ -127,7 +131,11 @@ const OPTIONS smime_options[] = {
     { "nosigs", OPT_NOSIGS, '-', "Don't verify message signature" },
     { "noverify", OPT_NOVERIFY, '-', "Don't verify signers certificate" },
 
-    { "recip", OPT_RECIP, '<', "Recipient certificate for decryption" },
+    { "certfile", OPT_CERTFILE, '<',
+        "Extra signer and intermediate CA certificates to include when signing" },
+    { OPT_MORE_STR, 0, 0,
+        "or to use as preferred signer certs and for chain building when verifying" },
+    { "recip", OPT_RECIP, '<', "Recipient certificate file for decryption" },
 
     OPT_SECTION("Email"),
     { "to", OPT_TO, 's', "To address" },
@@ -137,13 +145,9 @@ const OPTIONS smime_options[] = {
     { "nosmimecap", OPT_NOSMIMECAP, '-', "Omit the SMIMECapabilities attribute" },
 
     OPT_SECTION("Certificate chain"),
-    { "certfile", OPT_CERTFILE, '<',
-        "Extra signer and intermediate CA certificates to include when signing" },
-    { OPT_MORE_STR, 0, 0,
-        "or to use as preferred signer certs and for chain building when verifying" },
-    { "CAfile", OPT_CAFILE, '<', "File in PEM format with trusted CA certs" },
-    { "CApath", OPT_CAPATH, '/', "Dir with trusted CA cert files in PEM format" },
-    { "CAstore", OPT_CASTORE, ':', "URI of store with trusted CA certs" },
+    { "CApath", OPT_CAPATH, '/', "Trusted certificates directory" },
+    { "CAfile", OPT_CAFILE, '<', "Trusted certificates file" },
+    { "CAstore", OPT_CASTORE, ':', "Trusted certificates store URI" },
     { "no-CAfile", OPT_NOCAFILE, '-',
         "Do not load the default certificates file" },
     { "no-CApath", OPT_NOCAPATH, '-',
@@ -151,8 +155,8 @@ const OPTIONS smime_options[] = {
     { "no-CAstore", OPT_NOCASTORE, '-',
         "Do not load certificates from the default certificates store" },
     { "nochain", OPT_NOCHAIN, '-',
-        "Do not use certs contained in the message as untrusted CAs for chain building" },
-    { "crlfeol", OPT_CRLFEOL, '-', "Use CRLF as EOL termination (instead of LF only)" },
+        "set PKCS7_NOCHAIN so certificates contained in the message are not used as untrusted CAs" },
+    { "crlfeol", OPT_CRLFEOL, '-', "Use CRLF as EOL termination instead of LF only" },
 
     OPT_R_OPTIONS,
     OPT_V_OPTIONS,
@@ -211,6 +215,7 @@ int smime_main(int argc, char **argv)
     int flags = PKCS7_DETACHED, operation = 0, ret = 0, indef = 0;
     int informat = FORMAT_SMIME, outformat = FORMAT_SMIME, keyform = FORMAT_UNDEF;
     int vpmtouched = 0, rv = 0;
+    ENGINE *e = NULL;
     const char *mime_eol = "\n";
     OSSL_LIB_CTX *libctx = app_get0_libctx();
 
@@ -321,6 +326,9 @@ int smime_main(int argc, char **argv)
             conf = app_load_config_modules(opt_arg());
             if (conf == NULL)
                 goto end;
+            break;
+        case OPT_ENGINE:
+            e = setup_engine(opt_arg(), 0);
             break;
         case OPT_PASSIN:
             passinarg = opt_arg();
@@ -463,26 +471,26 @@ int smime_main(int argc, char **argv)
                 goto end;
         }
         if (sksigners == NULL) {
-            BIO_puts(bio_err, "No signer certificate specified\n");
+            BIO_printf(bio_err, "No signer certificate specified\n");
             goto opthelp;
         }
         signerfile = NULL;
         keyfile = NULL;
     } else if (operation == SMIME_DECRYPT) {
         if (recipfile == NULL && keyfile == NULL) {
-            BIO_puts(bio_err,
+            BIO_printf(bio_err,
                 "No recipient certificate or key specified\n");
             goto opthelp;
         }
     } else if (operation == SMIME_ENCRYPT) {
         if (argc == 0) {
-            BIO_puts(bio_err, "No recipient(s) certificate(s) specified\n");
+            BIO_printf(bio_err, "No recipient(s) certificate(s) specified\n");
             goto opthelp;
         }
     }
 
     if (!app_passwd(passinarg, NULL, &passin, NULL)) {
-        BIO_puts(bio_err, "Error getting password\n");
+        BIO_printf(bio_err, "Error getting password\n");
         goto end;
     }
 
@@ -520,7 +528,7 @@ int smime_main(int argc, char **argv)
     }
 
     if (certfile != NULL) {
-        if (!load_certs(certfile, 0, &other, NULL, "extra certificates")) {
+        if (!load_certs(certfile, 0, &other, NULL, "certificates")) {
             ERR_print_errors(bio_err);
             goto end;
         }
@@ -546,7 +554,7 @@ int smime_main(int argc, char **argv)
     }
 
     if (keyfile != NULL) {
-        key = load_key(keyfile, keyform, 0, passin, "signing key");
+        key = load_key(keyfile, keyform, 0, passin, e, "signing key");
         if (key == NULL)
             goto end;
     }
@@ -560,7 +568,7 @@ int smime_main(int argc, char **argv)
 
         p7 = PKCS7_new_ex(libctx, app_get0_propq());
         if (p7 == NULL) {
-            BIO_puts(bio_err, "Error allocating PKCS7 object\n");
+            BIO_printf(bio_err, "Error allocating PKCS7 object\n");
             goto end;
         }
         if (informat == FORMAT_SMIME) {
@@ -570,12 +578,12 @@ int smime_main(int argc, char **argv)
         } else if (informat == FORMAT_ASN1) {
             p7_in = d2i_PKCS7_bio(in, &p7);
         } else {
-            BIO_puts(bio_err, "Bad input format for PKCS#7 file\n");
+            BIO_printf(bio_err, "Bad input format for PKCS#7 file\n");
             goto end;
         }
 
         if (p7_in == NULL) {
-            BIO_puts(bio_err, "Error reading S/MIME message\n");
+            BIO_printf(bio_err, "Error reading S/MIME message\n");
             goto end;
         }
         if (contfile != NULL) {
@@ -624,7 +632,7 @@ int smime_main(int argc, char **argv)
             p7 = PKCS7_sign_ex(NULL, NULL, other, in, flags, libctx, app_get0_propq());
             if (p7 == NULL)
                 goto end;
-            if ((flags & PKCS7_NOCERTS) != 0) { /* still add list given via -certfile */
+            if (flags & PKCS7_NOCERTS) {
                 for (i = 0; i < sk_X509_num(other); i++) {
                     X509 *x = sk_X509_value(other, i);
                     PKCS7_add_certificate(p7, x);
@@ -639,7 +647,7 @@ int smime_main(int argc, char **argv)
             signer = load_cert(signerfile, FORMAT_UNDEF, "signer certificate");
             if (signer == NULL)
                 goto end;
-            key = load_key(keyfile, keyform, 0, passin, "signing key");
+            key = load_key(keyfile, keyform, 0, passin, e, "signing key");
             if (key == NULL)
                 goto end;
 
@@ -658,22 +666,22 @@ int smime_main(int argc, char **argv)
     }
 
     if (p7 == NULL) {
-        BIO_puts(bio_err, "Error creating PKCS#7 structure\n");
+        BIO_printf(bio_err, "Error creating PKCS#7 structure\n");
         goto end;
     }
 
     ret = 4;
     if (operation == SMIME_DECRYPT) {
         if (!PKCS7_decrypt(p7, key, recip, out, flags)) {
-            BIO_puts(bio_err, "Error decrypting PKCS#7 structure\n");
+            BIO_printf(bio_err, "Error decrypting PKCS#7 structure\n");
             goto end;
         }
     } else if (operation == SMIME_VERIFY) {
         STACK_OF(X509) *signers;
         if (PKCS7_verify(p7, other, store, indata, out, flags))
-            BIO_puts(bio_err, "Verification successful\n");
+            BIO_printf(bio_err, "Verification successful\n");
         else {
-            BIO_puts(bio_err, "Verification failure\n");
+            BIO_printf(bio_err, "Verification failure\n");
             goto end;
         }
         signers = PKCS7_get0_signers(p7, other, flags);
@@ -702,11 +710,11 @@ int smime_main(int argc, char **argv)
         } else if (outformat == FORMAT_ASN1) {
             rv = i2d_PKCS7_bio_stream(out, p7, in, flags);
         } else {
-            BIO_puts(bio_err, "Bad output format for PKCS#7 file\n");
+            BIO_printf(bio_err, "Bad output format for PKCS#7 file\n");
             goto end;
         }
         if (rv == 0) {
-            BIO_puts(bio_err, "Error writing output\n");
+            BIO_printf(bio_err, "Error writing output\n");
             ret = 3;
             goto end;
         }
@@ -728,6 +736,7 @@ end:
     EVP_MD_free(sign_md);
     EVP_CIPHER_free(cipher);
     PKCS7_free(p7);
+    release_engine(e);
     BIO_free(in);
     BIO_free(indata);
     BIO_free_all(out);

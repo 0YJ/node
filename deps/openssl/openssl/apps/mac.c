@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2018-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,7 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <stdio.h>
 #include <string.h>
 
 #include "apps.h"
@@ -69,7 +68,7 @@ static char *alloc_mac_algorithm_name(STACK_OF(OPENSSL_STRING) **optp,
         return NULL;
 
     res = app_malloc(len, "algorithm name");
-    snprintf(res, len, "%s:%s", name, arg);
+    BIO_snprintf(res, len, "%s:%s", name, arg);
     if (sk_OPENSSL_STRING_push(*optp, res))
         return res;
     OPENSSL_free(res);
@@ -94,7 +93,6 @@ int mac_main(int argc, char **argv)
     int inform = FORMAT_BINARY;
     char *digest = NULL, *cipher = NULL;
     OSSL_PARAM *params = NULL;
-    char *new_opt = NULL;
 
     prog = opt_init(argc, argv, mac_options);
     buf = app_malloc(BUFSIZE, "I/O buffer");
@@ -118,17 +116,10 @@ int mac_main(int argc, char **argv)
             outfile = opt_arg();
             break;
         case OPT_MACOPT:
-            new_opt = process_additional_mac_key_arguments(opt_arg());
-            if (new_opt == NULL) {
-                ret = 1;
-                goto err;
-            }
             if (opts == NULL)
                 opts = sk_OPENSSL_STRING_new_null();
-            if (opts == NULL || !sk_OPENSSL_STRING_push(opts, new_opt)) {
-                clear_free(new_opt);
+            if (opts == NULL || !sk_OPENSSL_STRING_push(opts, opt_arg()))
                 goto opthelp;
-            }
             break;
         case OPT_CIPHER:
             OPENSSL_free(cipher);
@@ -173,7 +164,7 @@ int mac_main(int argc, char **argv)
             goto err;
 
         if (!EVP_MAC_CTX_set_params(ctx, params)) {
-            BIO_puts(bio_err, "MAC parameter error\n");
+            BIO_printf(bio_err, "MAC parameter error\n");
             ERR_print_errors(bio_err);
             ok = 0;
         }
@@ -191,7 +182,7 @@ int mac_main(int argc, char **argv)
         goto err;
 
     if (!EVP_MAC_init(ctx, NULL, 0, NULL)) {
-        BIO_puts(bio_err, "EVP_MAC_Init failed\n");
+        BIO_printf(bio_err, "EVP_MAC_Init failed\n");
         goto err;
     }
 
@@ -205,32 +196,32 @@ int mac_main(int argc, char **argv)
         if (i == 0)
             break;
         if (!EVP_MAC_update(ctx, buf, i)) {
-            BIO_puts(bio_err, "EVP_MAC_update failed\n");
+            BIO_printf(bio_err, "EVP_MAC_update failed\n");
             goto err;
         }
     }
 
     if (!EVP_MAC_final(ctx, NULL, &len, 0)) {
-        BIO_puts(bio_err, "EVP_MAC_final failed\n");
+        BIO_printf(bio_err, "EVP_MAC_final failed\n");
         goto err;
     }
     if (len > BUFSIZE) {
-        BIO_puts(bio_err, "output len is too large\n");
+        BIO_printf(bio_err, "output len is too large\n");
         goto err;
     }
 
     if (!EVP_MAC_final(ctx, buf, &len, BUFSIZE)) {
-        BIO_puts(bio_err, "EVP_MAC_final failed\n");
+        BIO_printf(bio_err, "EVP_MAC_final failed\n");
         goto err;
     }
 
     if (out_bin) {
-        BIO_write(out, buf, (int)len);
+        BIO_write(out, buf, len);
     } else {
         for (i = 0; i < (int)len; ++i)
             BIO_printf(out, "%02X", buf[i]);
         if (outfile == NULL)
-            BIO_puts(out, "\n");
+            BIO_printf(out, "\n");
     }
 
     ret = 0;
@@ -238,7 +229,9 @@ err:
     if (ret != 0)
         ERR_print_errors(bio_err);
     OPENSSL_clear_free(buf, BUFSIZE);
-    sk_OPENSSL_STRING_pop_free(opts, clear_free);
+    OPENSSL_free(cipher);
+    OPENSSL_free(digest);
+    sk_OPENSSL_STRING_free(opts);
     BIO_free(in);
     BIO_free(out);
     EVP_MAC_CTX_free(ctx);

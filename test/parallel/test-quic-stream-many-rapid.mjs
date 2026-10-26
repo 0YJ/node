@@ -7,7 +7,6 @@
 
 import { hasQuic, skip, mustCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -48,7 +47,7 @@ for (let i = 0; i < streamCount; i++) {
 
 // Wait for all client streams to close.
 await Promise.all(streams.map(async (stream) => {
-  await dump(stream);
+  for await (const _ of stream) { /* drain */ } // eslint-disable-line no-unused-vars
   await stream.closed;
 }));
 

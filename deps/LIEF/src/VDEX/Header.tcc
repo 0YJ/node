@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,25 +16,29 @@
 #include <string>
 #include "LIEF/VDEX/Header.hpp"
 
-#include "internal_utils.hpp"
-
-
-namespace LIEF::VDEX {
+namespace LIEF {
+namespace VDEX {
 
 template<class T>
 Header::Header(const T* header) :
   magic_{},
-  version_{static_cast<vdex_version_t>(parse_android_version(
-      reinterpret_cast<const char*>(header->version), sizeof(header->version)
-  ))},
+  version_{0},
   nb_dex_files_{header->number_of_dex_files},
   dex_size_{header->dex_size},
   verifier_deps_size_{header->verifier_deps_size},
-  quickening_info_size_{header->quickening_info_size} {
+  quickening_info_size_{header->quickening_info_size}
+{
 
-  std::copy(std::begin(header->magic), std::end(header->magic),
-            std::begin(magic_));
+  std::copy(
+      std::begin(header->magic),
+      std::end(header->magic),
+      std::begin(magic_)
+  );
+
+  version_ = static_cast<vdex_version_t>(std::stoi(std::string{reinterpret_cast<const char*>(header->version), sizeof(header->version)}));
+
 }
 
 
-} // namespace LIEF::VDEX
+} // namespace VDEX
+} // namespace LIEF

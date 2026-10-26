@@ -16,8 +16,6 @@
 #ifndef ABSL_BASE_FAST_TYPE_ID_H_
 #define ABSL_BASE_FAST_TYPE_ID_H_
 
-#include <utility>
-
 #include "absl/base/config.h"
 
 namespace absl {
@@ -31,40 +29,14 @@ struct FastTypeTag {
 }  // namespace base_internal
 
 // The type returned by `absl::FastTypeId<T>()`.
-class FastTypeIdType final {
- public:
-  // Creates a value that does not correspond to any type. This value is
-  // distinct from any value returned by `FastTypeId<T>()`.
-  constexpr FastTypeIdType() = default;
-
-  template <typename H>
-  friend H AbslHashValue(H h, FastTypeIdType x) {
-    return H::combine(std::move(h), x.ptr_);
-  }
-
-  friend constexpr bool operator==(FastTypeIdType a, FastTypeIdType b) {
-    return a.ptr_ == b.ptr_;
-  }
-  friend constexpr bool operator!=(FastTypeIdType a, FastTypeIdType b) {
-    return a.ptr_ != b.ptr_;
-  }
-
- private:
-  // `FastTypeId<T>()` is the generator method for FastTypeIdType values.
-  template <typename T>
-  friend constexpr FastTypeIdType FastTypeId();
-
-  explicit constexpr FastTypeIdType(const void* ptr) : ptr_(ptr) {}
-
-  const void* ptr_ = nullptr;
-};
+using FastTypeIdType = const void*;
 
 // `absl::FastTypeId<Type>()` evaluates at compile-time to a unique id for the
 // passed-in type. These are meant to be good match for keys into maps or
 // straight up comparisons.
 template <typename Type>
 constexpr FastTypeIdType FastTypeId() {
-  return FastTypeIdType(&base_internal::FastTypeTag<Type>::kDummyVar);
+  return &base_internal::FastTypeTag<Type>::kDummyVar;
 }
 
 ABSL_NAMESPACE_END

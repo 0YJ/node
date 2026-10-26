@@ -35,7 +35,9 @@ void AllocationBuilder::AllocateContext(int variadic_part_length, MapRef map) {
   int size = Context::SizeFor(variadic_part_length);
   Allocate(size, AllocationType::kYoung, Type::OtherInternal());
   Store(AccessBuilder::ForMap(), map);
-  Store(AccessBuilder::ForContextLength(),
+  static_assert(static_cast<int>(Context::kLengthOffset) ==
+                static_cast<int>(offsetof(FixedArray, length_)));
+  Store(AccessBuilder::ForFixedArrayLength(),
         jsgraph()->ConstantNoHole(variadic_part_length));
 }
 
@@ -58,7 +60,7 @@ void AllocationBuilder::AllocateArray(int length, MapRef map,
                  : FixedDoubleArray::SizeFor(length);
   Allocate(size, allocation, Type::OtherInternal());
   Store(AccessBuilder::ForMap(), map);
-  Store(AccessBuilder::ForFixedArrayLengthLegacy(),
+  Store(AccessBuilder::ForFixedArrayLength(),
         jsgraph()->ConstantNoHole(length));
 }
 
@@ -74,7 +76,7 @@ void AllocationBuilder::AllocateSloppyArgumentElements(
   int size = SloppyArgumentsElements::SizeFor(length);
   Allocate(size, allocation, Type::OtherInternal());
   Store(AccessBuilder::ForMap(), map);
-  Store(AccessBuilder::ForFixedArrayLengthLegacy(),
+  Store(AccessBuilder::ForFixedArrayLength(),
         jsgraph()->ConstantNoHole(length));
 }
 

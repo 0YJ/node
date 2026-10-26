@@ -183,10 +183,7 @@ function testFromSyncIgnoresAsyncStreamable() {
 // Explicit async iterable rejected
 function testFromSyncRejectsAsyncIterable() {
   async function* gen() { yield [new TextEncoder().encode('a')]; }
-  assert.throws(() => fromSync(gen()), {
-    code: 'ERR_INVALID_ARG_TYPE',
-    message: /must be a synchronous input, not an async iterable\./,
-  });
+  assert.throws(() => fromSync(gen()), { code: 'ERR_INVALID_ARG_TYPE' });
 }
 
 function testFromSyncPrefersIteratorForDualIterable() {
@@ -215,10 +212,8 @@ function testFromSyncPrefersIteratorForThenableIterable() {
 
 // Promise rejected
 function testFromSyncRejectsPromise() {
-  assert.throws(() => fromSync(Promise.resolve('hello')), {
-    code: 'ERR_INVALID_ARG_TYPE',
-    message: /must be a synchronous input, not a promise\./,
-  });
+  assert.throws(() => fromSync(Promise.resolve('hello')),
+                { code: 'ERR_INVALID_ARG_TYPE' });
 }
 
 // DataView input should be converted to Uint8Array (zero-copy)
@@ -244,17 +239,6 @@ function testFromSyncUndefinedThrows() {
   assert.throws(() => fromSync(undefined), { code: 'ERR_INVALID_ARG_TYPE' });
 }
 
-function testFromSyncFunctionWithToStreamable() {
-  // Functions are objects and may implement the protocol.
-  function source() {}
-  source[Symbol.for('Stream.toStreamable')] = () => 'from-function';
-  assert.strictEqual(textSync(fromSync(source)), 'from-function');
-  // ...also when nested inside another source.
-  assert.strictEqual(textSync(fromSync([source, '!'])), 'from-function!');
-  // A function without a protocol is still rejected.
-  assert.throws(() => fromSync(() => {}), { code: 'ERR_INVALID_ARG_TYPE' });
-}
-
 Promise.all([
   testFromSyncString(),
   testFromSyncUint8Array(),
@@ -276,5 +260,4 @@ Promise.all([
   testFromSyncPrefersIteratorForThenableIterable(),
   testFromSyncRejectsPromise(),
   testFromSyncDataView(),
-  testFromSyncFunctionWithToStreamable(),
 ]).then(common.mustCall());

@@ -16,7 +16,7 @@ function shrl_test(lhs, rhs, expected_result) {
   %OptimizeMaglevOnNextCall(shrl);
 
   assertEquals(expected_result, shrl(lhs, rhs));
-  assertMaglevved(shrl);
+  assertTrue(isMaglevved(shrl));
 
   %DeoptimizeFunction(shrl);
   assertEquals(expected_result, shrl(lhs, rhs));
@@ -31,7 +31,7 @@ function shrl_test_expect_deopt(lhs, rhs, expected_result) {
   %OptimizeMaglevOnNextCall(shrl);
 
   assertEquals(expected_result, shrl(lhs, rhs));
-  assertNotMaglevved(shrl);
+  assertFalse(isMaglevved(shrl));
 }
 
 shrl_test(8, 2, 2);

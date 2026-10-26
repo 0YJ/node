@@ -16,7 +16,7 @@ try {
   new Worker(() => {}, { type: 'function', arguments: args });
 } catch (e) {
   assertTrue(e instanceof Error);
-  assertTrue(e.message.includes("String limit exceeded"));
+  assertTrue(e.message.includes("Invalid argument"));
   threw = true;
 }
 assertTrue(threw);

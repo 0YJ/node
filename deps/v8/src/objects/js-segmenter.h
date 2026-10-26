@@ -29,7 +29,9 @@ class BreakIterator;
 namespace v8 {
 namespace internal {
 
-V8_OBJECT class JSSegmenter : public JSObject {
+#include "torque-generated/src/objects/js-segmenter-tq.inc"
+
+class JSSegmenter : public TorqueGeneratedJSSegmenter<JSSegmenter, JSObject> {
  public:
   // Creates segmenter object with properties derived from input locales and
   // options.
@@ -45,21 +47,11 @@ V8_OBJECT class JSSegmenter : public JSObject {
   Handle<String> GranularityAsString(Isolate* isolate) const;
 
   // Segmenter accessors.
-  inline Tagged<String> locale() const;
-  inline void set_locale(Tagged<String> value,
-                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Managed<icu::BreakIterator>> icu_break_iterator() const;
-  inline void set_icu_break_iterator(
-      Tagged<Managed<icu::BreakIterator>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int flags() const;
-  inline void set_flags(int value);
+  DECL_ACCESSORS(icu_break_iterator, Tagged<Managed<icu::BreakIterator>>)
 
   // Granularity: identifying the segmenter used.
   //
-  // https://tc39.es/ecma402/#sec-segmenter-internal-slots
+  // ecma402 #sec-segmenter-internal-slots
   enum class Granularity {
     GRAPHEME,  // for character-breaks
     WORD,      // for word-breaks
@@ -72,25 +64,16 @@ V8_OBJECT class JSSegmenter : public JSObject {
                                              Granularity granularity);
 
   // Bit positions in |flags|.
-  using GranularityBits =
-      base::BitField<JSSegmenter::Granularity, 0, 2, uint32_t>;
+  DEFINE_TORQUE_GENERATED_JS_SEGMENTER_FLAGS()
 
   static_assert(GranularityBits::is_valid(Granularity::GRAPHEME));
   static_assert(GranularityBits::is_valid(Granularity::WORD));
   static_assert(GranularityBits::is_valid(Granularity::SENTENCE));
 
   DECL_PRINTER(JSSegmenter)
-  DECL_VERIFIER(JSSegmenter)
 
-  static const int kHeaderSize;
-
- public:
-  TaggedMember<String> locale_;
-  TaggedMember<Foreign> icu_break_iterator_;
-  TaggedMember<Smi> flags_;
-} V8_OBJECT_END;
-
-inline constexpr int JSSegmenter::kHeaderSize = sizeof(JSSegmenter);
+  TQ_OBJECT_CONSTRUCTORS(JSSegmenter)
+};
 
 }  // namespace internal
 }  // namespace v8

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,13 @@
 #include "LIEF/MachO/NoteCommand.hpp"
 #include "MachO/Structures.hpp"
 
-
-namespace LIEF::MachO {
+namespace LIEF {
+namespace MachO {
 
 NoteCommand::NoteCommand(const details::note_command& cmd) :
   LoadCommand::LoadCommand{LoadCommand::TYPE(cmd.cmd), cmd.cmdsize},
-  owner_(),
-  note_offset_(cmd.offset),
-  note_size_(cmd.size) {
+  owner_(), note_offset_(cmd.offset), note_size_(cmd.size)
+{
   static_assert(sizeof(owner_) == sizeof(cmd.data_owner));
   std::copy(std::begin(cmd.data_owner), std::end(cmd.data_owner),
             std::begin(owner_));
@@ -38,9 +37,10 @@ void NoteCommand::accept(Visitor& visitor) const {
 
 std::ostream& NoteCommand::print(std::ostream& os) const {
   LoadCommand::print(os) << '\n';
-  os << fmt::format("owner={} offset={:#x}, size={:#x}", owner_str(),
-                    note_offset(), note_size());
+  os << fmt::format("owner={} offset=0x{:x}, size=0x{:x}",
+                    owner_str(), note_offset(), note_size());
   return os;
 }
 
+}
 }

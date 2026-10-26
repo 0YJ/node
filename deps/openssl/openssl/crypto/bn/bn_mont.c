@@ -191,7 +191,7 @@ int bn_from_mont_fixed_top(BIGNUM *ret, const BIGNUM *a, BN_MONT_CTX *mont,
     if (t2 == NULL)
         goto err;
 
-    if (BN_copy(t1, a) == NULL)
+    if (!BN_copy(t1, a))
         goto err;
     BN_mask_bits(t1, mont->ri);
 
@@ -269,7 +269,7 @@ int BN_MONT_CTX_set(BN_MONT_CTX *mont, const BIGNUM *mod, BN_CTX *ctx)
     if ((Ri = BN_CTX_get(ctx)) == NULL)
         goto err;
     R = &(mont->RR); /* grab RR as a temp */
-    if (BN_copy(&(mont->N), mod) == NULL)
+    if (!BN_copy(&(mont->N), mod))
         goto err; /* Set N */
     if (BN_get_flags(mod, BN_FLG_CONSTTIME) != 0)
         BN_set_flags(&(mont->N), BN_FLG_CONSTTIME);
@@ -410,11 +410,11 @@ BN_MONT_CTX *BN_MONT_CTX_copy(BN_MONT_CTX *to, BN_MONT_CTX *from)
     if (to == from)
         return to;
 
-    if (BN_copy(&(to->RR), &(from->RR)) == NULL)
+    if (!BN_copy(&(to->RR), &(from->RR)))
         return NULL;
-    if (BN_copy(&(to->N), &(from->N)) == NULL)
+    if (!BN_copy(&(to->N), &(from->N)))
         return NULL;
-    if (BN_copy(&(to->Ni), &(from->Ni)) == NULL)
+    if (!BN_copy(&(to->Ni), &(from->Ni)))
         return NULL;
     to->ri = from->ri;
     to->n0[0] = from->n0[0];
@@ -466,7 +466,7 @@ BN_MONT_CTX *BN_MONT_CTX_set_locked(BN_MONT_CTX **pmont, CRYPTO_RWLOCK *lock,
 }
 
 int ossl_bn_mont_ctx_set(BN_MONT_CTX *ctx, const BIGNUM *modulus, int ri, const unsigned char *rr,
-    int rrlen, uint32_t nlo, uint32_t nhi)
+    size_t rrlen, uint32_t nlo, uint32_t nhi)
 {
     if (BN_copy(&ctx->N, modulus) == NULL)
         return 0;

@@ -27,7 +27,7 @@ using StringBuilderSubstringPosition =
 template <typename sinkchar>
 void StringBuilderConcatHelper(Tagged<String> special, sinkchar* sink,
                                Tagged<FixedArray> fixed_array,
-                               uint32_t array_length);
+                               int array_length);
 
 // Returns the result length of the concatenation.
 // On illegal argument, -1 is returned.

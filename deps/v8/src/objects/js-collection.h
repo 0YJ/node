@@ -17,26 +17,18 @@ namespace internal {
 class OrderedHashSet;
 class OrderedHashMap;
 
-V8_OBJECT class JSCollection : public JSObject {
-  V8_IT_ABSTRACT;
+#include "torque-generated/src/objects/js-collection-tq.inc"
 
+class JSCollection
+    : public TorqueGeneratedJSCollection<JSCollection, JSObject> {
  public:
-  // The backing hash table.
-  inline Tagged<Object> table() const;
-  inline void set_table(Tagged<Object> value,
-                        WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
   static const int kAddFunctionDescriptorIndex = 3;
-  static const int kHeaderSize;
 
- public:
-  TaggedMember<Object> table_;
-} V8_OBJECT_END;
-
-inline constexpr int JSCollection::kHeaderSize = sizeof(JSCollection);
+  TQ_OBJECT_CONSTRUCTORS(JSCollection)
+};
 
 // The JSSet describes ECMAScript Harmony sets
-V8_OBJECT class JSSet final : public JSCollection {
+class JSSet : public TorqueGeneratedJSSet<JSSet, JSCollection> {
  public:
   static void Initialize(DirectHandle<JSSet> set, Isolate* isolate);
   static void Clear(Isolate* isolate, DirectHandle<JSSet> set);
@@ -45,20 +37,23 @@ V8_OBJECT class JSSet final : public JSCollection {
   // Dispatched behavior.
   DECL_PRINTER(JSSet)
   DECL_VERIFIER(JSSet)
-} V8_OBJECT_END;
 
-V8_OBJECT class JSSetIterator
+  TQ_OBJECT_CONSTRUCTORS(JSSet)
+};
+
+class JSSetIterator
     : public OrderedHashTableIterator<JSSetIterator, OrderedHashSet> {
-  V8_IT_ABSTRACT;
-
  public:
   // Dispatched behavior.
   DECL_PRINTER(JSSetIterator)
   DECL_VERIFIER(JSSetIterator)
-} V8_OBJECT_END;
+
+  OBJECT_CONSTRUCTORS(JSSetIterator,
+                      OrderedHashTableIterator<JSSetIterator, OrderedHashSet>);
+};
 
 // The JSMap describes ECMAScript Harmony maps
-V8_OBJECT class JSMap final : public JSCollection {
+class JSMap : public TorqueGeneratedJSMap<JSMap, JSCollection> {
  public:
   static void Initialize(DirectHandle<JSMap> map, Isolate* isolate);
   static void Clear(Isolate* isolate, DirectHandle<JSMap> map);
@@ -67,12 +62,12 @@ V8_OBJECT class JSMap final : public JSCollection {
   // Dispatched behavior.
   DECL_PRINTER(JSMap)
   DECL_VERIFIER(JSMap)
-} V8_OBJECT_END;
 
-V8_OBJECT class JSMapIterator
+  TQ_OBJECT_CONSTRUCTORS(JSMap)
+};
+
+class JSMapIterator
     : public OrderedHashTableIterator<JSMapIterator, OrderedHashMap> {
-  V8_IT_ABSTRACT;
-
  public:
   // Dispatched behavior.
   DECL_PRINTER(JSMapIterator)
@@ -81,18 +76,15 @@ V8_OBJECT class JSMapIterator
   // Returns the current value of the iterator. This should only be called when
   // |HasMore| returns true.
   inline Tagged<Object> CurrentValue();
-} V8_OBJECT_END;
+
+  OBJECT_CONSTRUCTORS(JSMapIterator,
+                      OrderedHashTableIterator<JSMapIterator, OrderedHashMap>);
+};
 
 // Base class for both JSWeakMap and JSWeakSet
-V8_OBJECT class JSWeakCollection : public JSObject {
-  V8_IT_ABSTRACT;
-
+class JSWeakCollection
+    : public TorqueGeneratedJSWeakCollection<JSWeakCollection, JSObject> {
  public:
-  // The backing hash table mapping keys to values.
-  inline Tagged<Object> table() const;
-  inline void set_table(Tagged<Object> value,
-                        WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
   static void Initialize(DirectHandle<JSWeakCollection> collection,
                          Isolate* isolate);
   V8_EXPORT_PRIVATE static void Set(DirectHandle<JSWeakCollection> collection,
@@ -104,7 +96,6 @@ V8_OBJECT class JSWeakCollection : public JSObject {
                                           uint32_t max_entries);
 
   static const int kAddFunctionDescriptorIndex = 3;
-  static const int kHeaderSize;
 
   // Iterates the function object according to the visiting policy.
   class BodyDescriptorImpl;
@@ -112,38 +103,32 @@ V8_OBJECT class JSWeakCollection : public JSObject {
   // Visit the whole object.
   using BodyDescriptor = BodyDescriptorImpl;
 
- public:
-  TaggedMember<Object> table_;
-} V8_OBJECT_END;
+  static const int kHeaderSizeOfAllWeakCollections = kHeaderSize;
 
-inline constexpr int JSWeakCollection::kHeaderSize = sizeof(JSWeakCollection);
+  TQ_OBJECT_CONSTRUCTORS(JSWeakCollection)
+};
 
 // The JSWeakMap describes ECMAScript Harmony weak maps
-V8_OBJECT class JSWeakMap final : public JSWeakCollection {
+class JSWeakMap : public TorqueGeneratedJSWeakMap<JSWeakMap, JSWeakCollection> {
  public:
   // Dispatched behavior.
   DECL_PRINTER(JSWeakMap)
   DECL_VERIFIER(JSWeakMap)
-} V8_OBJECT_END;
+
+  static_assert(kHeaderSize == kHeaderSizeOfAllWeakCollections);
+  TQ_OBJECT_CONSTRUCTORS(JSWeakMap)
+};
 
 // The JSWeakSet describes ECMAScript Harmony weak sets
-V8_OBJECT class JSWeakSet final : public JSWeakCollection {
+class JSWeakSet : public TorqueGeneratedJSWeakSet<JSWeakSet, JSWeakCollection> {
  public:
   // Dispatched behavior.
   DECL_PRINTER(JSWeakSet)
   DECL_VERIFIER(JSWeakSet)
-} V8_OBJECT_END;
 
-V8_OBJECT class JSMapKeyIterator : public JSMapIterator {
-} V8_OBJECT_END;
-V8_OBJECT class JSMapKeyValueIterator : public JSMapIterator {
-} V8_OBJECT_END;
-V8_OBJECT class JSMapValueIterator : public JSMapIterator {
-} V8_OBJECT_END;
-V8_OBJECT class JSSetKeyValueIterator : public JSSetIterator {
-} V8_OBJECT_END;
-V8_OBJECT class JSSetValueIterator : public JSSetIterator {
-} V8_OBJECT_END;
+  static_assert(kHeaderSize == kHeaderSizeOfAllWeakCollections);
+  TQ_OBJECT_CONSTRUCTORS(JSWeakSet)
+};
 
 }  // namespace internal
 }  // namespace v8

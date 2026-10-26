@@ -5,19 +5,18 @@
 #include "src/regexp/regexp-bytecode-iterator.h"
 
 #include "src/objects/fixed-array-inl.h"
-#include "src/objects/fixed-primitive-array-inl.h"
 #include "src/regexp/regexp-bytecode-iterator-inl.h"
 #include "src/regexp/regexp-bytecodes-inl.h"
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-BytecodeIterator::BytecodeIterator(DirectHandle<TrustedByteArray> bytecode)
-    : BytecodeIterator(bytecode, 0) {}
+RegExpBytecodeIterator::RegExpBytecodeIterator(
+    DirectHandle<TrustedByteArray> bytecode)
+    : RegExpBytecodeIterator(bytecode, 0) {}
 
-BytecodeIterator::BytecodeIterator(DirectHandle<TrustedByteArray> bytecode,
-                                   uint32_t offset)
+RegExpBytecodeIterator::RegExpBytecodeIterator(
+    DirectHandle<TrustedByteArray> bytecode, int offset)
     : bytecode_(bytecode),
       start_(bytecode->begin()),
       end_(bytecode->end()),
@@ -26,7 +25,8 @@ BytecodeIterator::BytecodeIterator(DirectHandle<TrustedByteArray> bytecode,
       UpdatePointersCallback, this);
 #ifdef DEBUG
   if (V8_UNLIKELY(v8_flags.enable_slow_asserts)) {
-    DCHECK_LT(offset, bytecode->ulength().value());
+    DCHECK_GE(offset, 0);
+    DCHECK_LT(offset, bytecode->length());
     const uint8_t* start_with_offset = cursor_;
     cursor_ = start_;
     while (cursor_ < start_with_offset) advance();
@@ -36,17 +36,17 @@ BytecodeIterator::BytecodeIterator(DirectHandle<TrustedByteArray> bytecode,
 #endif  // DEBUG
 }
 
-BytecodeIterator::~BytecodeIterator() {
+RegExpBytecodeIterator::~RegExpBytecodeIterator() {
   Isolate::Current()->main_thread_local_heap()->RemoveGCEpilogueCallback(
       UpdatePointersCallback, this);
 }
 
 // static
-void BytecodeIterator::UpdatePointersCallback(void* iterator) {
-  reinterpret_cast<BytecodeIterator*>(iterator)->UpdatePointers();
+void RegExpBytecodeIterator::UpdatePointersCallback(void* iterator) {
+  reinterpret_cast<RegExpBytecodeIterator*>(iterator)->UpdatePointers();
 }
 
-void BytecodeIterator::UpdatePointers() {
+void RegExpBytecodeIterator::UpdatePointers() {
   DisallowGarbageCollection no_gc;
   uint8_t* start = bytecode_->begin();
   if (start != start_) {
@@ -58,6 +58,5 @@ void BytecodeIterator::UpdatePointers() {
   }
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8

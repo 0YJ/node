@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,7 +17,6 @@
 #define LIEF_PE_PDBCHECKSUM_H
 #include <vector>
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/PE/debug/Debug.hpp"
 
@@ -29,7 +28,7 @@ namespace PE {
 class LIEF_API PDBChecksum : public Debug {
   public:
   static std::unique_ptr<PDBChecksum>
-      parse(const details::pe_debug& hdr, Section* section, span<uint8_t> payload);
+    parse(const details::pe_debug& hdr, Section* section, span<uint8_t> payload);
 
   enum class HASH_ALGO : uint32_t {
     UNKNOWN = 0,
@@ -39,13 +38,15 @@ class LIEF_API PDBChecksum : public Debug {
   PDBChecksum(HASH_ALGO algo, std::vector<uint8_t> hash) :
     Debug(Debug::TYPES::PDBCHECKSUM),
     algo_(algo),
-    hash_(std::move(hash)) {}
+    hash_(std::move(hash))
+  {}
 
-  PDBChecksum(const details::pe_debug& dbg, Section* sec, HASH_ALGO algo,
-              std::vector<uint8_t> hash) :
+  PDBChecksum(const details::pe_debug& dbg, Section* sec,
+              HASH_ALGO algo, std::vector<uint8_t> hash) :
     Debug(dbg, sec),
     algo_(algo),
-    hash_(std::move(hash)) {}
+    hash_(std::move(hash))
+  {}
 
   PDBChecksum(const PDBChecksum& other) = default;
   PDBChecksum& operator=(const PDBChecksum& other) = default;
@@ -58,11 +59,11 @@ class LIEF_API PDBChecksum : public Debug {
   }
 
   /// Hash of the PDB content
-  span<const uint8_t> hash() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> hash() const {
     return hash_;
   }
 
-  span<uint8_t> hash() LIEF_LIFETIMEBOUND {
+  span<uint8_t> hash() {
     return hash_;
   }
 

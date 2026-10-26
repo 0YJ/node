@@ -1,12 +1,12 @@
-// Flags: --permission --allow-fs-read=* --allow-fs-write=* --allow-openssl-store --allow-child-process --allow-env=NODE_TEST_DIR,TEST_*
+// Flags: --permission --allow-fs-read=* --allow-fs-write=* --allow-openssl-store --allow-child-process
 'use strict';
 
 const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
-const { isBoringSSL } = require('../common/crypto');
-if (isBoringSSL)
-  common.skip('OpenSSL provider support is required');
+const { hasOpenSSL } = require('../common/crypto');
+if (!hasOpenSSL(3))
+  common.skip('requires OpenSSL 3.x');
 
 // Verifies the openssl.store permission: allowed when --allow-openssl-store is
 // set, can be dropped at runtime, and denied by default in a child process.

@@ -62,7 +62,6 @@
 #include <utility>
 
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
 #include "absl/container/internal/btree.h"  // IWYU pragma: export
 #include "absl/container/internal/btree_container.h"  // IWYU pragma: export
 #include "absl/container/internal/common.h"
@@ -95,7 +94,7 @@ using set_params = typename ApplyWithoutDefaultSuffix<
              typename btree_set_defaults<Key>::TargetNodeSize,
              typename btree_set_defaults<Key>::IsMulti>,
     TypeList<Key, Compare, Alloc, std::integral_constant<int, TargetNodeSize>,
-             std::bool_constant<IsMulti>>>::type;
+             std::integral_constant<bool, IsMulti>>>::type;
 
 }  // namespace container_internal
 
@@ -806,23 +805,23 @@ struct set_slot_policy {
 
   template <typename Alloc, class... Args>
   static void construct(Alloc *alloc, slot_type *slot, Args &&...args) {
-    std::allocator_traits<Alloc>::construct(*alloc, slot,
-                                            std::forward<Args>(args)...);
+    absl::allocator_traits<Alloc>::construct(*alloc, slot,
+                                             std::forward<Args>(args)...);
   }
 
   template <typename Alloc>
   static void construct(Alloc *alloc, slot_type *slot, slot_type *other) {
-    std::allocator_traits<Alloc>::construct(*alloc, slot, std::move(*other));
+    absl::allocator_traits<Alloc>::construct(*alloc, slot, std::move(*other));
   }
 
   template <typename Alloc>
   static void construct(Alloc *alloc, slot_type *slot, const slot_type *other) {
-    std::allocator_traits<Alloc>::construct(*alloc, slot, *other);
+    absl::allocator_traits<Alloc>::construct(*alloc, slot, *other);
   }
 
   template <typename Alloc>
   static void destroy(Alloc *alloc, slot_type *slot) {
-    std::allocator_traits<Alloc>::destroy(*alloc, slot);
+    absl::allocator_traits<Alloc>::destroy(*alloc, slot);
   }
 };
 

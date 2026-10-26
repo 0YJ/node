@@ -11,7 +11,6 @@
 #include "src/heap/heap.h"
 #include "src/objects/compressed-slots.h"
 #include "src/objects/fixed-array-inl.h"
-#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/js-collection-iterator.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/slots.h"
@@ -22,6 +21,8 @@
 namespace v8 {
 namespace internal {
 
+#include "torque-generated/src/objects/ordered-hash-table-tq-inl.inc"
+
 template <class Derived, int entrysize>
 bool OrderedHashTable<Derived, entrysize>::IsKey(ReadOnlyRoots roots,
                                                  Tagged<Object> k) {
@@ -29,21 +30,32 @@ bool OrderedHashTable<Derived, entrysize>::IsKey(ReadOnlyRoots roots,
 }
 
 template <class Derived>
-Tagged<Object> SmallOrderedHashTableImpl<Derived>::KeyAt(
+SmallOrderedHashTable<Derived>::SmallOrderedHashTable(Address ptr)
+    : HeapObject(ptr) {}
+
+template <class Derived>
+Tagged<Object> SmallOrderedHashTable<Derived>::KeyAt(
     InternalIndex entry) const {
   DCHECK_LT(entry.as_int(), Capacity());
   Offset entry_offset = GetDataEntryOffset(entry.as_int(), Derived::kKeyIndex);
-  return TaggedField<Object>::load(this, entry_offset);
+  return TaggedField<Object>::load(*this, entry_offset);
 }
 
 template <class Derived>
-Tagged<Object> SmallOrderedHashTableImpl<Derived>::GetDataEntry(
+Tagged<Object> SmallOrderedHashTable<Derived>::GetDataEntry(
     int entry, int relative_index) {
   DCHECK_LT(entry, Capacity());
   DCHECK_LE(static_cast<unsigned>(relative_index), Derived::kEntrySize);
   Offset entry_offset = GetDataEntryOffset(entry, relative_index);
-  return TaggedField<Object>::load(this, entry_offset);
+  return TaggedField<Object>::load(*this, entry_offset);
 }
+
+OBJECT_CONSTRUCTORS_IMPL(SmallOrderedHashSet,
+                         SmallOrderedHashTable<SmallOrderedHashSet>)
+OBJECT_CONSTRUCTORS_IMPL(SmallOrderedHashMap,
+                         SmallOrderedHashTable<SmallOrderedHashMap>)
+OBJECT_CONSTRUCTORS_IMPL(SmallOrderedNameDictionary,
+                         SmallOrderedHashTable<SmallOrderedNameDictionary>)
 
 Handle<Map> OrderedHashSet::GetMap(RootsTable& roots) {
   return roots.ordered_hash_set_map();
@@ -166,13 +178,12 @@ inline bool SmallOrderedHashMap::Is(DirectHandle<HeapObject> table) {
 }
 
 template <class Derived>
-void SmallOrderedHashTableImpl<Derived>::SetDataEntry(int entry,
-                                                      int relative_index,
-                                                      Tagged<Object> value) {
+void SmallOrderedHashTable<Derived>::SetDataEntry(int entry, int relative_index,
+                                                  Tagged<Object> value) {
   DCHECK_NE(kNotFound, entry);
   int entry_offset = GetDataEntryOffset(entry, relative_index);
-  RELAXED_WRITE_FIELD(this, entry_offset, value);
-  WRITE_BARRIER(this, entry_offset, value);
+  RELAXED_WRITE_FIELD(*this, entry_offset, value);
+  WRITE_BARRIER(*this, entry_offset, value);
 }
 
 template <class Derived, class TableType>
@@ -188,12 +199,13 @@ Tagged<Object> OrderedHashTableIterator<Derived, TableType>::CurrentKey() {
 
 inline void SmallOrderedNameDictionary::SetHash(int hash) {
   DCHECK(PropertyArray::HashField::is_valid(hash));
-  hash_ = hash;
+  WriteField<int>(PrefixOffset(), hash);
 }
 
 inline int SmallOrderedNameDictionary::Hash() {
-  DCHECK(PropertyArray::HashField::is_valid(hash_));
-  return hash_;
+  int hash = ReadField<int>(PrefixOffset());
+  DCHECK(PropertyArray::HashField::is_valid(hash));
+  return hash;
 }
 
 inline void OrderedNameDictionary::SetHash(int hash) {

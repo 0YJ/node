@@ -22,23 +22,18 @@ async function testNoSessionNoCrash() {
 async function testSessionNoCrash() {
   console.log('Test there\'s no crash stopping server after connecting');
   const script = `process._debugEnd();
-                  process.stdin.once('data', () => {
-                    console.log("Done");
-                    process.exit(42);
-                  });
-                  process._debugProcess(process.pid);`;
+                  process._debugProcess(process.pid);
+                  setTimeout(() => {
+                      console.log("Done");
+                      process.exit(42);
+                  });`;
 
   const instance = new NodeInstance('--inspect-brk=0', script);
   const session = await instance.connectInspectorSession();
   await session.send({ method: 'NodeRuntime.enable' });
   await session.waitForNotification('NodeRuntime.waitingForDebugger');
-  instance.resetPort();
   await session.send({ 'method': 'Runtime.runIfWaitingForDebugger' });
   await session.waitForServerDisconnect();
-  // _debugProcess() starts the inspector asynchronously. Wait for the new
-  // server to listen before asking the child to exit.
-  await instance.portPromise;
-  instance.write('exit');
   assert.strictEqual((await instance.expectShutdown()).exitCode, 42);
 }
 

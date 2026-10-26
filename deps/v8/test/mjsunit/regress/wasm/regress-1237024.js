@@ -6,7 +6,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 var builder = new WasmModuleBuilder();
 
-let array_index = builder.addArray(kWasmS128);
+let array_index = builder.addArray(kWasmS128, true);
 
 builder.addFunction("main", kSig_i_i)
   .addBody([

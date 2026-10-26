@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning --expose-internals
+// Flags: --experimental-vfs --expose-internals
 'use strict';
 
 // Error paths in the VFS mount layer:

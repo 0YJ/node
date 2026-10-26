@@ -4,6 +4,7 @@
 
 #include "src/execution/arguments.h"
 #include "src/execution/isolate-inl.h"
+#include "src/heap/heap-inl.h"  // For ToBoolean. TODO(jkummerow): Drop.
 
 namespace v8 {
 namespace internal {
@@ -23,7 +24,7 @@ RUNTIME_FUNCTION(Runtime_Equal) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::Equals(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(result.FromJust());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 RUNTIME_FUNCTION(Runtime_NotEqual) {
@@ -33,7 +34,7 @@ RUNTIME_FUNCTION(Runtime_NotEqual) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::Equals(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(!result.FromJust());
+  return isolate->heap()->ToBoolean(!result.FromJust());
 }
 
 RUNTIME_FUNCTION(Runtime_StrictEqual) {
@@ -41,7 +42,7 @@ RUNTIME_FUNCTION(Runtime_StrictEqual) {
   DCHECK_EQ(2, args.length());
   Tagged<Object> x = args[0];
   Tagged<Object> y = args[1];
-  return ReadOnlyRoots(isolate).boolean_value(Object::StrictEquals(x, y));
+  return isolate->heap()->ToBoolean(Object::StrictEquals(x, y));
 }
 
 RUNTIME_FUNCTION(Runtime_StrictNotEqual) {
@@ -49,7 +50,7 @@ RUNTIME_FUNCTION(Runtime_StrictNotEqual) {
   DCHECK_EQ(2, args.length());
   Tagged<Object> x = args[0];
   Tagged<Object> y = args[1];
-  return ReadOnlyRoots(isolate).boolean_value(!Object::StrictEquals(x, y));
+  return isolate->heap()->ToBoolean(!Object::StrictEquals(x, y));
 }
 
 RUNTIME_FUNCTION(Runtime_ReferenceEqual) {
@@ -57,7 +58,7 @@ RUNTIME_FUNCTION(Runtime_ReferenceEqual) {
   DCHECK_EQ(2, args.length());
   Tagged<Object> x = args[0];
   Tagged<Object> y = args[1];
-  return ReadOnlyRoots(isolate).boolean_value(x == y);
+  return isolate->heap()->ToBoolean(x == y);
 }
 
 RUNTIME_FUNCTION(Runtime_LessThan) {
@@ -67,7 +68,7 @@ RUNTIME_FUNCTION(Runtime_LessThan) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::LessThan(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(result.FromJust());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 RUNTIME_FUNCTION(Runtime_GreaterThan) {
@@ -77,7 +78,7 @@ RUNTIME_FUNCTION(Runtime_GreaterThan) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::GreaterThan(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(result.FromJust());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 RUNTIME_FUNCTION(Runtime_LessThanOrEqual) {
@@ -87,7 +88,7 @@ RUNTIME_FUNCTION(Runtime_LessThanOrEqual) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::LessThanOrEqual(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(result.FromJust());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 RUNTIME_FUNCTION(Runtime_GreaterThanOrEqual) {
@@ -97,7 +98,7 @@ RUNTIME_FUNCTION(Runtime_GreaterThanOrEqual) {
   DirectHandle<Object> y = args.at(1);
   Maybe<bool> result = Object::GreaterThanOrEqual(isolate, x, y);
   if (result.IsNothing()) return ReadOnlyRoots(isolate).exception();
-  return ReadOnlyRoots(isolate).boolean_value(result.FromJust());
+  return isolate->heap()->ToBoolean(result.FromJust());
 }
 
 }  // namespace internal

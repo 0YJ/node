@@ -104,7 +104,6 @@ class V8_EXPORT CompilationDependencies : public ZoneObject {
 
   // Convenience wrappers around {DependOnProtector}.
   bool DependOnArrayBufferDetachingProtector();
-  bool DependOnArrayBufferMutableProtector();
   bool DependOnArrayIteratorProtector();
   bool DependOnArraySpeciesProtector();
   bool DependOnNoElementsProtector();

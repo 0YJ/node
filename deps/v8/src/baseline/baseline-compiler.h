@@ -6,12 +6,10 @@
 #define V8_BASELINE_BASELINE_COMPILER_H_
 
 #include "src/base/logging.h"
-#include "src/base/numerics/checked_math.h"
 #include "src/base/pointer-with-payload.h"
 #include "src/base/threaded-list.h"
 #include "src/base/vlq.h"
 #include "src/baseline/baseline-assembler.h"
-#include "src/common/operation.h"
 #include "src/execution/local-isolate.h"
 #include "src/handles/handles.h"
 #include "src/interpreter/bytecode-array-iterator.h"
@@ -57,8 +55,7 @@ class BaselineCompiler {
 
   void GenerateCode();
   MaybeHandle<Code> Build();
-  static base::CheckedNumeric<int> EstimateInstructionSize(
-      Tagged<BytecodeArray> bytecode);
+  static int EstimateInstructionSize(Tagged<BytecodeArray> bytecode);
 
  private:
   void Prologue();
@@ -93,7 +90,7 @@ class BaselineCompiler {
   uint32_t CoverageSlot(int operand_index);
   uint32_t Flag8(int operand_index);
   uint32_t Flag16(int operand_index);
-  uint8_t EmbeddedFeedback(int operand_index);
+  uint32_t EmbeddedFeedback(int operand_index);
   uint32_t RegisterCount(int operand_index);
   Tagged<TaggedIndex> ConstantPoolIndexAsTagged(int operand_index);
   Tagged<TaggedIndex> FeedbackSlotAsTagged(int operand_index);
@@ -139,24 +136,6 @@ class BaselineCompiler {
   void SelectBooleanConstant(
       Register output, std::function<void(Label*, Label::Distance)> jump_func);
 
-#ifdef V8_ENABLE_SPARKPLUG_PLUS
-  // Emits an inlined Smi compare for |kOperation|, followed by a slow-path
-  // call to |kSmiStub|. Returns false without emitting anything when inlining
-  // is disabled or when the compile-time embedded feedback hint is not exactly
-  // kSignedSmall.
-  template <Operation kOperation, Builtin kSmiBuiltin, Builtin kGenericBuiltin>
-  bool TryEmitInlineSmiCompare(CompareOperationFeedback::Type feedback_type,
-                               int feedback_index_offset);
-
-  // Emits an inlined Smi Inc/Dec for |kOperation|, followed by a slow-path
-  // call to |kSmiStub|. Returns false without emitting anything when inlining
-  // is disabled or when the compile-time embedded feedback hint is not exactly
-  // kSignedSmall.
-  template <Operation kOperation, Builtin kSmiBuiltin, Builtin kGenericBuiltin>
-  bool TryEmitInlineSmiUnary(BinaryOperationFeedback::Type feedback_type,
-                             int feedback_index_offset);
-#endif  // V8_ENABLE_SPARKPLUG_PLUS
-
   // Jumps based on calling ToBoolean on kInterpreterAccumulatorRegister.
   void JumpIfToBoolean(bool do_jump_if_true, Label* label,
                        Label::Distance distance = Label::kFar);
@@ -172,9 +151,6 @@ class BaselineCompiler {
 
   template <ConvertReceiverMode kMode, typename... Args>
   void BuildCall(uint32_t slot, uint32_t arg_count, Args... args);
-
-  template <Builtin kGenericBuiltin, typename LhsArg, typename RhsArg>
-  void BuildExponentiate(LhsArg lhs, RhsArg rhs);
 
 #ifdef V8_TRACE_UNOPTIMIZED
   void TraceBytecode(Runtime::FunctionId function_id);
@@ -207,22 +183,19 @@ class BaselineCompiler {
   BaselineAssembler basm_;
   interpreter::BytecodeArrayIterator iterator_;
   BytecodeOffsetTableBuilder bytecode_offset_table_builder_;
-  bool allow_sparkplug_plus_;
 
   // Mark location as a jump target reachable via indirect branches, required
   // for CFI.
-  using MarkAsIndirectJumpTarget =
-      base::StrongAlias<struct MarkAsIndirectJumpTargetTag, bool>;
+  enum class MarkAsIndirectJumpTarget { kNo, kYes };
 
-  Label* EnsureLabel(int offset,
-                     MarkAsIndirectJumpTarget mark = MarkAsIndirectJumpTarget{
-                         false}) {
+  Label* EnsureLabel(int offset, MarkAsIndirectJumpTarget mark =
+                                     MarkAsIndirectJumpTarget::kNo) {
     Label* label = &labels_[offset];
     if (!label_tags_.Contains(offset * 2)) {
       label_tags_.Add(offset * 2);
       new (label) Label();
     }
-    if (mark) {
+    if (mark == MarkAsIndirectJumpTarget::kYes) {
       MarkIndirectJumpTarget(offset);
     }
     return label;

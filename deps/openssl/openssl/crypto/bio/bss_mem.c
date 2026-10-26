@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -125,7 +125,6 @@ static int mem_init(BIO *bi, unsigned long flags)
     bi->shutdown = 1;
     bi->init = 1;
     bi->num = -1;
-    bi->flags |= BIO_FLAGS_MEM_LEGACY_EOF;
     bi->ptr = (char *)bb;
     return 1;
 }
@@ -215,7 +214,7 @@ static int mem_read(BIO *b, char *out, int outl)
 static int mem_write(BIO *b, const char *in, int inl)
 {
     int ret = -1;
-    size_t blen;
+    int blen;
     BIO_BUF_MEM *bbm = (BIO_BUF_MEM *)b->ptr;
 
     if (b->flags & BIO_FLAGS_MEM_RDONLY) {
@@ -223,7 +222,7 @@ static int mem_write(BIO *b, const char *in, int inl)
         goto end;
     }
     BIO_clear_retry_flags(b);
-    if (inl <= 0)
+    if (inl == 0)
         return 0;
     if (in == NULL) {
         ERR_raise(ERR_LIB_BIO, ERR_R_PASSED_NULL_PARAMETER);
@@ -246,7 +245,7 @@ static long mem_ctrl(BIO *b, int cmd, long num, void *ptr)
     char **pptr;
     BIO_BUF_MEM *bbm = (BIO_BUF_MEM *)b->ptr;
     BUF_MEM *bm, *bo; /* bio_mem, bio_other */
-    ossl_ssize_t off, remain;
+    long off, remain;
 
     if (b->flags & BIO_FLAGS_MEM_RDONLY) {
         bm = bbm->buf;
@@ -281,22 +280,16 @@ static long mem_ctrl(BIO *b, int cmd, long num, void *ptr)
         bm->data = (num != 0) ? bo->data + num : bo->data;
         bm->length = bo->length - num;
         bm->max = bo->max - num;
-        off = (ossl_ssize_t)num;
+        off = num;
         /* FALLTHRU */
     case BIO_C_FILE_TELL:
-        ret = (long)off;
-        if (off > LONG_MAX)
-            ret = -1;
+        ret = off;
         break;
     case BIO_CTRL_EOF:
-        if (b->num == 0 || (b->flags & BIO_FLAGS_MEM_LEGACY_EOF) != 0)
-            ret = (long)(bm->length == 0);
-        else
-            ret = 0;
+        ret = (long)(bm->length == 0);
         break;
     case BIO_C_SET_BUF_MEM_EOF_RETURN:
         b->num = (int)num;
-        b->flags &= ~BIO_FLAGS_MEM_LEGACY_EOF;
         break;
     case BIO_CTRL_INFO:
         ret = (long)bm->length;
@@ -356,7 +349,7 @@ static int mem_gets(BIO *bp, char *buf, int size)
     if (bp->flags & BIO_FLAGS_MEM_RDONLY)
         bm = bbm->buf;
     BIO_clear_retry_flags(bp);
-    j = bm->length < INT_MAX ? (int)bm->length : INT_MAX;
+    j = bm->length;
     if ((size - 1) < j)
         j = size - 1;
     if (j <= 0) {
@@ -385,12 +378,10 @@ static int mem_gets(BIO *bp, char *buf, int size)
 
 static int mem_puts(BIO *bp, const char *str)
 {
-    int ret;
-    size_t n = strlen(str);
+    int n, ret;
 
-    if (n > INT_MAX)
-        return -1;
-    ret = mem_write(bp, str, (int)n);
+    n = strlen(str);
+    ret = mem_write(bp, str, n);
     /* memory semantics is that it will always work */
     return ret;
 }

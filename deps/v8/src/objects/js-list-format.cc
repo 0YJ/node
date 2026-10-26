@@ -147,7 +147,7 @@ MaybeDirectHandle<JSListFormat> JSListFormat::New(
   return list_format;
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules.prototype.resolvedoptions
+// ecma402 #sec-intl.pluralrules.prototype.resolvedoptions
 DirectHandle<JSObject> JSListFormat::ResolvedOptions(
     Isolate* isolate, DirectHandle<JSListFormat> format) {
   Factory* factory = isolate->factory();
@@ -201,9 +201,9 @@ namespace {
 // Extract String from FixedArray into array of UnicodeString
 Maybe<std::vector<icu::UnicodeString>> ToUnicodeStringArray(
     Isolate* isolate, DirectHandle<FixedArray> array) {
-  const uint32_t length = array->ulength().value();
+  int length = array->length();
   std::vector<icu::UnicodeString> result;
-  for (uint32_t i = 0; i < length; i++) {
+  for (int i = 0; i < length; i++) {
     Handle<Object> item(array->get(i), isolate);
     DCHECK(IsString(*item));
     Handle<String> item_str = Cast<String>(item);
@@ -225,7 +225,7 @@ MaybeDirectHandle<T> FormatListCommon(
   MAYBE_RETURN(maybe_array, DirectHandle<T>());
   std::vector<icu::UnicodeString> array = maybe_array.FromJust();
 
-  Managed<icu::ListFormatter>::Ptr formatter = format->icu_formatter()->ptr();
+  icu::ListFormatter* formatter = format->icu_formatter()->raw();
   DCHECK_NOT_NULL(formatter);
 
   UErrorCode status = U_ZERO_ERROR;
@@ -275,7 +275,7 @@ MaybeDirectHandle<JSArray> FormattedListToJSArray(
 
 }  // namespace
 
-// https://tc39.es/ecma402/#sec-formatlist
+// ecma402 #sec-formatlist
 MaybeDirectHandle<String> JSListFormat::FormatList(
     Isolate* isolate, DirectHandle<JSListFormat> format,
     DirectHandle<FixedArray> list) {
@@ -283,7 +283,7 @@ MaybeDirectHandle<String> JSListFormat::FormatList(
                                   Intl::FormattedToString);
 }
 
-// ecma42 https://tc39.es/ecma262/#sec-formatlisttoparts
+// ecma42 #sec-formatlisttoparts
 MaybeDirectHandle<JSArray> JSListFormat::FormatListToParts(
     Isolate* isolate, DirectHandle<JSListFormat> format,
     DirectHandle<FixedArray> list) {

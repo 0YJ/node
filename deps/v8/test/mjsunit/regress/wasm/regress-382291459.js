@@ -41,16 +41,18 @@ let $s2 = builder.addStruct(
     [makeField(kWasmI32, true), makeField(wasmRefType($s0), true)]);
 
 builder.startRecGroup();
-let $s_dst = builder.addStruct(convert_to_fields(coll.mut));
+let $s_dst =
+    builder.addStruct(convert_to_fields(coll.mut), kNoSuperType, false);
 builder.endRecGroup();
 
 builder.startRecGroup();
-let $s_src = builder.addStruct(convert_to_fields(coll.const));
+let $s_src =
+    builder.addStruct(convert_to_fields(coll.const), kNoSuperType, false);
 builder.endRecGroup();
 
 builder.startRecGroup();
-let $s_src_none = builder.addStruct(
-    {fields: convert_to_fields(coll.const, true), supertype: $s_src});
+let $s_src_none =
+    builder.addStruct(convert_to_fields(coll.const, true), $s_src, false);
 builder.endRecGroup();
 
 let $sig_i_r = builder.addType(makeSig([kWasmExternRef], [kWasmI32]));

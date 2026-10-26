@@ -5,17 +5,15 @@
 #ifndef V8_OBJECTS_TEMPLATES_H_
 #define V8_OBJECTS_TEMPLATES_H_
 
-#include <stdint.h>
-
 #include <optional>
-#include <span>
 #include <string_view>
 
 #include "include/v8-exception.h"
-#include "src/base/bit-field.h"
+#include "include/v8-memory-span.h"
 #include "src/handles/handles.h"
 #include "src/objects/contexts.h"
 #include "src/objects/struct.h"
+#include "torque-generated/bit-fields.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
@@ -27,19 +25,10 @@ class StructBodyDescriptor;
 
 namespace internal {
 
-class FunctionTemplateRareData;
+#include "torque-generated/src/objects/templates-tq.inc"
 
-struct CFunctionWithSignature {
-  const Address address;
-  const CFunctionInfo* signature;
-
-  CFunctionWithSignature(const Address address, const CFunctionInfo* signature)
-      : address(address), signature(signature) {}
-};
-
-V8_OBJECT class TemplateInfo : public HeapObject {
-  V8_IT_ABSTRACT;
-
+class TemplateInfo
+    : public TorqueGeneratedTemplateInfo<TemplateInfo, HeapObject> {
  public:
   static const int kFastTemplateInstantiationsCacheSize = 1 * KB;
 
@@ -60,12 +49,11 @@ V8_OBJECT class TemplateInfo : public HeapObject {
   DECL_PRIMITIVE_ACCESSORS(serial_number, uint32_t)
 
   // Initializes serial number if necessary and returns it.
-  uint32_t EnsureHasSerialNumber(Isolate* isolate);
+  inline uint32_t EnsureHasSerialNumber(Isolate* isolate);
 
   inline uint32_t GetHash() const;
 
-  inline uint32_t template_info_flags() const;
-  inline void set_template_info_flags(uint32_t value);
+  using BodyDescriptor = StructBodyDescriptor;
 
   // Whether or not to cache every instance: when we materialize a getter or
   // setter from an lazy AccessorPair, we rely on this cache to be able to
@@ -83,126 +71,52 @@ V8_OBJECT class TemplateInfo : public HeapObject {
         ProbeInstantiationsCache(isolate, native_context, info, caching_mode));
   }
 
-  static MaybeHandle<Object> ProbeInstantiationsCache(
+  inline static MaybeHandle<Object> ProbeInstantiationsCache(
       Isolate* isolate, DirectHandle<NativeContext> native_context,
       DirectHandle<TemplateInfo> info, CachingMode caching_mode);
 
-  static void CacheTemplateInstantiation(
+  inline static void CacheTemplateInstantiation(
       Isolate* isolate, DirectHandle<NativeContext> native_context,
       DirectHandle<TemplateInfo> info, CachingMode caching_mode,
       DirectHandle<Object> object);
 
-  static void UncacheTemplateInstantiation(
+  inline static void UncacheTemplateInstantiation(
       Isolate* isolate, DirectHandle<NativeContext> native_context,
       DirectHandle<TemplateInfo> info, CachingMode caching_mode);
 
   // Bit position in the template_info_base_flags, from least significant bit
   // position.
-  using IsCacheableBit = base::BitField<bool, 0, 1, uint32_t>;
-  using ShouldPromoteToReadOnlyBit = IsCacheableBit::Next<bool, 1>;
-  using SerialNumberBits = ShouldPromoteToReadOnlyBit::Next<uint32_t, 29>;
+  DEFINE_TORQUE_GENERATED_TEMPLATE_INFO_FLAGS()
 
-  TaggedMember<Smi> template_info_flags_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(TemplateInfo)
+};
 
-V8_OBJECT class TemplateInfoWithProperties : public TemplateInfo {
-  V8_IT_ABSTRACT;
-
+class TemplateInfoWithProperties
+    : public TorqueGeneratedTemplateInfoWithProperties<
+          TemplateInfoWithProperties, TemplateInfo> {
  public:
-  inline int number_of_properties() const;
-  inline void set_number_of_properties(int value);
-
-  inline Tagged<UnionOf<ArrayList, Undefined>> property_list() const;
-  inline void set_property_list(Tagged<UnionOf<ArrayList, Undefined>> value,
-                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<ArrayList, Undefined>> property_accessors() const;
-  inline void set_property_accessors(
-      Tagged<UnionOf<ArrayList, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  TaggedMember<Smi> number_of_properties_;
-  TaggedMember<UnionOf<ArrayList, Undefined>> property_list_;
-  TaggedMember<UnionOf<ArrayList, Undefined>> property_accessors_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(TemplateInfoWithProperties)
+};
 
 // Contains data members that are rarely set on a FunctionTemplateInfo.
-V8_OBJECT class FunctionTemplateRareData : public Struct {
+class FunctionTemplateRareData
+    : public TorqueGeneratedFunctionTemplateRareData<FunctionTemplateRareData,
+                                                     Struct> {
  public:
-  inline Tagged<UnionOf<Undefined, ObjectTemplateInfo>> prototype_template()
-      const;
-  inline void set_prototype_template(
-      Tagged<UnionOf<Undefined, ObjectTemplateInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, FunctionTemplateInfo>>
-  prototype_provider_template() const;
-  inline void set_prototype_provider_template(
-      Tagged<UnionOf<Undefined, FunctionTemplateInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, FunctionTemplateInfo>> parent_template()
-      const;
-  inline void set_parent_template(
-      Tagged<UnionOf<Undefined, FunctionTemplateInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, InterceptorInfo>> named_property_handler()
-      const;
-  inline void set_named_property_handler(
-      Tagged<UnionOf<Undefined, InterceptorInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, InterceptorInfo>> indexed_property_handler()
-      const;
-  inline void set_indexed_property_handler(
-      Tagged<UnionOf<Undefined, InterceptorInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, ObjectTemplateInfo>> instance_template()
-      const;
-  inline void set_instance_template(
-      Tagged<UnionOf<Undefined, ObjectTemplateInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, FunctionTemplateInfo>>
-  instance_call_handler() const;
-  inline void set_instance_call_handler(
-      Tagged<UnionOf<Undefined, FunctionTemplateInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Undefined, AccessCheckInfo>> access_check_info() const;
-  inline void set_access_check_info(
-      Tagged<UnionOf<Undefined, AccessCheckInfo>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<FixedArray> c_function_overloads() const;
-  inline void set_c_function_overloads(
-      Tagged<FixedArray> value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  DECL_PRINTER(FunctionTemplateRareData)
   DECL_VERIFIER(FunctionTemplateRareData)
 
   using BodyDescriptor = StructBodyDescriptor;
 
- public:
-  TaggedMember<UnionOf<Undefined, ObjectTemplateInfo>> prototype_template_;
-  TaggedMember<UnionOf<Undefined, FunctionTemplateInfo>>
-      prototype_provider_template_;
-  TaggedMember<UnionOf<Undefined, FunctionTemplateInfo>> parent_template_;
-  TaggedMember<UnionOf<Undefined, InterceptorInfo>> named_property_handler_;
-  TaggedMember<UnionOf<Undefined, InterceptorInfo>> indexed_property_handler_;
-  TaggedMember<UnionOf<Undefined, ObjectTemplateInfo>> instance_template_;
-  TaggedMember<UnionOf<Undefined, FunctionTemplateInfo>> instance_call_handler_;
-  TaggedMember<UnionOf<Undefined, AccessCheckInfo>> access_check_info_;
-  TaggedMember<FixedArray> c_function_overloads_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(FunctionTemplateRareData)
+};
 
 // See the api-exposed FunctionTemplate for more information.
-V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
+class FunctionTemplateInfo
+    : public TorqueGeneratedFunctionTemplateInfo<FunctionTemplateInfo,
+                                                 TemplateInfoWithProperties> {
  public:
 #define DECL_RARE_ACCESSORS(Name, CamelName, ...)                \
-  inline Tagged<__VA_ARGS__> Get##CamelName() const;             \
+  DECL_GETTER(Get##CamelName, Tagged<__VA_ARGS__>)               \
   static inline void Set##CamelName(                             \
       Isolate* isolate,                                          \
       DirectHandle<FunctionTemplateInfo> function_template_info, \
@@ -251,7 +165,6 @@ V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
   DECL_RARE_ACCESSORS(c_function_overloads, CFunctionOverloads, FixedArray)
 #undef DECL_RARE_ACCESSORS
 
-  DECL_PRIMITIVE_ACCESSORS(flag, uint32_t)
   DECL_RELAXED_UINT32_ACCESSORS(flag)
 
   // Begin flag bits ---------------------
@@ -330,27 +243,19 @@ V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
   static std::optional<Tagged<Name>> TryGetCachedPropertyName(
       Isolate* isolate, Tagged<Object> getter);
   // Fast API overloads.
-  uint32_t GetCFunctionsCount() const;
-  CFunctionWithSignature GetCFunction(uint32_t index) const;
+  int GetCFunctionsCount() const;
+  Address GetCFunction(Isolate* isolate, int index) const;
+  const CFunctionInfo* GetCSignature(Isolate* isolate, int index) const;
+
+  // CFunction data for a set of overloads is stored into a FixedArray, as
+  // [address_0, signature_0, ... address_n-1, signature_n-1].
+  static const int kFunctionOverloadEntrySize = 2;
 
   // Bit position in the flag, from least significant bit position.
-  using IsObjectTemplateCallHandlerBit = base::BitField<bool, 0, 1, uint32_t>;
-  using HasSideEffectsBit = IsObjectTemplateCallHandlerBit::Next<bool, 1>;
-  using UndetectableBit = HasSideEffectsBit::Next<bool, 1>;
-  using NeedsAccessCheckBit = UndetectableBit::Next<bool, 1>;
-  using ReadOnlyPrototypeBit = NeedsAccessCheckBit::Next<bool, 1>;
-  using RemovePrototypeBit = ReadOnlyPrototypeBit::Next<bool, 1>;
-  using AcceptAnyReceiverBit = RemovePrototypeBit::Next<bool, 1>;
-  using PublishedBit = AcceptAnyReceiverBit::Next<bool, 1>;
-  using AllowedReceiverInstanceTypeRangeStartBits =
-      PublishedBit::Next<InstanceType, 12>;
-  using AllowedReceiverInstanceTypeRangeEndBits =
-      AllowedReceiverInstanceTypeRangeStartBits::Next<InstanceType, 12>;
+  DEFINE_TORQUE_GENERATED_FUNCTION_TEMPLATE_INFO_FLAGS()
 
   // C function pointer that can be called from native code.
-  inline Address callback(IsolateForSandbox isolate) const;
-  inline void set_callback(IsolateForSandbox isolate, Address value);
-  inline void init_callback(IsolateForSandbox isolate, Address value);
+  DECL_REDIRECTED_CALLBACK_ACCESSORS_MAYBE_READ_ONLY_HOST(callback, Address)
 
   inline void RemoveCallbackRedirectionForSerialization(
       IsolateForSandbox isolate);
@@ -361,7 +266,6 @@ V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
   inline bool has_callback(IsolateT* isolate) const;
 
   DECL_PRINTER(FunctionTemplateInfo)
-  DECL_VERIFIER(FunctionTemplateInfo)
 
   class BodyDescriptor;
 
@@ -372,7 +276,8 @@ V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
 
   // Enforce using SetInstanceType() and SetAllowedReceiverInstanceTypeRange()
   // instead of raw accessors.
-  void set_instance_type(int value);
+  using TorqueGeneratedFunctionTemplateInfo<
+      FunctionTemplateInfo, TemplateInfoWithProperties>::set_instance_type;
   DECL_PRIMITIVE_SETTER(allowed_receiver_instance_type_range_start,
                         InstanceType)
   DECL_PRIMITIVE_SETTER(allowed_receiver_instance_type_range_end, InstanceType)
@@ -386,74 +291,12 @@ V8_OBJECT class FunctionTemplateInfo : public TemplateInfoWithProperties {
       Isolate* isolate,
       DirectHandle<FunctionTemplateInfo> function_template_info);
 
- public:
-  inline Tagged<UnionOf<String, Undefined>> class_name() const;
-  inline void set_class_name(Tagged<UnionOf<String, Undefined>> value,
-                             WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  TQ_OBJECT_CONSTRUCTORS(FunctionTemplateInfo)
+};
 
-  inline Tagged<UnionOf<String, Undefined>> interface_name() const;
-  inline void set_interface_name(Tagged<UnionOf<String, Undefined>> value,
-                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<FunctionTemplateInfo, Undefined>> signature() const;
-  inline void set_signature(
-      Tagged<UnionOf<FunctionTemplateInfo, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<FunctionTemplateRareData, Undefined>> rare_data() const;
-  inline Tagged<UnionOf<FunctionTemplateRareData, Undefined>> rare_data(
-      AcquireLoadTag tag) const;
-  inline void set_rare_data(
-      Tagged<UnionOf<FunctionTemplateRareData, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline void set_rare_data(
-      Tagged<UnionOf<FunctionTemplateRareData, Undefined>> value,
-      ReleaseStoreTag tag, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<SharedFunctionInfo, Undefined>> shared_function_info()
-      const;
-  inline void set_shared_function_info(
-      Tagged<UnionOf<SharedFunctionInfo, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Object> cached_property_name() const;
-  inline void set_cached_property_name(
-      Tagged<Object> value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Object> callback_data() const;
-  inline Tagged<Object> callback_data(AcquireLoadTag tag) const;
-  inline void set_callback_data(Tagged<Object> value,
-                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-  inline void set_callback_data(Tagged<Object> value, ReleaseStoreTag tag,
-                                WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int16_t length() const;
-  inline void set_length(int16_t value);
-
-  inline InstanceType instance_type() const;
-  inline void set_instance_type(InstanceType value);
-
-  inline uint32_t exception_context() const;
-  inline void set_exception_context(uint32_t value);
-
-  TaggedMember<UnionOf<String, Undefined>> class_name_;
-  TaggedMember<UnionOf<String, Undefined>> interface_name_;
-  TaggedMember<UnionOf<FunctionTemplateInfo, Undefined>> signature_;
-  TaggedMember<UnionOf<FunctionTemplateRareData, Undefined>> rare_data_;
-  TaggedMember<UnionOf<SharedFunctionInfo, Undefined>> shared_function_info_;
-  TaggedMember<Object> cached_property_name_;
-  TaggedMember<Object> callback_data_;
-  uint32_t flag_;
-  int16_t length_;
-  InstanceType instance_type_;
-  uint32_t exception_context_;
-#if TAGGED_SIZE_8_BYTES
-  uint32_t optional_padding_;
-#endif
-  ExternalPointerMember<kFunctionTemplateInfoCallbackTag> callback_;
-} V8_OBJECT_END;
-
-V8_OBJECT class ObjectTemplateInfo : public TemplateInfoWithProperties {
+class ObjectTemplateInfo
+    : public TorqueGeneratedObjectTemplateInfo<ObjectTemplateInfo,
+                                               TemplateInfoWithProperties> {
  public:
   DECL_INT_ACCESSORS(embedder_field_count)
   DECL_BOOLEAN_ACCESSORS(immutable_proto)
@@ -468,48 +311,28 @@ V8_OBJECT class ObjectTemplateInfo : public TemplateInfoWithProperties {
 
   using BodyDescriptor = StructBodyDescriptor;
 
-  DECL_PRINTER(ObjectTemplateInfo)
-  DECL_VERIFIER(ObjectTemplateInfo)
-
-  inline Tagged<UnionOf<FunctionTemplateInfo, Undefined>> constructor() const;
-  inline void set_constructor(
-      Tagged<UnionOf<FunctionTemplateInfo, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int data() const;
-  inline void set_data(int value);
-
-  TaggedMember<UnionOf<FunctionTemplateInfo, Undefined>> constructor_;
-  TaggedMember<Smi> data_;
-
  private:
-  using IsImmutablePrototypeBit = base::BitField<bool, 0, 1, uint32_t>;
-  using IsCodeKindBit = IsImmutablePrototypeBit::Next<bool, 1>;
-  using EmbedderFieldCountBits = IsCodeKindBit::Next<int32_t, 28>;
-  friend class TorqueGeneratedBitFieldAsserts;
-} V8_OBJECT_END;
+  DEFINE_TORQUE_GENERATED_OBJECT_TEMPLATE_INFO_FLAGS()
 
-V8_OBJECT class DictionaryTemplateInfo : public TemplateInfo {
+  TQ_OBJECT_CONSTRUCTORS(ObjectTemplateInfo)
+};
+
+class DictionaryTemplateInfo
+    : public TorqueGeneratedDictionaryTemplateInfo<DictionaryTemplateInfo,
+                                                   TemplateInfo> {
  public:
-  using BodyDescriptor = StructBodyDescriptor;
+  class BodyDescriptor;
 
   static DirectHandle<DictionaryTemplateInfo> Create(
-      Isolate* isolate, const std::span<const std::string_view>& names);
+      Isolate* isolate, const v8::MemorySpan<const std::string_view>& names);
 
   static DirectHandle<JSObject> NewInstance(
       DirectHandle<NativeContext> context,
       DirectHandle<DictionaryTemplateInfo> self,
-      const std::span<MaybeLocal<Value>>& property_values);
+      const MemorySpan<MaybeLocal<Value>>& property_values);
 
-  DECL_PRINTER(DictionaryTemplateInfo)
-  DECL_VERIFIER(DictionaryTemplateInfo)
-
-  inline Tagged<FixedArray> property_names() const;
-  inline void set_property_names(Tagged<FixedArray> value,
-                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  TaggedMember<FixedArray> property_names_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(DictionaryTemplateInfo)
+};
 
 }  // namespace internal
 }  // namespace v8

@@ -1,6 +1,7 @@
 'use strict';
 
 const common = require('../common.js');
+const _checkInvalidHeaderChar = require('_http_common')._checkInvalidHeaderChar;
 
 const groupedInputs = {
   // Representative set of inputs from an AcmeAir benchmark run:
@@ -50,13 +51,9 @@ const inputs = [
 const bench = common.createBenchmark(main, {
   input: inputs.concat(Object.keys(groupedInputs)),
   n: [1e6],
-}, {
-  flags: ['--expose-internals', '--no-warnings'],
 });
 
 function main({ n, input }) {
-  const checkInvalidHeaderChar = require('internal/http/common')._checkInvalidHeaderChar;
-
   let inputs = [input];
   if (Object.hasOwn(groupedInputs, input)) {
     inputs = groupedInputs[input];
@@ -65,7 +62,7 @@ function main({ n, input }) {
   const len = inputs.length;
   bench.start();
   for (let i = 0; i < n; i++) {
-    checkInvalidHeaderChar(inputs[i % len]);
+    _checkInvalidHeaderChar(inputs[i % len]);
   }
   bench.end(n);
 }

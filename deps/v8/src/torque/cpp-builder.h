@@ -100,7 +100,11 @@ class Function {
   }
 
   void SetFlag(FunctionFlag flag, bool value = true) {
-    flags_.set(flag, value);
+    if (value) {
+      flags_ = flags_ | flag;
+    } else {
+      flags_ = flags_.without(flag);
+    }
   }
   void SetFlags(base::Flags<FunctionFlag> flags, bool value = true) {
     if (value) {

@@ -20,7 +20,7 @@ namespace internal {
 
 #define CONSOLE_METHOD_LIST(V) \
   V(Dir, dir)                  \
-  V(DirXml, dirxml)            \
+  V(DirXml, dirXml)            \
   V(Table, table)              \
   V(GroupEnd, groupEnd)        \
   V(Clear, clear)              \

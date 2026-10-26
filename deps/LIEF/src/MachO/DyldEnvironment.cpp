@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,11 +17,12 @@
 #include "LIEF/MachO/DyldEnvironment.hpp"
 #include "MachO/Structures.hpp"
 
-
-namespace LIEF::MachO {
+namespace LIEF {
+namespace MachO {
 
 DyldEnvironment::DyldEnvironment(const details::dylinker_command& cmd) :
-  LoadCommand::LoadCommand{LoadCommand::TYPE(cmd.cmd), cmd.cmdsize} {}
+  LoadCommand::LoadCommand{LoadCommand::TYPE(cmd.cmd), cmd.cmdsize}
+{}
 
 void DyldEnvironment::accept(Visitor& visitor) const {
   visitor.visit(*this);
@@ -33,4 +34,5 @@ std::ostream& DyldEnvironment::print(std::ostream& os) const {
   return os;
 }
 
+}
 }

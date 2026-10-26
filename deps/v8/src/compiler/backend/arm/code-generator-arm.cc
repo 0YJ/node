@@ -19,9 +19,6 @@
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/osr.h"
 #include "src/heap/mutable-page.h"
-#include "src/objects/js-function-inl.h"
-#include "src/objects/shared-function-info-inl.h"
-#include "src/sandbox/js-dispatch-table-inl.h"
 #include "src/utils/boxed-float.h"
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -306,37 +303,6 @@ class OutOfLineFloatMax final : public OutOfLineCode {
 };
 using OutOfLineFloat32Max = OutOfLineFloatMax<SwVfpRegister>;
 using OutOfLineFloat64Max = OutOfLineFloatMax<DwVfpRegister>;
-
-#if V8_ENABLE_WEBASSEMBLY
-class OutOfLineTrap final : public OutOfLineCode {
- public:
-  OutOfLineTrap(CodeGenerator* gen, Instruction* instr)
-      : OutOfLineCode(gen), instr_(instr), gen_(gen) {}
-
-  void Generate() final {
-    ArmOperandConverter i(gen_, instr_);
-    TrapId trap_id =
-        static_cast<TrapId>(i.InputInt32(instr_->InputCount() - 1));
-    GenerateCallToTrap(trap_id);
-  }
-
- private:
-  void GenerateCallToTrap(TrapId trap_id) {
-    gen_->AssembleSourcePosition(instr_);
-    // A direct call to a wasm runtime stub defined in this module.
-    // Just encode the stub index. This will be patched when the code
-    // is added to the native module and copied into wasm code space.
-    __ Call(static_cast<Address>(trap_id), RelocInfo::WASM_STUB_CALL);
-    gen_->RecordSafepointWithoutTaggedSlots();
-    if (v8_flags.debug_code) {
-      __ stop();
-    }
-  }
-
-  Instruction* instr_;
-  CodeGenerator* gen_;
-};
-#endif  // V8_ENABLE_WEBASSEMBLY
 
 Condition FlagsConditionToCondition(FlagsCondition condition) {
   switch (condition) {
@@ -864,8 +830,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
           UseScratchRegisterScope temps(masm());
           Register scratch = temps.Acquire();
           // Check the function's context matches the context argument.
-          __ ldr(scratch,
-                 FieldMemOperand(func, offsetof(JSFunction, context_)));
+          __ ldr(scratch, FieldMemOperand(func, JSFunction::kContextOffset));
           __ cmp(cp, scratch);
           __ Assert(eq, AbortReason::kWrongFunctionContext);
         }
@@ -1012,11 +977,6 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ b(exit->label());
       break;
     }
-#if V8_ENABLE_WEBASSEMBLY
-    case kArchTrap:
-      __ b(zone()->New<OutOfLineTrap>(this, instr)->entry());
-      break;
-#endif  // V8_ENABLE_WEBASSEMBLY
     case kArchRet:
       AssembleReturn(instr->InputAt(0));
       DCHECK_EQ(LeaveCC, i.OutputSBit());
@@ -1075,7 +1035,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchStoreWithWriteBarrier:  // Fall through.
     case kArchAtomicStoreWithWriteBarrier: {
-      RecordWriteMode mode = RecordWriteModeField::decode(instr->opcode());
+      RecordWriteMode mode;
+      if (arch_opcode == kArchStoreWithWriteBarrier) {
+        mode = RecordWriteModeField::decode(instr->opcode());
+      } else {
+        mode = AtomicStoreRecordWriteModeField::decode(instr->opcode());
+      }
       Register object = i.InputRegister(0);
       Register value = i.InputRegister(2);
 
@@ -3664,9 +3629,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       auto ool = zone()->New<OutOfLineRecordWrite>(
           this, object, Operand(offset), new_value, mode,
           DetermineStubCallMode(), &unwinding_info_writer_);
-      __ b(ne, ool->exit());
       __ JumpIfSmi(new_value, ool->exit());
-
       __ CheckPageFlag(object, MemoryChunk::kPointersFromHereAreInterestingMask,
                        ne, ool->entry());
       __ bind(ool->exit());
@@ -3837,6 +3800,36 @@ void CodeGenerator::AssembleArchJumpRegardlessOfAssemblyOrder(
 #if V8_ENABLE_WEBASSEMBLY
 void CodeGenerator::AssembleArchTrap(Instruction* instr,
                                      FlagsCondition condition) {
+  class OutOfLineTrap final : public OutOfLineCode {
+   public:
+    OutOfLineTrap(CodeGenerator* gen, Instruction* instr)
+        : OutOfLineCode(gen), instr_(instr), gen_(gen) {}
+
+    void Generate() final {
+      ArmOperandConverter i(gen_, instr_);
+      TrapId trap_id =
+          static_cast<TrapId>(i.InputInt32(instr_->InputCount() - 1));
+      GenerateCallToTrap(trap_id);
+    }
+
+   private:
+    void GenerateCallToTrap(TrapId trap_id) {
+      gen_->AssembleSourcePosition(instr_);
+      // A direct call to a wasm runtime stub defined in this module.
+      // Just encode the stub index. This will be patched when the code
+      // is added to the native module and copied into wasm code space.
+      __ Call(static_cast<Address>(trap_id), RelocInfo::WASM_STUB_CALL);
+      ReferenceMap* reference_map =
+          gen_->zone()->New<ReferenceMap>(gen_->zone());
+      gen_->RecordSafepoint(reference_map);
+      if (v8_flags.debug_code) {
+        __ stop();
+      }
+    }
+
+    Instruction* instr_;
+    CodeGenerator* gen_;
+  };
   auto ool = zone()->New<OutOfLineTrap>(this, instr);
   Label* tlabel = ool->entry();
   Condition cc = FlagsConditionToCondition(condition);
@@ -3989,9 +3982,7 @@ void CodeGenerator::AssembleConstructFrame() {
   if (required_slots > 0) {
     DCHECK(frame_access_state()->has_frame());
 #if V8_ENABLE_WEBASSEMBLY
-    int32_t stack_space =
-        required_slots * kSystemPointerSize + GetStackCheckOffset();
-    if (info()->IsWasm() && stack_space > 4 * KB) {
+    if (info()->IsWasm() && required_slots * kSystemPointerSize > 4 * KB) {
       // For WebAssembly functions with big frames we have to do the stack
       // overflow check before we construct the frame. Otherwise we may not
       // have enough space on the stack to call the runtime for the stack
@@ -4001,16 +3992,17 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if (stack_space < v8_flags.stack_size * KB) {
+      if (required_slots * kSystemPointerSize < v8_flags.stack_size * KB) {
         UseScratchRegisterScope temps(masm());
         Register stack_limit = temps.Acquire();
         __ LoadStackLimit(stack_limit, StackLimitKind::kRealStackLimit);
-        __ add(stack_limit, stack_limit, Operand(stack_space));
+        __ add(stack_limit, stack_limit,
+               Operand(required_slots * kSystemPointerSize));
         __ cmp(sp, stack_limit);
         __ b(cs, &done);
       }
 
-      if (v8_flags.wasm_growable_stacks) {
+      if (v8_flags.experimental_wasm_growable_stacks) {
         RegList regs_to_save;
         regs_to_save.set(WasmHandleStackOverflowDescriptor::GapRegister());
         regs_to_save.set(
@@ -4021,7 +4013,7 @@ void CodeGenerator::AssembleConstructFrame() {
         for (auto reg : wasm::kFpParamRegisters) fp_regs_to_save.set(reg);
         __ vstm(db_w, sp, fp_regs_to_save.first(), fp_regs_to_save.last());
         __ mov(WasmHandleStackOverflowDescriptor::GapRegister(),
-               Operand(stack_space));
+               Operand(required_slots * kSystemPointerSize));
         __ add(
             WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
             Operand(call_descriptor->ParameterSlotCount() * kSystemPointerSize +
@@ -4035,7 +4027,8 @@ void CodeGenerator::AssembleConstructFrame() {
         // return in this case.
         // So either way, we can just ignore any references and record an empty
         // safepoint here.
-        RecordSafepointWithoutTaggedSlots();
+        ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
+        RecordSafepoint(reference_map);
         __ vldm(ia_w, sp, fp_regs_to_save.first(), fp_regs_to_save.last());
         __ ldm(ia_w, sp, regs_to_save);
       } else {
@@ -4043,7 +4036,8 @@ void CodeGenerator::AssembleConstructFrame() {
                 RelocInfo::WASM_STUB_CALL);
         // The call does not return, hence we can ignore any references and just
         // define an empty safepoint.
-        RecordSafepointWithoutTaggedSlots();
+        ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
+        RecordSafepoint(reference_map);
         if (v8_flags.debug_code) __ stop();
       }
 
@@ -4128,7 +4122,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
 
 #if V8_ENABLE_WEBASSEMBLY
   if (call_descriptor->IsAnyWasmFunctionCall() &&
-      v8_flags.wasm_growable_stacks) {
+      v8_flags.experimental_wasm_growable_stacks) {
     {
       UseScratchRegisterScope temps{masm()};
       Register scratch = temps.Acquire();
@@ -4373,7 +4367,10 @@ AllocatedOperand CodeGenerator::Push(InstructionOperand* source) {
   auto rep = LocationOperand::cast(source)->representation();
   int new_slots = ElementSizeInPointers(rep);
   ArmOperandConverter g(this, nullptr);
-  int slot_id = frame_access_state()->GetSPSlotCount() - 1 + new_slots;
+  int last_frame_slot_id =
+      frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
+  int sp_delta = frame_access_state_->sp_delta();
+  int slot_id = last_frame_slot_id + sp_delta + new_slots;
   AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
   if (source->IsRegister()) {
     __ push(g.ToRegister(source));
@@ -4408,7 +4405,10 @@ void CodeGenerator::Pop(InstructionOperand* dest, MachineRepresentation rep) {
     __ pop(scratch);
     __ str(scratch, g.ToMemOperand(dest));
   } else {
-    int slot_id = frame_access_state()->GetSPSlotCount() - 1;
+    int last_frame_slot_id =
+        frame_access_state_->frame()->GetTotalFrameSlotCount() - 1;
+    int sp_delta = frame_access_state_->sp_delta();
+    int slot_id = last_frame_slot_id + sp_delta;
     AllocatedOperand stack_slot(LocationOperand::STACK_SLOT, rep, slot_id);
     AssembleMove(&stack_slot, dest);
     frame_access_state()->IncreaseSPDelta(-dropped_slots);

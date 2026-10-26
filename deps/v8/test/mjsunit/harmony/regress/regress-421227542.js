@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --minor-ms
+// Flags: --js-base-64 --minor-ms
 
 function test() {
   try {

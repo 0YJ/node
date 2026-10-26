@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-shared --no-wasm-inlining
+// Flags: --experimental-wasm-shared --no-wasm-inlining
 // Flags: --expose-gc --allow-natives-syntax
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
@@ -11,7 +11,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
   let struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], shared: true});
+      [makeField(kWasmI32, true)], kNoSuperType, false, true);
   let producer_sig = makeSig([kWasmI32], [wasmRefType(struct)]);
   builder.addFunction("producer", producer_sig)
     .addBody([kExprLocalGet, 0, kGCPrefix, kExprStructNew, struct])
@@ -35,7 +35,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function SharedArray() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let array = builder.addArray(kWasmI64, {is_shared: true});
+  let array = builder.addArray(kWasmI64, true, kNoSuperType, false, true);
   let producer_sig = makeSig([kWasmI64, kWasmI32], [wasmRefType(array)])
   builder.addFunction("producer", producer_sig)
     .addBody([kExprLocalGet, 0, kExprLocalGet, 1,
@@ -79,8 +79,9 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
   let struct = builder.addStruct(
-      {fields: [makeField(kWasmI64, true)], shared: true});
-  let array = builder.addArray(wasmRefNullType(struct), {shared: true});
+      [makeField(kWasmI64, true)], kNoSuperType, false, true);
+  let array = builder.addArray(
+      wasmRefNullType(struct), true, kNoSuperType, false, true);
   let producer_sig = makeSig([kWasmI64, kWasmI64], [wasmRefType(array)]);
   builder.addFunction("producer", producer_sig)
     .addBody([kExprLocalGet, 0, kGCPrefix, kExprStructNew, struct,
@@ -151,7 +152,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   let builder = new WasmModuleBuilder();
   let sig = builder.addType(kSig_i_i, kNoSuperType, true, false);
   let struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], shared: true});
+    [makeField(kWasmI32, true)], kNoSuperType, false, true);
   let global = builder.addGlobal(
     wasmRefNullType(kWasmAnyRef).shared(), true, true,
     [kExprRefNull, kWasmSharedTypeForm, kAnyRefCode]);
@@ -251,7 +252,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   let builder = new WasmModuleBuilder();
   let sig = builder.addType(kSig_i_i, kNoSuperType, true, true);
   let struct =
-    builder.addStruct({fields: [makeField(kWasmI32, true)], shared: true});
+    builder.addStruct([makeField(kWasmI32, true)], kNoSuperType, false, true);
 
   builder.addFunction("main", sig)
     .addLocals(wasmRefType(struct), 1)
@@ -269,7 +270,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
   let sig = builder.addType(kSig_i_i, kNoSuperType, true, true);
-  let struct = builder.addStruct([makeField(kWasmI32, true)]);
+  let struct =
+    builder.addStruct([makeField(kWasmI32, true)], kNoSuperType, false, false);
 
   builder.addFunction("main", sig)
     .addLocals(wasmRefType(struct), 1)
@@ -284,7 +286,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
   let sig = builder.addType(kSig_i_v, kNoSuperType, true, true);
-  let struct = builder.addStruct([makeField(kWasmI32, true)]);
+  let struct =
+    builder.addStruct([makeField(kWasmI32, true)], kNoSuperType, false, false);
 
   builder.addFunction("main", sig)
     .addBody([
@@ -360,8 +363,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function TableInFunction() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], final: true, shared: true});
+  let struct = builder.addStruct([makeField(kWasmI32, true)], kNoSuperType,
+                                 true, true);
   let sig = builder.addType(makeSig([kWasmI32], [wasmRefNullType(struct)]),
                             kNoSuperType, false, true);
   let table = builder.addTable(wasmRefNullType(struct), 10, undefined,
@@ -378,8 +381,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function TableInNonSharedFunction() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], final: true, shared: true});
+  let struct = builder.addStruct([makeField(kWasmI32, true)], kNoSuperType,
+                                 true, true);
   let sig = builder.addType(makeSig([kWasmI32], [wasmRefNullType(struct)]),
                             kNoSuperType, false, false);
   let table = builder.addTable(wasmRefNullType(struct), 10, undefined,
@@ -487,8 +490,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function InvalidTableInFunction() {
   print(arguments.callee.name);
   let builder = new WasmModuleBuilder();
-  let struct = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], final: true, shared: true});
+  let struct = builder.addStruct([makeField(kWasmI32, true)], kNoSuperType,
+                                 true, true);
   let sig = builder.addType(makeSig([kWasmI32], [wasmRefNullType(struct)]),
                             kNoSuperType, false, true);
   let table = builder.addTable(wasmRefNullType(struct), 10, undefined,
@@ -631,10 +634,11 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   let builder = new WasmModuleBuilder();
 
   let struct_type = builder.addStruct(
-      {fields: [makeField(kWasmI32, true)], final: true, shared: true});
+    [makeField(kWasmI32, true)], kNoSuperType, true, true);
 
   let array_type =
-    builder.addArray(wasmRefType(struct_type), {final: true, shared: true});
+    builder.addArray(wasmRefType(struct_type), true, kNoSuperType, true,
+                     true);
 
   let segment = builder.addPassiveElementSegment(
     [[kExprI32Const, 0, kGCPrefix, kExprStructNew, struct_type],

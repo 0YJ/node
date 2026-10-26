@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "include/v8-callbacks.h"
-#include "include/v8config.h"
 #include "src/common/globals.h"
 #include "src/handles/handles.h"
 #include "src/interpreter/bytecode-register.h"
@@ -70,34 +69,12 @@ class V8_EXPORT_PRIVATE JumpTableTargetOffsets final {
   int case_value_base_;
 };
 
-template <typename Feedback>
-struct EmbeddedFeedbackHintTraits;
-
-template <>
-struct EmbeddedFeedbackHintTraits<CompareOperationFeedback> {
-  using Hint = CompareOperationHint;
-  static Hint FromFeedback(uint32_t feedback_value);
-  static bool IsWithEmbeddedFeedbackOp(Bytecode bc) {
-    return Bytecodes::IsCompareWithEmbeddedFeedback(bc);
-  }
-};
-template <>
-struct EmbeddedFeedbackHintTraits<BinaryOperationFeedback> {
-  using Hint = BinaryOperationHint;
-  static Hint FromFeedback(uint32_t feedback_value);
-  static bool IsWithEmbeddedFeedbackOp(Bytecode bc) {
-    return Bytecodes::IsBinaryOpWithEmbeddedFeedback(bc) ||
-           Bytecodes::IsUnaryOpWithEmbeddedFeedback(bc);
-  }
-};
-
 class V8_EXPORT_PRIVATE BytecodeArrayIterator {
  public:
   explicit BytecodeArrayIterator(Handle<BytecodeArray> bytecode_array,
                                  int initial_offset = 0);
   BytecodeArrayIterator(Handle<BytecodeArray> bytecode_array,
-                        int initial_offset,
-                        DisallowGarbageCollection& no_gc V8_LIFETIME_BOUND);
+                        int initial_offset, DisallowGarbageCollection& no_gc);
   ~BytecodeArrayIterator();
 
   BytecodeArrayIterator(const BytecodeArrayIterator&) = delete;
@@ -166,12 +143,12 @@ class V8_EXPORT_PRIVATE BytecodeArrayIterator {
   Register GetStarTargetRegister() const;
   std::pair<Register, Register> GetRegisterPairOperand(int operand_index) const;
   RegisterList GetRegisterListOperand(int operand_index) const;
-  uint32_t GetRegisterOperandRange(int operand_index) const;
+  int GetRegisterOperandRange(int operand_index) const;
   Runtime::FunctionId GetRuntimeIdOperand(int operand_index) const;
   Runtime::FunctionId GetIntrinsicIdOperand(int operand_index) const;
   uint32_t GetNativeContextIndexOperand(int operand_index) const;
   AbortReason GetAbortReasonOperand(int operand_index) const;
-  uint8_t GetEmbeddedFeedback(int operand_index) const;
+  uint32_t GetEmbeddedFeedback(int operand_index) const;
   Tagged<Object> GetConstantAtIndex(int offset) const;
   Handle<Object> GetConstantAtIndex(int offset, Isolate* isolate) const;
   Handle<Object> GetConstantAtIndex(int offset, LocalIsolate* isolate) const;
@@ -206,13 +183,7 @@ class V8_EXPORT_PRIVATE BytecodeArrayIterator {
 
   void UpdatePointers();
 
-  template <typename Feedback>
-  typename EmbeddedFeedbackHintTraits<Feedback>::Hint
-  GetEmbeddedOperationHint();
-
-  CompareOperationHint GetEmbeddedCompareOperationHint() {
-    return GetEmbeddedOperationHint<CompareOperationFeedback>();
-  }
+  CompareOperationHint GetEmbeddedCompareOperationHint();
   int GetEmbeddedFeedbackOffset(int operand_index) const;
 
   inline bool done() const { return cursor_ == nullptr; }

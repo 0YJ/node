@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <type_traits>
 
-#include "src/base/bit-field.h"
 #include "src/base/memory.h"
 
 namespace v8 {
@@ -28,26 +27,17 @@ struct TemplateHashMapEntry {
 
   Key key;
   Value value;
+  uint32_t hash : 31;  // The full hash value for key
 
   TemplateHashMapEntry(Key key, Value value, uint32_t hash)
-      : key(key),
-        value(value),
-        hash_and_exists_(HashField::encode(hash) |
-                         ExistsField::encode(true)) {}
+      : key(key), value(value), hash(hash), exists_(true) {}
 
-  using HashField = BitField<uint32_t, 0, 31>;
-  using ExistsField = HashField::Next<bool, 1>;
-  static constexpr uint32_t kHashValueMask = HashField::kMax;
+  bool exists() const { return exists_; }
 
-  uint32_t hash() const { return HashField::decode(hash_and_exists_); }
-  bool exists() const { return ExistsField::decode(hash_and_exists_); }
-
-  void clear() {
-    hash_and_exists_ = ExistsField::update(hash_and_exists_, false);
-  }
+  void clear() { exists_ = false; }
 
  private:
-  uint32_t hash_and_exists_;
+  bool exists_ : 1;
 };
 
 // Specialization for no value.
@@ -57,25 +47,17 @@ struct TemplateHashMapEntry<Key, NoHashMapValue> {
     Key key;
     NoHashMapValue value;  // Value in union with key to not take up space.
   };
+  uint32_t hash : 31;  // The full hash value for key
 
   TemplateHashMapEntry(Key key, NoHashMapValue value, uint32_t hash)
-      : key(key),
-        hash_and_exists_(HashField::encode(hash) |
-                         ExistsField::encode(true)) {}
+      : key(key), hash(hash), exists_(true) {}
 
-  using HashField = BitField<uint32_t, 0, 31>;
-  using ExistsField = HashField::Next<bool, 1>;
-  static constexpr uint32_t kHashValueMask = HashField::kMax;
+  bool exists() const { return exists_; }
 
-  uint32_t hash() const { return HashField::decode(hash_and_exists_); }
-  bool exists() const { return ExistsField::decode(hash_and_exists_); }
-
-  void clear() {
-    hash_and_exists_ = ExistsField::update(hash_and_exists_, false);
-  }
+  void clear() { exists_ = false; }
 
  private:
-  uint32_t hash_and_exists_;
+  bool exists_ : 1;
 };
 
 }  // namespace base

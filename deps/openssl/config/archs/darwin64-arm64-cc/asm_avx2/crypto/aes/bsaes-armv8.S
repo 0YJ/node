@@ -1,13 +1,14 @@
-// Copyright 2021-2026 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2021-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
-// Licensed under the Apache License 2.0 (the "License").  You may not use
+// Licensed under the OpenSSL license (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
 // in the file LICENSE in the source distribution or at
 // https://www.openssl.org/source/license.html
 //
 // ====================================================================
 // Written by Ben Avison <bavison@riscosopen.org> for the OpenSSL
-// project.
+// project. Rights for redistribution and usage in source and binary
+// forms are granted according to the OpenSSL license.
 // ====================================================================
 //
 // This implementation is a translation of bsaes-armv7 for AArch64.
@@ -21,7 +22,7 @@
 // up in Perl, and it is presented as pure assembly.
 
 
-#include "arch/arm_arch.h"
+#include "crypto/arm_arch.h"
 
 .text
 

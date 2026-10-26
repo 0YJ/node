@@ -120,7 +120,12 @@ void PlatformEmbeddedFileWriterGeneric::SourceInfo(int fileid,
 
 void PlatformEmbeddedFileWriterGeneric::DeclareFunctionBegin(const char* name,
                                                              uint32_t size) {
-  DeclareSymbolGlobal(name);
+#if V8_ENABLE_DRUMBRAKE
+  if (IsDrumBrakeInstructionHandler(name)) {
+    DeclareSymbolGlobal(name);
+  }
+#endif  // V8_ENABLE_DRUMBRAKE
+
   DeclareLabel(name);
 
   if (target_arch_ == EmbeddedTargetArch::kArm ||

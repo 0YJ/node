@@ -18,7 +18,6 @@ Running test: testScopesPaused
         }
         scopeChain : [
             [0] : {
-                empty : true
                 endLocation : {
                     columnNumber : 5
                     lineNumber : 6

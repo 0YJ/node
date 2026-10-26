@@ -104,7 +104,6 @@ class MaybeRegisterRepresentation {
       case Enum::kNone:
         return false;
     }
-    UNREACHABLE();
   }
 
   constexpr bool IsFloat() const {
@@ -121,7 +120,6 @@ class MaybeRegisterRepresentation {
       case Enum::kNone:
         return false;
     }
-    UNREACHABLE();
   }
 
   constexpr bool IsTaggedOrCompressed() const {
@@ -138,7 +136,6 @@ class MaybeRegisterRepresentation {
       case Enum::kNone:
         return false;
     }
-    UNREACHABLE();
   }
 
   uint64_t MaxUnsignedValue() const {
@@ -156,7 +153,6 @@ class MaybeRegisterRepresentation {
       case Enum::kNone:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   MachineRepresentation machine_representation() const {
@@ -180,7 +176,6 @@ class MaybeRegisterRepresentation {
       case None():
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   constexpr uint16_t bit_width() const {
@@ -204,7 +199,6 @@ class MaybeRegisterRepresentation {
       case None():
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
  private:
@@ -315,7 +309,6 @@ class RegisterRepresentation : public MaybeRegisterRepresentation {
       case MachineRepresentation::kFloat16RawBits:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   static constexpr RegisterRepresentation FromMachineType(MachineType type) {
@@ -474,7 +467,6 @@ class WordRepresentation : public RegisterRepresentation {
       case Word64():
         return std::numeric_limits<uint64_t>::max();
     }
-    UNREACHABLE();
   }
   constexpr int64_t MinSignedValue() const {
     switch (this->value()) {
@@ -483,7 +475,6 @@ class WordRepresentation : public RegisterRepresentation {
       case Word64():
         return std::numeric_limits<int64_t>::min();
     }
-    UNREACHABLE();
   }
   constexpr int64_t MaxSignedValue() const {
     switch (this->value()) {
@@ -492,7 +483,6 @@ class WordRepresentation : public RegisterRepresentation {
       case Word64():
         return std::numeric_limits<int64_t>::max();
     }
-    UNREACHABLE();
   }
 };
 
@@ -548,7 +538,6 @@ class MemoryRepresentation {
     kProtectedPointer,
     kIndirectPointer,
     kSandboxedPointer,
-    kTrustedPointer,
     kSimd128,
     kSimd256
   };
@@ -631,9 +620,6 @@ class MemoryRepresentation {
   static constexpr MemoryRepresentation SandboxedPointer() {
     return MemoryRepresentation(Enum::kSandboxedPointer);
   }
-  static constexpr MemoryRepresentation TrustedPointer() {
-    return MemoryRepresentation(Enum::kTrustedPointer);
-  }
   static constexpr MemoryRepresentation Simd128() {
     return MemoryRepresentation(Enum::kSimd128);
   }
@@ -665,16 +651,14 @@ class MemoryRepresentation {
       case ProtectedPointer():
       case IndirectPointer():
       case SandboxedPointer():
-      case TrustedPointer():
       case Simd128():
       case Simd256():
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   // This predicate is used in particular to decide which load/store ops
-  // have to deal with pointer compression. Indirect/sandboxed/trusted pointers,
+  // have to deal with pointer compression. Indirect/sandboxed pointers,
   // while they resolve to tagged pointers, return {false} because they
   // use incompatible compression schemes.
   bool IsCompressibleTagged() const {
@@ -700,12 +684,10 @@ class MemoryRepresentation {
       case IndirectPointer():
       case ProtectedPointer():
       case SandboxedPointer():
-      case TrustedPointer():
       case Simd128():
       case Simd256():
         return false;
     }
-    UNREACHABLE();
   }
 
   RegisterRepresentation ToRegisterRepresentation() const {
@@ -733,7 +715,6 @@ class MemoryRepresentation {
       case UncompressedTaggedSigned():
       case IndirectPointer():
       case ProtectedPointer():
-      case TrustedPointer():
         return RegisterRepresentation::Tagged();
       case SandboxedPointer():
         return RegisterRepresentation::Word64();
@@ -742,7 +723,6 @@ class MemoryRepresentation {
       case Simd256():
         return RegisterRepresentation::Simd256();
     }
-    UNREACHABLE();
   }
 
   static MemoryRepresentation FromRegisterRepresentation(
@@ -765,7 +745,6 @@ class MemoryRepresentation {
       case RegisterRepresentation::Compressed():
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   // The required register representation for storing a value. When pointer
@@ -823,14 +802,11 @@ class MemoryRepresentation {
         return MachineType::IndirectPointer();
       case SandboxedPointer():
         return MachineType::SandboxedPointer();
-      case TrustedPointer():
-        return MachineType::Uint32();
       case Simd128():
         return MachineType::Simd128();
       case Simd256():
         return MachineType::Simd256();
     }
-    UNREACHABLE();
   }
 
   static MemoryRepresentation FromMachineType(MachineType type) {
@@ -876,7 +852,6 @@ class MemoryRepresentation {
       case MachineRepresentation::kFloat16RawBits:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   static constexpr MemoryRepresentation FromMachineRepresentation(
@@ -918,7 +893,6 @@ class MemoryRepresentation {
       case MachineRepresentation::kFloat16RawBits:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   constexpr uint8_t SizeInBytes() const {
@@ -938,7 +912,6 @@ class MemoryRepresentation {
       case Uint32():
       case Float32():
       case IndirectPointer():
-      case TrustedPointer():
         return 2;
       case Int64():
       case Uint64():
@@ -959,7 +932,6 @@ class MemoryRepresentation {
       case Simd256():
         return 5;
     }
-    UNREACHABLE();
   }
 
  private:

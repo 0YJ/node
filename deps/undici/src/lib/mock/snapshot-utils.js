@@ -1,7 +1,6 @@
 'use strict'
 
 const { InvalidArgumentError } = require('../core/errors')
-const { setHeader } = require('../core/util')
 const { runtimeFeatures } = require('../util/runtime-features.js')
 
 /**
@@ -117,7 +116,7 @@ function normalizeHeaders (headers) {
         // Convert Buffers to strings if needed
         const keyStr = Buffer.isBuffer(key) ? key.toString() : key
         const valueStr = Buffer.isBuffer(value) ? value.toString() : value
-        setHeader(normalizedHeaders, keyStr.toLowerCase(), valueStr)
+        normalizedHeaders[keyStr.toLowerCase()] = valueStr
       }
     }
     return normalizedHeaders
@@ -127,7 +126,7 @@ function normalizeHeaders (headers) {
   if (headers && typeof headers === 'object') {
     for (const [key, value] of Object.entries(headers)) {
       if (key && typeof key === 'string') {
-        setHeader(normalizedHeaders, key.toLowerCase(), Array.isArray(value) ? value.join(', ') : String(value))
+        normalizedHeaders[key.toLowerCase()] = Array.isArray(value) ? value.join(', ') : String(value)
       }
     }
   }

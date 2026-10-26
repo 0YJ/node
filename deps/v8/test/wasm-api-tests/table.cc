@@ -55,7 +55,9 @@ TEST_F(WasmCapiTest, Table) {
   AddExportedFunction(base::CStrVector("g"), g_code, sizeof(g_code),
                       wasm_i_i_sig());
   // Set table[1] to {f}, which has function index 1.
-  builder()->SetIndirectFunction(table_index, 1, 1);
+  builder()->SetIndirectFunction(
+      table_index, 1, 1,
+      WasmModuleBuilder::WasmElemSegment::kRelativeToImports);
 
   vec<Extern*> imports = vec<Extern*>::make_uninitialized();
   Instantiate(imports);

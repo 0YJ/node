@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -38,17 +38,18 @@ class LIEF_API SymbolVersion : public Object {
   static constexpr auto GLOBAL_VERSION = 1;
 
   SymbolVersion(uint16_t value) :
-    value_(value) {}
+    value_(value)
+  {}
   SymbolVersion() = default;
 
   /// Generate a *local* SymbolVersion
   static SymbolVersion local() {
-    return LOCAL_VERSION;
+    return SymbolVersion(LOCAL_VERSION);
   }
 
   /// Generate a *global* SymbolVersion
   static SymbolVersion global() {
-    return GLOBAL_VERSION;
+    return SymbolVersion(GLOBAL_VERSION);
   }
 
   ~SymbolVersion() override = default;
@@ -73,11 +74,11 @@ class LIEF_API SymbolVersion : public Object {
 
   /// SymbolVersionAux associated with the current Version if any,
   /// or a nullptr
-  SymbolVersionAux* symbol_version_auxiliary() LIEF_LIFETIMEBOUND {
+  SymbolVersionAux* symbol_version_auxiliary() {
     return symbol_aux_;
   }
 
-  const SymbolVersionAux* symbol_version_auxiliary() const LIEF_LIFETIMEBOUND {
+  const SymbolVersionAux* symbol_version_auxiliary() const {
     return symbol_aux_;
   }
 
@@ -101,14 +102,14 @@ class LIEF_API SymbolVersion : public Object {
 
   /// Redefine this version as global by dropping its auxiliary version
   ///
-  /// @see as_local() drop_version()
+  /// \see as_local() drop_version()
   void as_global() {
     return drop_version(GLOBAL_VERSION);
   }
 
   /// Redefine this version as local by dropping its auxiliary version
   ///
-  /// @see as_global() drop_version()
+  /// \see as_global() drop_version()
   void as_local() {
     return drop_version(LOCAL_VERSION);
   }
@@ -119,11 +120,10 @@ class LIEF_API SymbolVersion : public Object {
 
   void accept(Visitor& visitor) const override;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const SymbolVersion& symv);
+  LIEF_API friend std::ostream& operator<<(std::ostream& os, const SymbolVersion& symv);
 
   private:
-  uint16_t value_ = 0;
+  uint16_t          value_ = 0;
   SymbolVersionAux* symbol_aux_ = nullptr;
 };
 }

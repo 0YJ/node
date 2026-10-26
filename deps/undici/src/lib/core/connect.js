@@ -41,22 +41,16 @@ const SessionCache = class WeakSessionCache {
     if (this._sessionCache.has(sessionKey)) {
       this._sessionCache.delete(sessionKey)
     } else if (this._sessionCache.size >= this._maxCachedSessions) {
-      // Make room for the new session: prefer an entry whose session has
-      // already been collected, otherwise evict the oldest one.
-      let evicted = false
       for (const [key, ref] of this._sessionCache) {
         if (ref.deref() === undefined) {
           this._sessionCache.delete(key)
-          evicted = true
-          break
+          return
         }
       }
 
-      if (!evicted) {
-        const oldest = this._sessionCache.keys().next()
-        if (!oldest.done) {
-          this._sessionCache.delete(oldest.value)
-        }
+      const oldest = this._sessionCache.keys().next()
+      if (!oldest.done) {
+        this._sessionCache.delete(oldest.value)
       }
     }
 

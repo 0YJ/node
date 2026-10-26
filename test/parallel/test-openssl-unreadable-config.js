@@ -10,9 +10,6 @@ const { spawnSync } = require('node:child_process');
 
 if (!common.hasCrypto)
   common.skip('missing crypto');
-const { isBoringSSL } = require('../common/crypto');
-if (isBoringSSL)
-  common.skip('BoringSSL does not load a default configuration file');
 if (!common.isLinux)
   common.skip('linux only');
 if (process.config.variables.node_shared_openssl)

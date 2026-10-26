@@ -26,8 +26,6 @@ function createInheritableDOMException () {
   })
 }
 
-let createUnvalidatedWebSocketError
-
 class WebSocketError extends createInheritableDOMException() {
   #closeCode
   #reason
@@ -79,19 +77,16 @@ class WebSocketError extends createInheritableDOMException() {
    * @param {number|null} code
    * @param {string} reason
    */
-  static {
-    createUnvalidatedWebSocketError = (message, code, reason) => {
-      const error = new WebSocketError(message, kConstruct)
-      error.#closeCode = code
-      error.#reason = reason
-      return error
-    }
-
-    webidl.is.WebSocketError = (arg) => {
-      return arg != null && typeof arg === 'object' && #reason in arg
-    }
+  static createUnvalidatedWebSocketError (message, code, reason) {
+    const error = new WebSocketError(message, kConstruct)
+    error.#closeCode = code
+    error.#reason = reason
+    return error
   }
 }
+
+const { createUnvalidatedWebSocketError } = WebSocketError
+delete WebSocketError.createUnvalidatedWebSocketError
 
 Object.defineProperties(WebSocketError.prototype, {
   closeCode: kEnumerableProperty,
@@ -103,5 +98,7 @@ Object.defineProperties(WebSocketError.prototype, {
     configurable: true
   }
 })
+
+webidl.is.WebSocketError = webidl.util.MakeTypeAssertion(WebSocketError)
 
 module.exports = { WebSocketError, createUnvalidatedWebSocketError }

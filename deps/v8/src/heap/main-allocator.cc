@@ -7,7 +7,6 @@
 #include <optional>
 
 #include "src/base/logging.h"
-#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/execution/vm-state.h"
@@ -21,7 +20,6 @@
 #include "src/heap/new-spaces.h"
 #include "src/heap/normal-page-inl.h"
 #include "src/heap/paged-spaces.h"
-#include "src/heap/pending-allocations.h"
 #include "src/heap/spaces.h"
 
 namespace v8 {
@@ -29,7 +27,7 @@ namespace internal {
 
 constexpr MainAllocator::BlackAllocation MainAllocator::ComputeBlackAllocation(
     MainAllocator::IsNewGeneration is_new_generation) {
-  if (is_new_generation == kNewGeneration) {
+  if (is_new_generation == IsNewGeneration::kYes) {
     return BlackAllocation::kAlwaysDisabled;
   }
   if (v8_flags.sticky_mark_bits) {
@@ -49,17 +47,11 @@ MainAllocator::MainAllocator(LocalHeap* local_heap, SpaceWithLinearArea* space,
                                                   : &owned_allocation_info_),
       allocator_policy_(space->CreateAllocatorPolicy(this)),
       supports_extending_lab_(allocator_policy_->SupportsExtendingLAB()),
-      black_allocation_(ComputeBlackAllocation(is_new_generation)),
-      young_pending_allocations_(
-          space->identity() == NEW_SPACE
-              ? isolate_heap_->young_pending_allocations()
-              : nullptr) {
+      black_allocation_(ComputeBlackAllocation(is_new_generation)) {
   CHECK_NOT_NULL(local_heap_);
   if (local_heap_->is_main_thread()) {
     allocation_counter_.emplace();
-    if (space_->identity() != NEW_SPACE) {
-      linear_area_original_data_.emplace();
-    }
+    linear_area_original_data_.emplace();
   }
 }
 
@@ -70,8 +62,7 @@ MainAllocator::MainAllocator(Heap* heap, SpaceWithLinearArea* space, InGCTag)
       allocation_info_(&owned_allocation_info_),
       allocator_policy_(space->CreateAllocatorPolicy(this)),
       supports_extending_lab_(false),
-      black_allocation_(BlackAllocation::kAlwaysDisabled),
-      young_pending_allocations_(nullptr) {
+      black_allocation_(BlackAllocation::kAlwaysDisabled) {
   DCHECK(!allocation_counter_.has_value());
   DCHECK(!linear_area_original_data_.has_value());
 }
@@ -80,7 +71,7 @@ Address MainAllocator::AlignTopForTesting(AllocationAlignment alignment,
                                           int offset) {
   DCHECK(top());
 
-  int filler_size = GetFillToAlign(top(), alignment);
+  int filler_size = Heap::GetFillToAlign(top(), alignment);
 
   if (filler_size + offset) {
     space_heap()->CreateFillerObjectAt(top(), filler_size + offset);
@@ -92,14 +83,13 @@ Address MainAllocator::AlignTopForTesting(AllocationAlignment alignment,
 
 AllocationResult MainAllocator::AllocateRawForceAlignmentForTesting(
     int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
-  SafeHeapObjectSize safe_size_in_bytes =
-      SafeHeapObjectSize(ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes));
+  size_in_bytes = ALIGN_TO_ALLOCATION_ALIGNMENT(size_in_bytes);
 
   AllocationResult result =
-      AllocateFastAligned(safe_size_in_bytes, nullptr, alignment, origin);
+      AllocateFastAligned(size_in_bytes, nullptr, alignment, origin);
 
   return V8_UNLIKELY(result.IsFailure())
-             ? AllocateRawSlow(safe_size_in_bytes, alignment, origin)
+             ? AllocateRawSlowAligned(size_in_bytes, alignment, origin)
              : result;
 }
 
@@ -203,26 +193,47 @@ void MainAllocator::InvokeAllocationObservers(Address soon_object,
             allocation_counter().NextBytes());
 }
 
-AllocationResult MainAllocator::AllocateRawSlow(
-    SafeHeapObjectSize size_in_bytes, AllocationAlignment alignment,
-    AllocationOrigin origin) {
-  if (!EnsureAllocation(size_in_bytes, alignment, origin)) [[unlikely]] {
+AllocationResult MainAllocator::AllocateRawSlow(int size_in_bytes,
+                                                AllocationAlignment alignment,
+                                                AllocationOrigin origin) {
+  AllocationResult result =
+      alignment != kTaggedAligned
+          ? AllocateRawSlowAligned(size_in_bytes, alignment, origin)
+          : AllocateRawSlowUnaligned(size_in_bytes, origin);
+  return result;
+}
+
+AllocationResult MainAllocator::AllocateRawSlowUnaligned(
+    int size_in_bytes, AllocationOrigin origin) {
+  if (!EnsureAllocation(size_in_bytes, kTaggedAligned, origin)) {
     return AllocationResult::Failure();
   }
 
-  SafeHeapObjectSize max_aligned_size = SafeHeapObjectSize(
-      size_in_bytes.value() +
-      static_cast<uint32_t>(GetMaximumFillToAlign(alignment)));
-  SafeHeapObjectSize aligned_size_in_bytes;
+  AllocationResult result = AllocateFastUnaligned(size_in_bytes, origin);
+  DCHECK(!result.IsFailure());
+
+  InvokeAllocationObservers(result.ToAddress(), size_in_bytes, size_in_bytes,
+                            size_in_bytes);
+
+  return result;
+}
+
+AllocationResult MainAllocator::AllocateRawSlowAligned(
+    int size_in_bytes, AllocationAlignment alignment, AllocationOrigin origin) {
+  if (!EnsureAllocation(size_in_bytes, alignment, origin)) {
+    return AllocationResult::Failure();
+  }
+
+  int max_aligned_size = size_in_bytes + Heap::GetMaximumFillToAlign(alignment);
+  int aligned_size_in_bytes;
 
   AllocationResult result = AllocateFastAligned(
       size_in_bytes, &aligned_size_in_bytes, alignment, origin);
   DCHECK_GE(max_aligned_size, aligned_size_in_bytes);
   DCHECK(!result.IsFailure());
 
-  InvokeAllocationObservers(result.ToAddress(), size_in_bytes.value(),
-                            aligned_size_in_bytes.value(),
-                            max_aligned_size.value());
+  InvokeAllocationObservers(result.ToAddress(), size_in_bytes,
+                            aligned_size_in_bytes, max_aligned_size);
 
   return result;
 }
@@ -268,12 +279,8 @@ void MainAllocator::FreeLinearAllocationAreaAndResetFreeList() {
 }
 
 void MainAllocator::MoveOriginalTopForward() {
-  if (SupportsPendingAllocation()) {
-    linear_area_original_data().SetTopAndLimit(top(), extended_limit());
-  }
-  if (young_pending_allocations_) {
-    young_pending_allocations_->UpdateLab(top(), extended_limit());
-  }
+  DCHECK(SupportsPendingAllocation());
+  linear_area_original_data().SetTopAndLimit(top(), extended_limit());
 }
 
 void MainAllocator::ResetLab(Address start, Address end, Address extended_end) {
@@ -297,23 +304,17 @@ void MainAllocator::ResetLab(Address start, Address end, Address extended_end) {
   if (SupportsPendingAllocation()) {
     linear_area_original_data().SetTopAndLimit(start, extended_end);
   }
-  if (young_pending_allocations_) {
-    DCHECK(!SupportsPendingAllocation());
-    young_pending_allocations_->UpdateLab(start, extended_end);
-  }
 }
 
 bool MainAllocator::IsPendingAllocation(Address object_address) {
   DCHECK(SupportsPendingAllocation());
-  auto [top, limit] = linear_area_original_data().GetTopAndLimit();
+  auto [top, limit] = linear_area_original_data().GetTopAndLimitLocked();
   return top && top <= object_address && object_address < limit;
 }
 
-bool MainAllocator::EnsureAllocation(SafeHeapObjectSize size_in_bytes,
+bool MainAllocator::EnsureAllocation(int size_in_bytes,
                                      AllocationAlignment alignment,
                                      AllocationOrigin origin) {
-  CHECK_LT(size_in_bytes.value(), kRegularPageSize);
-
 #ifdef V8_RUNTIME_CALL_STATS
   std::optional<RuntimeCallTimerScope> rcs_scope;
   if (is_main_thread()) {
@@ -325,8 +326,7 @@ bool MainAllocator::EnsureAllocation(SafeHeapObjectSize size_in_bytes,
   if (is_main_thread()) {
     vmstate.emplace(isolate_heap()->isolate());
   }
-  return allocator_policy_->EnsureAllocation(size_in_bytes.value(), alignment,
-                                             origin);
+  return allocator_policy_->EnsureAllocation(size_in_bytes, alignment, origin);
 }
 
 void MainAllocator::FreeLinearAllocationArea() {
@@ -338,9 +338,6 @@ void MainAllocator::FreeLinearAllocationArea() {
 
   BasePage::UpdateHighWaterMark(top());
   allocator_policy_->FreeLinearAllocationArea();
-  if (young_pending_allocations_) {
-    young_pending_allocations_->RemoveLab();
-  }
 }
 
 void MainAllocator::ExtendLAB(Address limit) {
@@ -417,7 +414,7 @@ void MainAllocator::Verify() const {
 bool MainAllocator::EnsureAllocationForTesting(int size_in_bytes,
                                                AllocationAlignment alignment,
                                                AllocationOrigin origin) {
-  return EnsureAllocation(SafeHeapObjectSize(size_in_bytes), alignment, origin);
+  return EnsureAllocation(size_in_bytes, alignment, origin);
 }
 
 int MainAllocator::ObjectAlignment() const {
@@ -427,19 +424,6 @@ int MainAllocator::ObjectAlignment() const {
     return kObjectAlignment8GbHeap;
   } else {
     return kTaggedSize;
-  }
-}
-
-int MainAllocator::GetMaximumFillToAlign(AllocationAlignment alignment) {
-  if (V8_COMPRESS_POINTERS_8GB_BOOL) return 0;
-  switch (alignment) {
-    case kTaggedAligned:
-      return 0;
-    case kDoubleAligned:
-    case kDoubleUnaligned:
-      return kDoubleSize - kTaggedSize;
-    default:
-      UNREACHABLE();
   }
 }
 
@@ -492,7 +476,7 @@ bool SemiSpaceNewSpaceAllocatorPolicy::EnsureAllocation(
   Address start = allocation_result->first;
   Address end = allocation_result->second;
 
-  int filler_size = MainAllocator::GetFillToAlign(start, alignment);
+  int filler_size = Heap::GetFillToAlign(start, alignment);
   int aligned_size_in_bytes = size_in_bytes + filler_size;
   DCHECK_LE(start + aligned_size_in_bytes, end);
 
@@ -591,9 +575,8 @@ bool PagedNewSpaceAllocatorPolicy::WaitForSweepingForAllocation(
   // This method should be called only when there are no more pages for main
   // thread to sweep.
   DCHECK(space_heap()->sweeper()->IsSweepingDoneForSpace(NEW_SPACE));
-  if (!v8_flags.concurrent_sweeping || !space_heap()->sweeping_in_progress()) {
+  if (!v8_flags.concurrent_sweeping || !space_heap()->sweeping_in_progress())
     return false;
-  }
   Sweeper* sweeper = space_heap()->sweeper();
   if (!sweeper->AreMinorSweeperTasksRunning() &&
       !sweeper->ShouldRefillFreelistForSpace(NEW_SPACE)) {
@@ -639,9 +622,8 @@ bool PagedNewSpaceAllocatorPolicy::TryAllocatePage(int size_in_bytes,
                                                    AllocationOrigin origin) {
   if (IsPagedNewSpaceAtFullCapacity(space_) &&
       !space_->heap()->ShouldExpandYoungGenerationOnSlowAllocation(
-          NormalPage::kPageSize)) {
+          NormalPage::kPageSize))
     return false;
-  }
   if (!space_->paged_space()->AllocatePage()) return false;
   return paged_space_allocator_policy_->TryAllocationFromFreeList(size_in_bytes,
                                                                   origin);
@@ -672,7 +654,7 @@ bool PagedSpaceAllocatorPolicy::EnsureAllocation(int size_in_bytes,
 
   // We don't know exactly how much filler we need to align until space is
   // allocated, so assume the worst case.
-  size_in_bytes += MainAllocator::GetMaximumFillToAlign(alignment);
+  size_in_bytes += Heap::GetMaximumFillToAlign(alignment);
   if (allocator_->allocation_info().top() + size_in_bytes <=
       allocator_->allocation_info().limit()) {
     return true;
@@ -719,10 +701,8 @@ bool PagedSpaceAllocatorPolicy::RefillLab(int size_in_bytes,
       space_->RefillFreeList();
 
       // Retry the free list allocation.
-      if (TryAllocationFromFreeList(static_cast<size_t>(size_in_bytes),
-                                    origin)) {
+      if (TryAllocationFromFreeList(static_cast<size_t>(size_in_bytes), origin))
         return true;
-      }
     }
 
     static constexpr int kMaxPagesToSweep = 1;
@@ -752,10 +732,8 @@ bool PagedSpaceAllocatorPolicy::RefillLab(int size_in_bytes,
       DCHECK_IMPLIES(v8_flags.black_allocated_pages,
                      !page->is_black_allocated());
       space_->AddPage(page);
-      if (TryAllocationFromFreeList(static_cast<size_t>(size_in_bytes),
-                                    origin)) {
+      if (TryAllocationFromFreeList(static_cast<size_t>(size_in_bytes), origin))
         return true;
-      }
     }
   }
 
@@ -799,12 +777,10 @@ bool PagedSpaceAllocatorPolicy::TryExpandAndAllocate(size_t size_in_bytes,
 }
 
 bool PagedSpaceAllocatorPolicy::ContributeToSweeping(uint32_t max_pages) {
-  if (!space_heap()->sweeping_in_progress_for_space(allocator_->identity())) {
+  if (!space_heap()->sweeping_in_progress_for_space(allocator_->identity()))
     return false;
-  }
-  if (space_heap()->sweeper()->IsSweepingDoneForSpace(allocator_->identity())) {
+  if (space_heap()->sweeper()->IsSweepingDoneForSpace(allocator_->identity()))
     return false;
-  }
 
   const bool is_main_thread =
       allocator_->is_main_thread() ||
@@ -816,17 +792,16 @@ bool PagedSpaceAllocatorPolicy::ContributeToSweeping(uint32_t max_pages) {
 
   TRACE_GC_EPOCH_WITH_FLOW(
       isolate_heap()->tracer(), sweeping_scope_id, sweeping_scope_kind,
-      perfetto::Flow::ProcessScoped(
-          isolate_heap()->sweeper()->GetTraceIdForFlowEvent(
-              sweeping_scope_id)));
+      isolate_heap()->sweeper()->GetTraceIdForFlowEvent(sweeping_scope_id),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT);
   // Cleanup invalidated old-to-new refs for compaction space in the
   // final atomic pause.
   Sweeper::SweepingMode sweeping_mode =
       allocator_->in_gc_for_space() ? Sweeper::SweepingMode::kEagerDuringGC
                                     : Sweeper::SweepingMode::kLazyOrConcurrent;
 
-  if (!space_heap()->sweeper()->ParallelSweepSpace(
-          allocator_->identity(), sweeping_mode, is_main_thread, max_pages)) {
+  if (!space_heap()->sweeper()->ParallelSweepSpace(allocator_->identity(),
+                                                   sweeping_mode, max_pages)) {
     return false;
   }
   space_->RefillFreeList();
@@ -968,15 +943,22 @@ void PagedSpaceAllocatorPolicy::FreeLinearAllocationAreaUnsynchronized() {
   space_->Free(current_top, current_max_limit - current_top);
 }
 
-std::pair<Address, Address> LinearAreaOriginalData::GetTopAndLimit() const {
+std::pair<Address, Address> LinearAreaOriginalData::GetTopAndLimitLocked()
+    const {
   base::MutexGuard guard(mutex_);
-  return std::make_pair(original_top_, original_limit_);
+  auto [top, limit] = GetTopAndLimit();
+  // This always holds because we load both fields while locking the mutex.
+  DCHECK_LE(top, limit);
+  return std::make_pair(top, limit);
 }
 
 void LinearAreaOriginalData::SetTopAndLimit(Address top, Address limit) {
   base::MutexGuard guard(mutex_);
-  original_top_ = top;
-  original_limit_ = limit;
+  // The order of the two stores is important. See GetTopAndLimit().
+  original_limit_.store(limit, std::memory_order_relaxed);
+  // Use acquire/release semantics here to prevent subsequent stores to move
+  // before this store here.
+  original_top_.exchange(top, std::memory_order_acq_rel);
 }
 
 }  // namespace internal

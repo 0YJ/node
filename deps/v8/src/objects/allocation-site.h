@@ -18,10 +18,9 @@ namespace internal {
 
 enum InstanceType : uint16_t;
 
-V8_OBJECT class AllocationSite : public HeapObject {
-  V8_IT_OWN_TYPE;
-  V8_IT_NO_AUTO_DISPATCH;
+#include "torque-generated/src/objects/allocation-site-tq.inc"
 
+V8_OBJECT class AllocationSite : public HeapObjectLayout {
  public:
   static const uint32_t kMaximumArrayBytesToPretransition = 8 * 1024;
 
@@ -155,8 +154,6 @@ V8_OBJECT class AllocationSite : public HeapObject {
 } V8_OBJECT_END;
 
 V8_OBJECT class AllocationSiteWithWeakNext : public AllocationSite {
-  V8_IT_REUSE_PARENT;
-
  public:
   // heap->allocation_site_list() points to the last AllocationSite which form
   // a linked list through the weak_next property. The GC might remove elements
@@ -177,7 +174,7 @@ V8_OBJECT class AllocationSiteWithWeakNext : public AllocationSite {
   TaggedMember<UnionOf<Undefined, AllocationSiteWithWeakNext>> weak_next_;
 } V8_OBJECT_END;
 
-V8_OBJECT class AllocationMemento : public Struct {
+V8_OBJECT class AllocationMemento : public StructLayout {
  public:
   inline void set_allocation_site(Tagged<AllocationSite> value,
                                   WriteBarrierMode mode = UPDATE_WRITE_BARRIER);

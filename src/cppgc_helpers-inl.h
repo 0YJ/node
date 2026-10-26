@@ -11,6 +11,7 @@ namespace node {
 template <typename T>
 void CppgcMixin::Wrap(T* ptr, Realm* realm, v8::Local<v8::Object> obj) {
   CHECK_GE(obj->InternalFieldCount(), T::kInternalFieldCount);
+  ptr->realm_ = realm;
   v8::Isolate* isolate = realm->isolate();
   ptr->traced_reference_ = v8::TracedReference<v8::Object>(isolate, obj);
   // Note that ptr must be of concrete type T in Wrap.
@@ -22,7 +23,7 @@ void CppgcMixin::Wrap(T* ptr, Realm* realm, v8::Local<v8::Object> obj) {
       realm->isolate_data()->embedder_id_for_cppgc(),
       EmbedderDataTag::kEmbedderType);
   obj->SetAlignedPointerInInternalField(kSlot, ptr, EmbedderDataTag::kDefault);
-  ptr->list_node_ = realm->TrackCppgcWrapper(ptr);
+  realm->TrackCppgcWrapper(ptr);
 }
 
 template <typename T>
@@ -48,26 +49,17 @@ T* CppgcMixin::Unwrap(v8::Local<v8::Object> obj) {
 }
 
 v8::Local<v8::Object> CppgcMixin::object() const {
-  return traced_reference_.Get(realm()->isolate());
+  return traced_reference_.Get(realm_->isolate());
 }
 
 Environment* CppgcMixin::env() const {
-  return realm()->env();
-}
-
-Realm* CppgcMixin::realm() const {
-  return list_node_ == nullptr ? nullptr : list_node_->realm;
-}
-
-void CppgcMixin::Finalize() {
-  Realm* current_realm = realm();
-  if (current_realm == nullptr) return;
-  this->Clean(current_realm);
-  list_node_->realm = nullptr;
+  return realm_->env();
 }
 
 CppgcMixin::~CppgcMixin() {
-  delete list_node_;
+  if (realm_ != nullptr) {
+    realm_->set_should_purge_empty_cppgc_wrappers(true);
+  }
 }
 
 }  // namespace node

@@ -10,7 +10,6 @@ V8 correctness fuzzer launcher script.
 import argparse
 import hashlib
 import json
-import random
 import re
 import sys
 import traceback
@@ -334,21 +333,14 @@ class ExecutionConfig(object):
     return '--simulate-errors' in self.flags
 
 
-def random_seed():
-  """Returns a random, non-zero seed."""
-  seed = 0
-  while not seed:
-    seed = random.SystemRandom().randint(-2147483648, 2147483647)
-  return seed
-
-
 def parse_args(args):
   first_config_arguments = ExecutionArgumentsConfig('first')
   second_config_arguments = ExecutionArgumentsConfig('second')
 
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      '--random-seed', type=int, help='random seed passed to both runs')
+    '--random-seed', type=int, required=True,
+    help='random seed passed to both runs')
   parser.add_argument(
       '--skip-suppressions', default=False, action='store_true',
       help='skip suppressions to reproduce known issues')
@@ -363,11 +355,8 @@ def parse_args(args):
   parser.add_argument('testcase', help='path to test case')
   options = parser.parse_args(args)
 
-  if options.random_seed is None:
-    options.random_seed = random_seed()
-
   # Ensure we have a test case.
-  options.testcase = Path(options.testcase).resolve()
+  options.testcase = Path(options.testcase)
   assert options.testcase.is_file(), (
       f"Test case {options.testcase} doesn't exist")
 

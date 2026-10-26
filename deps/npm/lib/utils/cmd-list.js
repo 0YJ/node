@@ -4,6 +4,7 @@ const abbrev = require('abbrev')
 // Please keep this list sorted alphabetically
 const commands = [
   'access',
+  'adduser',
   'approve-scripts',
   'audit',
   'bugs',
@@ -41,7 +42,6 @@ const commands = [
   'outdated',
   'owner',
   'pack',
-  'patch',
   'ping',
   'pkg',
   'prefix',
@@ -57,7 +57,10 @@ const commands = [
   'sbom',
   'search',
   'set',
+  'shrinkwrap',
   'stage',
+  'star',
+  'stars',
   'start',
   'stop',
   'team',
@@ -67,6 +70,7 @@ const commands = [
   'undeprecate',
   'uninstall',
   'unpublish',
+  'unstar',
   'update',
   'version',
   'view',
@@ -138,7 +142,7 @@ const aliases = {
   sit: 'install-ci-test',
   urn: 'run',
   ogr: 'org',
-
+  'add-user': 'adduser',
 }
 
 const deref = (c) => {

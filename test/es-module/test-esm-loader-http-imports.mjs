@@ -34,9 +34,7 @@ const requestListener = ({ url }, rsp) => {
     .end();
 };
 
-// Leave closing idle connections to the client, so that the loader never
-// reuses a keep-alive socket the server has just closed.
-const server = http.createServer({ keepAliveTimeout: 0 }, requestListener);
+const server = http.createServer(requestListener);
 
 await promisify(server.listen.bind(server))({
   host: '127.0.0.1',

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -62,12 +62,12 @@ class LIEF_API SysvHash : public Object {
   }
 
   /// Buckets values
-  const std::vector<uint32_t>& buckets() const LIEF_LIFETIMEBOUND {
+  const std::vector<uint32_t>& buckets() const {
     return buckets_;
   }
 
   /// Chains values
-  const std::vector<uint32_t>& chains() const LIEF_LIFETIMEBOUND {
+  const std::vector<uint32_t>& chains() const {
     return chains_;
   }
 
@@ -77,15 +77,14 @@ class LIEF_API SysvHash : public Object {
 
   void accept(Visitor& visitor) const override;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const SysvHash& sysvhash);
+  LIEF_API friend std::ostream& operator<<(std::ostream& os, const SysvHash& sysvhash);
 
   private:
   std::vector<uint32_t> buckets_;
   std::vector<uint32_t> chains_;
 };
 
-} // namespace ELF
+} // namepsace ELF
 } // namespace LIEF
 
 #endif

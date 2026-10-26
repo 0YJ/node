@@ -19,7 +19,6 @@
 #ifndef ABSL_BASE_INTERNAL_RAW_LOGGING_H_
 #define ABSL_BASE_INTERNAL_RAW_LOGGING_H_
 
-#include <cstddef>
 #include <string>
 
 #include "absl/base/attributes.h"

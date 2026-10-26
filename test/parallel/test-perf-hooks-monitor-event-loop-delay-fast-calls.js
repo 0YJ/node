@@ -7,7 +7,7 @@ const assert = require('assert');
 const { internalBinding } = require('internal/test/binding');
 const { createELDHistogram } = internalBinding('performance');
 
-const histogram = createELDHistogram(1, true, 1n, 2n ** 63n - 1n, 3);
+const histogram = createELDHistogram(1, true);
 
 function testFastMethods() {
   histogram.start(true);

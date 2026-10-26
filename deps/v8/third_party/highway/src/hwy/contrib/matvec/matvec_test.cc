@@ -17,7 +17,8 @@
 
 // Reduce targets to avoid timeout under emulation.
 #ifndef HWY_DISABLED_TARGETS
-#define HWY_DISABLED_TARGETS (HWY_SVE2_128 | HWY_SVE2 | HWY_SVE_256 | HWY_NEON)
+#define HWY_DISABLED_TARGETS \
+  (HWY_SVE2_128 | HWY_SVE2 | HWY_SVE_256 | HWY_NEON_WITHOUT_AES)
 #endif
 
 #include <stddef.h>

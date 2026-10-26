@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Save some memory on Linux; other platforms ignore this flag.
-// Flags: --multi-mapped-mock-allocator
+// Flags: --multi-mapped-mock-allocator --experimental-wasm-rab-integration
 
 // Test that we can grow memories to sizes beyond 2GB.
 

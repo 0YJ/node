@@ -25,7 +25,9 @@ class Locale;
 namespace v8 {
 namespace internal {
 
-V8_OBJECT class JSLocale : public JSObject {
+#include "torque-generated/src/objects/js-locale-tq.inc"
+
+class JSLocale : public TorqueGeneratedJSLocale<JSLocale, JSObject> {
  public:
   // Creates locale object with properties derived from input locale string
   // and options.
@@ -92,20 +94,12 @@ V8_OBJECT class JSLocale : public JSObject {
   // Help function to check well-formed "3alpha"
   static bool Is3Alpha(std::string_view value);
 
-  inline Tagged<Managed<icu::Locale>> icu_locale() const;
-  inline void set_icu_locale(Tagged<Managed<icu::Locale>> value,
-                             WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  DECL_ACCESSORS(icu_locale, Tagged<Managed<icu::Locale>>)
 
   DECL_PRINTER(JSLocale)
-  DECL_VERIFIER(JSLocale)
 
-  static const int kHeaderSize;
-
- public:
-  TaggedMember<Foreign> icu_locale_;
-} V8_OBJECT_END;
-
-inline constexpr int JSLocale::kHeaderSize = sizeof(JSLocale);
+  TQ_OBJECT_CONSTRUCTORS(JSLocale)
+};
 
 }  // namespace internal
 }  // namespace v8

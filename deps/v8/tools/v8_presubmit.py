@@ -74,11 +74,10 @@ LINT_RULES = """
 """.split()
 
 LINT_OUTPUT_PATTERN = re.compile(r'^.+[:(]\d+[:)]')
-FLAGS_LINE = re.compile(r"//\s*Flags:.*--([A-z0-9-])+_[A-z0-9].*\n")
+FLAGS_LINE = re.compile("//\s*Flags:.*--([A-z0-9-])+_[A-z0-9].*\n")
 ASSERT_OPTIMIZED_PATTERN = re.compile("assertOptimized")
-FLAGS_ENABLE_MAGLEV = re.compile(r"//\s*Flags:.*--maglev[^-].*\n")
-FLAGS_ENABLE_TURBOLEV = re.compile(r"//\s*Flags:.*--turbolev[^-].*\n")
-FLAGS_ENABLE_TURBOFAN = re.compile(r"//\s*Flags:.*--turbofan[^-].*\n")
+FLAGS_ENABLE_MAGLEV = re.compile("//\s*Flags:.*--maglev[^-].*\n")
+FLAGS_ENABLE_TURBOFAN = re.compile("//\s*Flags:.*--turbofan[^-].*\n")
 ASSERT_UNOPTIMIZED_PATTERN = re.compile("assertUnoptimized")
 
 TOOLS_PATH = dirname(abspath(__file__))
@@ -541,7 +540,7 @@ class SourceProcessor(SourceFileProcessor):
       print ("Runtime functions list is suspiciously short. "
              "Consider updating the presubmit script.")
       sys.exit(1)
-    str = r'(\%\s+(' + '|'.join(runtime_functions) + r'))[\s\(]'
+    str = '(\%\s+(' + '|'.join(runtime_functions) + '))[\s\(]'
     return re.compile(str)
 
   # Overwriting the one in the parent class.
@@ -663,10 +662,9 @@ class SourceProcessor(SourceFileProcessor):
           not "mjsunit/mjsunit_numfuzz.js" in name):
         if ASSERT_OPTIMIZED_PATTERN.search(contents) and \
             not FLAGS_ENABLE_MAGLEV.search(contents) and \
-            not FLAGS_ENABLE_TURBOLEV.search(contents) and \
             not FLAGS_ENABLE_TURBOFAN.search(contents):
-          print("%s Flag --maglev, --turbolev, or --turbofan should be " \
-                "set if assertOptimized() is used" % name)
+          print("%s Flag --maglev or --turbofan should be set if " \
+                "assertOptimized() is used" % name)
           result = False
 
       match = self.runtime_function_call_pattern.search(contents)
@@ -789,7 +787,7 @@ class GCMoleProcessor(SourceFileProcessor):
   tools/gcmole/gcmole.py::build_file_list()
   """
   gcmole_re = re.compile('### gcmole(.*)')
-  arch_re = re.compile(r'\((.+)\) ###')
+  arch_re = re.compile('\((.+)\) ###')
 
   def IsRelevant(self, name):
     return True
@@ -849,12 +847,6 @@ def FindTests(workspace):
     if not any(exc_dir in script for exc_dir in exclude):
       scripts_without_excluded.append(script)
   return scripts_without_excluded
-
-
-def CheckMarkdown(workspace):
-  script = join(workspace, 'tools', 'dev', 'markdown_checker.py')
-  print('Running ' + script)
-  return subprocess.call(['vpython3', script], stdout=subprocess.PIPE) == 0
 
 
 def PyTests(workspace):
@@ -948,15 +940,14 @@ def Main():
   (options, args) = parser.parse_args()
   use_linter_cache = not options.no_linter_cache
   checks = [
-      CheckDeps,
-      ClangFormatProcessor(use_cache=use_linter_cache),
-      TorqueLintProcessor(use_cache=use_linter_cache),
-      JSLintProcessor(use_cache=use_linter_cache),
-      SourceProcessor(),
-      StatusFilesProcessor(),
-      CheckMarkdown,
-      PyTests,
-      GCMoleProcessor(),
+    CheckDeps,
+    ClangFormatProcessor(use_cache=use_linter_cache),
+    TorqueLintProcessor(use_cache=use_linter_cache),
+    JSLintProcessor(use_cache=use_linter_cache),
+    SourceProcessor(),
+    StatusFilesProcessor(),
+    PyTests,
+    GCMoleProcessor(),
   ]
   if not options.no_lint:
     checks.append(CppLintProcessor(use_cache=use_linter_cache))

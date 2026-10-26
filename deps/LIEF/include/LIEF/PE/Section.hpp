@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@
 #include <memory>
 
 #include "LIEF/iostream.hpp"
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/Abstract/Section.hpp"
 #include "LIEF/enums.hpp"
@@ -54,8 +53,7 @@ class LIEF_API Section : public LIEF::Section {
   using LIEF::Section::name;
   static constexpr size_t MAX_SECTION_NAME = 8;
 
-  enum class CHARACTERISTICS : uint64_t {
-    // clang-format off
+  enum class CHARACTERISTICS: uint64_t  {
     TYPE_NO_PAD            = 0x00000008,
     CNT_CODE               = 0x00000020,
     CNT_INITIALIZED_DATA   = 0x00000040,
@@ -90,19 +88,20 @@ class LIEF_API Section : public LIEF::Section {
     MEM_SHARED             = 0x10000000,
     MEM_EXECUTE            = 0x20000000,
     MEM_READ               = 0x40000000,
-    MEM_WRITE              = 0x80000000,
-    // clang-format on
+    MEM_WRITE              = 0x80000000
   };
 
   Section(const details::pe_section& header);
   Section() = default;
   Section(std::string name) :
-    Section::Section() {
+    Section::Section()
+  {
     name_ = std::move(name);
   }
 
   Section(std::string name, std::vector<uint8_t> content) :
-    Section(std::move(name)) {
+    Section(std::move(name))
+  {
     content_ = std::move(content);
     size_ = content_.size();
   }
@@ -122,32 +121,30 @@ class LIEF_API Section : public LIEF::Section {
   }
 
   /// The actual content of the section
-  span<const uint8_t> content() const LIEF_LIFETIMEBOUND override {
+  span<const uint8_t> content() const override {
     return content_;
   }
 
   /// Content of the section's padding area
-  span<const uint8_t> padding() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> padding() const {
     return padding_;
   }
 
   /// The offset of the section data in the PE file
   uint32_t pointerto_raw_data() const;
 
-  /// The file pointer to the beginning of the COFF relocation entries for the
-  /// section. This is set to zero for executable images or if there are no
-  /// relocations.
+  /// The file pointer to the beginning of the COFF relocation entries for the section. This is set to zero for
+  /// executable images or if there are no relocations.
   ///
-  /// For modern PE binaries, this value is usually set to 0 as the relocations are
-  /// managed by PE::Relocation.
+  /// For modern PE binaries, this value is usually set to 0 as the relocations are managed by
+  /// PE::Relocation.
   uint32_t pointerto_relocation() const {
     return pointer_to_relocations_;
   }
 
   /// The file pointer to the beginning of line-number entries for the section.
-  /// This is set to zero if there are no COFF line numbers. This value should be
-  /// zero for an image because COFF debugging information is deprecated and modern
-  /// debug information relies on the PDB files.
+  /// This is set to zero if there are no COFF line numbers. This value should be zero for an image because COFF
+  /// debugging information is deprecated and modern debug information relies on the PDB files.
   uint32_t pointerto_line_numbers() const {
     return pointer_to_linenumbers_;
   }
@@ -228,58 +225,56 @@ class LIEF_API Section : public LIEF::Section {
   ///
   /// This coff string is usually present for long section names whose length
   /// does not fit in the 8 bytes allocated by the PE format.
-  COFF::String* coff_string() LIEF_LIFETIMEBOUND {
+  COFF::String* coff_string() {
     return coff_string_;
   }
 
-  const COFF::String* coff_string() const LIEF_LIFETIMEBOUND {
+  const COFF::String* coff_string() const {
     return coff_string_;
   }
 
-  Section&
-      remove_characteristic(CHARACTERISTICS characteristic) LIEF_LIFETIMEBOUND {
+  Section& remove_characteristic(CHARACTERISTICS characteristic) {
     characteristics_ &= ~static_cast<size_t>(characteristic);
     return *this;
   }
 
-  Section& add_characteristic(CHARACTERISTICS characteristic) LIEF_LIFETIMEBOUND {
+  Section& add_characteristic(CHARACTERISTICS characteristic) {
     characteristics_ |= static_cast<size_t>(characteristic);
     return *this;
   }
 
-  std::unique_ptr<SpanStream> stream() const LIEF_LIFETIMEBOUND;
+  std::unique_ptr<SpanStream> stream() const;
 
-  /// @private
-  LIEF_LOCAL Section& reserve(size_t size, uint8_t value = 0) LIEF_LIFETIMEBOUND {
+  /// \private
+  LIEF_LOCAL Section& reserve(size_t size, uint8_t value = 0) {
     content_.resize(size, value);
     return *this;
   }
 
-  /// @private
-  LIEF_LOCAL vector_iostream edit() LIEF_LIFETIMEBOUND {
-    return content_;
+  /// \private
+  LIEF_LOCAL vector_iostream edit() {
+    return vector_iostream(content_);
   }
 
-  span<uint8_t> writable_content() LIEF_LIFETIMEBOUND {
+  span<uint8_t> writable_content() {
     return content_;
   }
 
   void accept(Visitor& visitor) const override;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const Section& section);
+  LIEF_API friend std::ostream& operator<<(std::ostream& os, const Section& section);
 
   static std::vector<CHARACTERISTICS> characteristics_to_list(uint32_t value);
 
   private:
   std::vector<uint8_t> content_;
   std::vector<uint8_t> padding_;
-  uint32_t virtual_size_ = 0;
+  uint32_t virtual_size_           = 0;
   uint32_t pointer_to_relocations_ = 0;
   uint32_t pointer_to_linenumbers_ = 0;
-  uint16_t number_of_relocations_ = 0;
-  uint16_t number_of_linenumbers_ = 0;
-  uint32_t characteristics_ = 0;
+  uint16_t number_of_relocations_  = 0;
+  uint16_t number_of_linenumbers_  = 0;
+  uint32_t characteristics_        = 0;
 
   COFF::String* coff_string_ = nullptr;
 };

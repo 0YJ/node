@@ -3,8 +3,7 @@
 
 const common = require('../common');
 const assert = require('assert');
-const { Broadcast, broadcast, dump, from, text } = require('stream/iter');
-const { setImmediate } = require('timers/promises');
+const { broadcast, Broadcast, from, text } = require('stream/iter');
 
 // =============================================================================
 // Broadcast.from
@@ -118,45 +117,34 @@ async function testAlreadyAbortedSignal() {
 // =============================================================================
 
 async function testBroadcastFromCancelWhileBlocked() {
-  let resolveNext;
-  let sourceReturned = false;
-  const source = {
-    [Symbol.asyncIterator]() {
-      return {
-        next() {
-          const { promise, resolve } = Promise.withResolvers();
-          resolveNext = resolve;
-          return promise;
-        },
-        return() {
-          sourceReturned = true;
-          return Promise.resolve({ __proto__: null, done: true });
-        },
-      };
-    },
-  };
+  // Create a slow async source that blocks between yields
+  let sourceFinished = false;
+  async function* slowSource() {
+    const enc = new TextEncoder();
+    yield [enc.encode('chunk1')];
+    // Simulate a long delay - the cancel should unblock this
+    await new Promise((resolve) => setTimeout(resolve, 10000));
+    yield [enc.encode('chunk2')];
+    sourceFinished = true;
+  }
 
-  const { writer, broadcast: bc } = Broadcast.from(source);
-  const iter = bc.push()[Symbol.asyncIterator]();
-  const pendingRead = iter.next();
-  await setImmediate();
+  const { broadcast: bc } = Broadcast.from(slowSource());
+  const consumer = bc.push();
 
-  let writesAfterCancel = 0;
-  writer.writevSync = () => { writesAfterCancel++; return true; };
+  // Read the first chunk
+  const iter = consumer[Symbol.asyncIterator]();
+  const first = await iter.next();
+  assert.strictEqual(first.done, false);
+
+  // Cancel while the source is blocked waiting to yield the next chunk
   bc.cancel();
-  assert.deepStrictEqual({ ...await pendingRead }, {
-    done: true,
-    value: undefined,
-  });
 
-  resolveNext({
-    __proto__: null,
-    done: false,
-    value: [new TextEncoder().encode('late')],
-  });
-  await setImmediate();
-  assert.strictEqual(writesAfterCancel, 0);
-  assert.strictEqual(sourceReturned, true);
+  // The iteration should complete (not hang)
+  const next = await iter.next();
+  assert.strictEqual(next.done, true);
+
+  // Source should NOT have finished (we cancelled before chunk2)
+  assert.strictEqual(sourceFinished, false);
 }
 
 // =============================================================================
@@ -171,22 +159,14 @@ async function testBroadcastFromSourceError() {
   const { broadcast: bc } = Broadcast.from(failingSource());
   const consumer = bc.push();
   await assert.rejects(async () => {
-    await dump(consumer);
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of consumer) { /* consume */ }
   }, { message: 'broadcast source boom' });
 }
 
 // =============================================================================
 // Protocol validation
 // =============================================================================
-
-function testBroadcastProtocolReturnsBroadcast() {
-  const { broadcast: expected } = broadcast();
-  const obj = {
-    [Symbol.for('Stream.broadcastProtocol')]() { return expected; },
-  };
-  assert.strictEqual(Broadcast.from(obj), expected);
-  expected.cancel();
-}
 
 function testBroadcastProtocolReturnsNull() {
   const obj = {
@@ -230,7 +210,6 @@ Promise.all([
   testAlreadyAbortedSignal(),
   testBroadcastFromCancelWhileBlocked(),
   testBroadcastFromSourceError(),
-  testBroadcastProtocolReturnsBroadcast(),
   testBroadcastProtocolReturnsNull(),
   testBroadcastProtocolReturnsString(),
   testBroadcastProtocolReturnsUndefined(),

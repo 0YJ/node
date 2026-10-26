@@ -59,9 +59,8 @@ inline std::optional<double> AverageSpeed(
 
 class SmoothedBytesAndDuration {
  public:
-  explicit SmoothedBytesAndDuration(v8::base::TimeDelta increase_decay,
-                                    v8::base::TimeDelta decrease_decay)
-      : increase_decay_(increase_decay), decrease_decay_(decrease_decay) {}
+  explicit SmoothedBytesAndDuration(v8::base::TimeDelta decay)
+      : decay_(decay) {}
 
   void Update(BytesAndDuration bytes_and_duration) {
     if (bytes_and_duration.duration.IsZero()) {
@@ -69,39 +68,29 @@ class SmoothedBytesAndDuration {
     }
     const double new_throughput = bytes_and_duration.bytes /
                                   bytes_and_duration.duration.InMillisecondsF();
-
-    const auto decay =
-        new_throughput >= throughput_ ? increase_decay_ : decrease_decay_;
     throughput_ = new_throughput + Decay(throughput_ - new_throughput,
-                                         bytes_and_duration.duration, decay);
+                                         bytes_and_duration.duration);
   }
   // Return throughput of memory (in bytes) over time (in millis).
   double GetThroughput() const { return throughput_; }
 
-  // Returns throughput decayed as if `delay` passed. The new allocation
-  // throughput is assumed to be 0, so this only tests decay of the current
-  // throughput. This is why we use `decrease_decay_` here.
-  double GetThroughputForTesting(v8::base::TimeDelta delay) const {
-    return Decay(throughput_, delay, decrease_decay_);
+  // Returns throughput decayed as if `delay` passed.
+  double GetThroughput(v8::base::TimeDelta delay) const {
+    return Decay(throughput_, delay);
   }
 
  private:
-  double Decay(double throughput, v8::base::TimeDelta delay,
-               v8::base::TimeDelta decay) const {
+  double Decay(double throughput, v8::base::TimeDelta delay) const {
     return throughput *
-           exp2(-delay.InMillisecondsF() / decay.InMillisecondsF());
+           exp2(-delay.InMillisecondsF() / decay_.InMillisecondsF());
   }
 
   double throughput_ = 0.0;
-
-  // Possibly distinct decay rates for increasing/decreasing throughput. This
-  // allows us to react e.g. faster to a growing allocation rate relative to a
-  // decreasing one.
-  const v8::base::TimeDelta increase_decay_;
-  const v8::base::TimeDelta decrease_decay_;
+  const v8::base::TimeDelta decay_;
 };
 
-using ByteSize = v8::base::StrongAlias<struct ByteSizeTag, size_t>;
+struct ByteSizeTag;
+using ByteSize = v8::base::StrongAlias<ByteSizeTag, size_t>;
 
 }  // namespace heap::base
 

@@ -8,17 +8,17 @@
 #include "src/debug/debug-coverage.h"
 #include "src/debug/debug-scopes.h"
 #include "src/debug/debug.h"
+#include "src/debug/liveedit.h"
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
+#include "src/heap/heap-inl.h"  // For ToBoolean. TODO(jkummerow): Drop.
 #include "src/interpreter/bytecodes.h"
 #include "src/interpreter/interpreter.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/js-promise-inl.h"
-#include "src/objects/js-proxy-inl.h"
 #include "src/objects/js-weak-refs-inl.h"
-#include "src/objects/module-inl.h"
 #include "src/runtime/runtime-utils.h"
 #include "src/runtime/runtime.h"
 #include "src/snapshot/embedded/embedded-data.h"
@@ -40,7 +40,7 @@ RUNTIME_FUNCTION(Runtime_IterableForEach) {
   Handle<Object> iterable = args.at(0);
   Handle<JSReceiver> callback = args.at<JSReceiver>(1);
 
-  auto int_visitor = [&](int val) -> bool {
+  auto smi_visitor = [&](int32_t val) -> bool {
     HandleScope loop_scope(isolate);
     DirectHandle<Object> argv[] = {isolate->factory()->NewNumberFromInt(val)};
     return !Execution::Call(isolate, callback,
@@ -67,8 +67,8 @@ RUNTIME_FUNCTION(Runtime_IterableForEach) {
                 .is_null();
   };
 
-  if (IterableForEach<true>(isolate, iterable, int_visitor, double_visitor,
-                            generic_visitor)
+  if (IterableForEach(isolate, iterable, smi_visitor, double_visitor,
+                      generic_visitor)
           .is_null()) {
     return ReadOnlyRoots(isolate).exception();
   }
@@ -145,7 +145,7 @@ RUNTIME_FUNCTION_RETURN_PAIR(Runtime_DebugBreakOnBytecode) {
                     Smi::FromInt(static_cast<uint8_t>(bytecode)));
   }
   Tagged<Object> interrupt_object = isolate->stack_guard()->HandleInterrupts();
-  if (IsExceptionHole(interrupt_object)) {
+  if (IsExceptionHole(interrupt_object, isolate)) {
     return MakePair(interrupt_object,
                     Smi::FromInt(static_cast<uint8_t>(bytecode)));
   }
@@ -172,7 +172,7 @@ RUNTIME_FUNCTION(Runtime_DebugBreakAtEntry) {
     isolate->debug()->Break(it.frame(), function);
   }
 
-  return function->shared()->GetCode(isolate);
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_HandleDebuggerStatement) {
@@ -256,7 +256,7 @@ MaybeHandle<JSArray> Runtime::GetInternalProperties(
         iter.Advance();
         prototype = PrototypeIterator::GetCurrent(iter);
       }
-      if (!IsNull(*prototype)) {
+      if (!IsNull(*prototype, isolate)) {
         result = ArrayList::Add(
             isolate, result,
             isolate->factory()->NewStringFromStaticChars("[[Prototype]]"),
@@ -354,39 +354,6 @@ MaybeHandle<JSArray> Runtime::GetInternalProperties(
         isolate, result,
         isolate->factory()->NewStringFromAsciiChecked("[[WeakRefTarget]]"),
         direct_handle(js_weak_ref->target(), isolate));
-  } else if (IsJSDeferredModuleNamespace(*object)) {
-    auto ns = Cast<JSDeferredModuleNamespace>(object);
-
-    const char* status = nullptr;
-    switch (ns->module()->status()) {
-      case Module::kUnlinked:
-        status = "unlinked";
-        break;
-      case Module::kPreLinking:
-      case Module::kLinking:
-        status = "linking";
-        break;
-      case Module::kLinked:
-        status = "linked";
-        break;
-      case Module::kEvaluating:
-        status = "evaluating";
-        break;
-      case Module::kEvaluatingAsync:
-        status = "evaluating-async";
-        break;
-      case Module::kEvaluated:
-        status = "evaluated";
-        break;
-      case Module::kErrored:
-        status = "errored";
-        break;
-    }
-
-    result = ArrayList::Add(
-        isolate, result,
-        isolate->factory()->NewStringFromAsciiChecked("[[ModuleStatus]]"),
-        isolate->factory()->NewStringFromAsciiChecked(status));
   } else if (IsJSArrayBuffer(*object)) {
     DirectHandle<JSArrayBuffer> js_array_buffer = Cast<JSArrayBuffer>(object);
     if (js_array_buffer->was_detached()) {
@@ -437,8 +404,8 @@ MaybeHandle<JSArray> Runtime::GetInternalProperties(
       DirectHandle<Symbol> memory_symbol =
           isolate->factory()->array_buffer_wasm_memory_symbol();
       DirectHandle<Object> memory_object =
-          JSReceiver::GetDataProperty(isolate, js_array_buffer, memory_symbol);
-      if (!IsUndefined(*memory_object)) {
+          JSObject::GetDataProperty(isolate, js_array_buffer, memory_symbol);
+      if (!IsUndefined(*memory_object, isolate)) {
         result = ArrayList::Add(isolate, result,
                                 isolate->factory()->NewStringFromAsciiChecked(
                                     "[[WebAssemblyMemory]]"),
@@ -542,7 +509,7 @@ RUNTIME_FUNCTION(Runtime_SetGeneratorScopeVariableValue) {
   DirectHandle<Object> new_value = args.at(3);
   ScopeIterator it(isolate, gen);
   bool res = SetScopeVariableValue(&it, index, variable_name, new_value);
-  return ReadOnlyRoots(isolate).boolean_value(res);
+  return isolate->heap()->ToBoolean(res);
 }
 
 RUNTIME_FUNCTION(Runtime_GetBreakLocations) {
@@ -555,7 +522,7 @@ RUNTIME_FUNCTION(Runtime_GetBreakLocations) {
   // Find the number of break points
   DirectHandle<Object> break_locations =
       Debug::GetSourceBreakLocations(isolate, shared);
-  if (IsUndefined(*break_locations)) {
+  if (IsUndefined(*break_locations, isolate)) {
     return ReadOnlyRoots(isolate).undefined_value();
   }
   // Return array as JS array
@@ -596,8 +563,7 @@ RUNTIME_FUNCTION(Runtime_DebugGetLoadedScriptIds) {
   }
 
   // Convert the script objects to proper JS objects.
-  uint32_t instances_len = instances->ulength().value();
-  for (uint32_t i = 0; i < instances_len; i++) {
+  for (int i = 0; i < instances->length(); i++) {
     DirectHandle<Script> script(Cast<Script>(instances->get(i)), isolate);
     instances->set(i, Smi::FromInt(script->id()));
   }
@@ -630,9 +596,8 @@ RUNTIME_FUNCTION(Runtime_CollectGarbage) {
 namespace {
 
 int ScriptLinePosition(Isolate* isolate, DirectHandle<Script> script,
-                       int int_line) {
-  if (int_line < 0) return -1;
-  uint32_t line = static_cast<uint32_t>(int_line);
+                       int line) {
+  if (line < 0) return -1;
 
 #if V8_ENABLE_WEBASSEMBLY
   if (script->type() == Script::Type::kWasm) {
@@ -644,7 +609,8 @@ int ScriptLinePosition(Isolate* isolate, DirectHandle<Script> script,
   Script::InitLineEnds(isolate, script);
 
   Tagged<FixedArray> line_ends_array = Cast<FixedArray>(script->line_ends());
-  const uint32_t line_count = line_ends_array->ulength().value();
+  const int line_count = line_ends_array->length();
+  DCHECK_LT(0, line_count);
 
   if (line == 0) return 0;
   // If line == line_count, we return the first position beyond the last line.
@@ -656,9 +622,8 @@ int ScriptLinePositionWithOffset(Isolate* isolate, DirectHandle<Script> script,
                                  int line, int offset) {
   if (line < 0 || offset < 0) return -1;
 
-  if (line == 0 || offset == 0) {
+  if (line == 0 || offset == 0)
     return ScriptLinePosition(isolate, script, line) + offset;
-  }
 
   Script::PositionInfo info;
   if (!Script::GetPositionInfo(script, offset, &info,
@@ -718,13 +683,13 @@ DirectHandle<Object> ScriptLocationFromLine(Isolate* isolate,
   // additionally subtracting corresponding offsets.
 
   int32_t line = 0;
-  if (!IsNullOrUndefined(*opt_line)) {
+  if (!IsNullOrUndefined(*opt_line, isolate)) {
     CHECK(IsNumber(*opt_line));
     line = NumberToInt32(*opt_line) - script->line_offset();
   }
 
   int32_t column = 0;
-  if (!IsNullOrUndefined(*opt_column)) {
+  if (!IsNullOrUndefined(*opt_column, isolate)) {
     CHECK(IsNumber(*opt_column));
     column = NumberToInt32(*opt_column);
     if (line == 0) column -= script->column_offset();
@@ -891,9 +856,7 @@ RUNTIME_FUNCTION(Runtime_DebugCollectWasmCoverage) {
     const CoverageScript& script_data = coverage->at(i);
     Handle<Script> script = script_data.script;
     DCHECK_EQ(script->type(), Script::Type::kWasm);
-    CppGCManaged<wasm::NativeModule>::Ptr native_module =
-        script->wasm_native_module();
-    const wasm::WasmModule* module = native_module->module();
+    const wasm::WasmModule* module = script->wasm_native_module()->module();
 
     std::vector<CoverageBlock> ranges;
     int num_functions = static_cast<int>(script_data.functions.size());
@@ -963,8 +926,7 @@ RUNTIME_FUNCTION(Runtime_DebugAsyncFunctionSuspended) {
   // parent).
   DirectHandle<JSPromise> throwaway =
       isolate->factory()->NewJSPromiseWithoutHook();
-  const int kSkipFrameCount = 1;
-  isolate->OnAsyncFunctionSuspended(throwaway, promise, kSkipFrameCount);
+  isolate->OnAsyncFunctionSuspended(throwaway, promise);
 
   // The Promise will be thrown away and not handled, but it
   // shouldn't trigger unhandled reject events as its work is done
@@ -1008,6 +970,40 @@ RUNTIME_FUNCTION(Runtime_DebugPromiseThen) {
     isolate->OnPromiseThen(Cast<JSPromise>(promise));
   }
   return *promise;
+}
+
+RUNTIME_FUNCTION(Runtime_LiveEditPatchScript) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(2, args.length());
+  DirectHandle<JSFunction> script_function = args.at<JSFunction>(0);
+  Handle<String> new_source = args.at<String>(1);
+
+  Handle<Script> script(Cast<Script>(script_function->shared()->script()),
+                        isolate);
+  v8::debug::LiveEditResult result;
+  isolate->debug()->SetScriptSource(script, new_source, /* preview */ false,
+                                    /* allow_top_frame_live_editing */ false,
+                                    &result);
+  switch (result.status) {
+    case v8::debug::LiveEditResult::COMPILE_ERROR:
+      return isolate->Throw(*isolate->factory()->NewStringFromAsciiChecked(
+          "LiveEdit failed: COMPILE_ERROR"));
+    case v8::debug::LiveEditResult::BLOCKED_BY_RUNNING_GENERATOR:
+      return isolate->Throw(*isolate->factory()->NewStringFromAsciiChecked(
+          "LiveEdit failed: BLOCKED_BY_RUNNING_GENERATOR"));
+    case v8::debug::LiveEditResult::BLOCKED_BY_ACTIVE_FUNCTION:
+      return isolate->Throw(*isolate->factory()->NewStringFromAsciiChecked(
+          "LiveEdit failed: BLOCKED_BY_ACTIVE_FUNCTION"));
+    case v8::debug::LiveEditResult::BLOCKED_BY_TOP_LEVEL_ES_MODULE_CHANGE:
+      return isolate->Throw(*isolate->factory()->NewStringFromAsciiChecked(
+          "LiveEdit failed: BLOCKED_BY_TOP_LEVEL_ES_MODULE_CHANGE"));
+    case v8::debug::LiveEditResult::FEATURE_DISABLED:
+      return isolate->Throw(*isolate->factory()->NewStringFromAsciiChecked(
+          "LiveEdit failed: FEATURE_DISABLED"));
+    case v8::debug::LiveEditResult::OK:
+      return ReadOnlyRoots(isolate).undefined_value();
+  }
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_ProfileCreateSnapshotDataBlob) {

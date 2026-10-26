@@ -7,7 +7,6 @@
 
 #include <iterator>
 
-#include "include/v8config.h"
 #include "src/base/compiler-specific.h"
 #include "src/base/macros.h"
 
@@ -181,7 +180,7 @@ class ThreadedListBase final : public BaseClass {
     return false;
   }
 
-  class V8_GSL_POINTER Iterator final {
+  class Iterator final {
    public:
     using iterator_category = std::forward_iterator_tag;
     using difference_type = std::ptrdiff_t;
@@ -225,7 +224,7 @@ class ThreadedListBase final : public BaseClass {
     friend class ThreadedListBase;
   };
 
-  class V8_GSL_POINTER ConstIterator final {
+  class ConstIterator final {
    public:
     using iterator_category = std::forward_iterator_tag;
     using difference_type = std::ptrdiff_t;

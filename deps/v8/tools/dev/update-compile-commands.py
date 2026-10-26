@@ -42,14 +42,6 @@ def _Call(cmd, silent=False):
     print(f"# {cmd}")
   return subprocess.call(cmd, shell=True)
 
-
-def _GetGnArg(build_dir, name):
-  """Returns the current value of a GN arg, as the string GN prints for it."""
-  out = subprocess.check_output(
-      f"gn args {build_dir} --list={name} --json", shell=True, text=True)
-  arg = json.loads(out)[0]
-  return arg.get("current", arg["default"])["value"]
-
 def _Write(filename, content):
   with open(filename, "w") as f:
     f.write(content)
@@ -86,20 +78,12 @@ def AddTargetsForArch(arch, combined):
 def UpdateCompileCommands():
   print(">>> Updating compile_commands.json...")
   combined = {}
-  # Put the default architecture first so shared files use its flags.
-  arches = [DEFAULT_ARCH]
-
-  # Add other architectures to the list
-  other_arches = ["x64", "arm64"]
+  AddTargetsForArch("x64", combined)
+  AddTargetsForArch("arm64", combined)
   if DEFAULT_ARCH != "arm64":
     # Mac arm64 doesn't like 32bit platforms:
-    other_arches.extend(["ia32", "arm"])
-
-  arches = list(dict.fromkeys([DEFAULT_ARCH] + other_arches))
-
-  # Process them in order
-  for arch in arches:
-    AddTargetsForArch(arch, combined)
+    AddTargetsForArch("ia32", combined)
+    AddTargetsForArch("arm", combined)
   commands = []
   for key in combined:
     commands.append(combined[key])
@@ -114,13 +98,8 @@ def CompileLanguageServer():
 def GenerateCCFiles():
   print(">>> Generating generated C++ source files...")
   # This must be called after UpdateCompileCommands().
-  build_dir = f"out/{DEFAULT_ARCH}.debug"
-  assert os.path.exists(os.path.join(build_dir, "build.ninja"))
-  targets = "v8_generated_cc_files"
-  # The metagen action only exists when v8_use_metagen_instance_types is on.
-  if _GetGnArg(build_dir, "v8_use_metagen_instance_types") == "true":
-    targets += " metagen_instance_types_h"
-  _Call(f"autoninja -C {build_dir} {targets}")
+  assert os.path.exists(f"out/{DEFAULT_ARCH}.debug/build.ninja")
+  _Call(f"autoninja -C out/{DEFAULT_ARCH}.debug v8_generated_cc_files")
 
 
 def PrepareReclient():

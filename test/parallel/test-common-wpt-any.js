@@ -38,7 +38,7 @@ assert.deepStrictEqual(getUnexpectedPasses(flakySpecs, {}), []);
 
 const specs = WPTTestSpec.from(
   'WebCryptoAPI',
-  'modern-algos/getPublicKey.https.any.js',
+  'getPublicKey.tentative.https.any.js',
   [],
 );
 
@@ -47,11 +47,11 @@ assert.deepStrictEqual(specs.map((spec) => ({
   isWebWorkerTest: spec.isWebWorkerTest(),
 })), [
   {
-    testPath: 'WebCryptoAPI/modern-algos/getPublicKey.https.any.html',
+    testPath: 'WebCryptoAPI/getPublicKey.tentative.https.any.html',
     isWebWorkerTest: false,
   },
   {
-    testPath: 'WebCryptoAPI/modern-algos/getPublicKey.https.any.worker.html',
+    testPath: 'WebCryptoAPI/getPublicKey.tentative.https.any.worker.html',
     isWebWorkerTest: true,
   },
 ]);
@@ -90,7 +90,7 @@ assert.deepStrictEqual(
 
 const skippedSpecs = WPTTestSpec.from(
   'WebCryptoAPI',
-  'modern-algos/getPublicKey.https.any.js',
+  'getPublicKey.tentative.https.any.js',
   [{ requires: [], skip: 'unsupported' }],
 );
 assert.deepStrictEqual(
@@ -100,7 +100,7 @@ assert.deepStrictEqual(
 
 const skippedSubtestSpecs = WPTTestSpec.from(
   'WebCryptoAPI',
-  'modern-algos/getPublicKey.https.any.js',
+  'getPublicKey.tentative.https.any.js',
   [{ requires: [], skipTests: [/getPublicKey method/] }],
 );
 assert.ok(skippedSubtestSpecs.every(
@@ -108,7 +108,7 @@ assert.ok(skippedSubtestSpecs.every(
 
 const scopedSpecs = WPTTestSpec.from(
   'WebCryptoAPI',
-  'modern-algos/getPublicKey.https.any.js',
+  'getPublicKey.tentative.https.any.js',
   [],
   (spec) => (spec.getStatusKey().endsWith('.any.worker.html') ?
     [{ requires: [], skip: 'worker only' }] : []),
@@ -119,26 +119,26 @@ assert.deepStrictEqual(
 );
 
 const sourceRule = {
-  key: 'modern-algos/getPublicKey.https.any.js',
+  key: 'getPublicKey.tentative.https.any.js',
   requires: [],
   fail: { expected: ['shared failure'] },
 };
 const workerRule = {
-  key: 'modern-algos/getPublicKey.https.any.worker.html',
+  key: 'getPublicKey.tentative.https.any.worker.html',
   requires: [],
   fail: { expected: ['worker failure'] },
 };
 const expectedFailureSpecs = WPTTestSpec.from(
   'WebCryptoAPI',
-  'modern-algos/getPublicKey.https.any.js',
+  'getPublicKey.tentative.https.any.js',
   [sourceRule],
   (spec) => (spec.isWebWorkerTest() ? [workerRule] : []),
 );
 const expectedResults = {
-  'modern-algos/getPublicKey.https.any.html': {
+  'getPublicKey.tentative.https.any.html': {
     fail: { expected: ['shared failure'] },
   },
-  'modern-algos/getPublicKey.https.any.worker.html': {
+  'getPublicKey.tentative.https.any.worker.html': {
     fail: { expected: ['shared failure', 'worker failure'] },
   },
 };
@@ -147,15 +147,15 @@ assert.deepStrictEqual(
   getUnexpectedPasses(expectedFailureSpecs, expectedResults),
   [],
 );
-expectedResults['modern-algos/getPublicKey.https.any.worker.html'].fail.expected =
+expectedResults['getPublicKey.tentative.https.any.worker.html'].fail.expected =
   ['worker failure'];
 assert.deepStrictEqual(
   getUnexpectedPasses(expectedFailureSpecs, expectedResults),
-  ['modern-algos/getPublicKey.https.any.worker.html:shared failure'],
+  ['getPublicKey.tentative.https.any.worker.html:shared failure'],
 );
-expectedResults['modern-algos/getPublicKey.https.any.worker.html'].fail.expected =
+expectedResults['getPublicKey.tentative.https.any.worker.html'].fail.expected =
   ['shared failure'];
 assert.deepStrictEqual(
   getUnexpectedPasses(expectedFailureSpecs, expectedResults),
-  ['modern-algos/getPublicKey.https.any.worker.html:worker failure'],
+  ['getPublicKey.tentative.https.any.worker.html:worker failure'],
 );

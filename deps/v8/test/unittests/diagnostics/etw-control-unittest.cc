@@ -165,12 +165,10 @@ TEST_F(EtwControlTest, EnableWithFilterData) {
   size_t schematized_test_filter_size =
       sizeof(SchematizedTestFilter) + sizeof(origin_filter) - 1 /*remove '\0'*/;
 
-  std::unique_ptr<unsigned char[]> schematized_test_filter_buf =
-      std::make_unique<unsigned char[]>(schematized_test_filter_size);
-  SchematizedTestFilter* schematized_test_filter =
-      reinterpret_cast<SchematizedTestFilter*>(
-          schematized_test_filter_buf.get());
-  std::memset(schematized_test_filter, 0 /*fill*/,
+  std::unique_ptr<SchematizedTestFilter> schematized_test_filter;
+  schematized_test_filter.reset(reinterpret_cast<SchematizedTestFilter*>(
+      new unsigned char[schematized_test_filter_size]));
+  std::memset(schematized_test_filter.get(), 0 /*fill*/,
               schematized_test_filter_size);
   std::memcpy(schematized_test_filter->data, origin_filter,
               sizeof(origin_filter) - 1 /*remove '\0'*/);
@@ -178,7 +176,7 @@ TEST_F(EtwControlTest, EnableWithFilterData) {
       static_cast<ULONG>(schematized_test_filter_size);
 
   event_filter_descriptor.Ptr =
-      reinterpret_cast<ULONGLONG>(schematized_test_filter);
+      reinterpret_cast<ULONGLONG>(schematized_test_filter.get());
   event_filter_descriptor.Type = EVENT_FILTER_TYPE_SCHEMATIZED;
   event_filter_descriptor.Size =
       static_cast<ULONG>(schematized_test_filter_size);
@@ -257,12 +255,10 @@ TEST_F(EtwControlTest, EnableWithNonMatchingFilterData) {
   size_t schematized_test_filter_size =
       sizeof(SchematizedTestFilter) + sizeof(origin_filter) - 1 /*remove '\0'*/;
 
-  std::unique_ptr<unsigned char[]> schematized_test_filter_buf =
-      std::make_unique<unsigned char[]>(schematized_test_filter_size);
-  SchematizedTestFilter* schematized_test_filter =
-      reinterpret_cast<SchematizedTestFilter*>(
-          schematized_test_filter_buf.get());
-  std::memset(schematized_test_filter, 0 /*fill*/,
+  std::unique_ptr<SchematizedTestFilter> schematized_test_filter;
+  schematized_test_filter.reset(reinterpret_cast<SchematizedTestFilter*>(
+      new unsigned char[schematized_test_filter_size]));
+  std::memset(schematized_test_filter.get(), 0 /*fill*/,
               schematized_test_filter_size);
   std::memcpy(schematized_test_filter->data, origin_filter,
               sizeof(origin_filter) - 1 /*remove '\0'*/);
@@ -270,7 +266,7 @@ TEST_F(EtwControlTest, EnableWithNonMatchingFilterData) {
       static_cast<ULONG>(schematized_test_filter_size);
 
   event_filter_descriptor.Ptr =
-      reinterpret_cast<ULONGLONG>(schematized_test_filter);
+      reinterpret_cast<ULONGLONG>(schematized_test_filter.get());
   event_filter_descriptor.Type = EVENT_FILTER_TYPE_SCHEMATIZED;
   event_filter_descriptor.Size =
       static_cast<ULONG>(schematized_test_filter_size);
@@ -360,12 +356,10 @@ TEST_F(EtwControlTest, EnableWithCustomFilterOnly) {
   size_t schematized_test_filter_size =
       sizeof(SchematizedTestFilter) + sizeof(origin_filter) - 1 /*remove '\0'*/;
 
-  std::unique_ptr<unsigned char[]> schematized_test_filter_buf =
-      std::make_unique<unsigned char[]>(schematized_test_filter_size);
-  SchematizedTestFilter* schematized_test_filter =
-      reinterpret_cast<SchematizedTestFilter*>(
-          schematized_test_filter_buf.get());
-  std::memset(schematized_test_filter, 0 /*fill*/,
+  std::unique_ptr<SchematizedTestFilter> schematized_test_filter;
+  schematized_test_filter.reset(reinterpret_cast<SchematizedTestFilter*>(
+      new unsigned char[schematized_test_filter_size]));
+  std::memset(schematized_test_filter.get(), 0 /*fill*/,
               schematized_test_filter_size);
   std::memcpy(schematized_test_filter->data, origin_filter,
               sizeof(origin_filter) - 1 /*remove '\0'*/);
@@ -373,7 +367,7 @@ TEST_F(EtwControlTest, EnableWithCustomFilterOnly) {
       static_cast<ULONG>(schematized_test_filter_size);
 
   event_filter_descriptor.Ptr =
-      reinterpret_cast<ULONGLONG>(schematized_test_filter);
+      reinterpret_cast<ULONGLONG>(schematized_test_filter.get());
   event_filter_descriptor.Type = EVENT_FILTER_TYPE_SCHEMATIZED;
   event_filter_descriptor.Size =
       static_cast<ULONG>(schematized_test_filter_size);
@@ -455,12 +449,10 @@ TEST_F(EtwControlTest, EnableWithNonMatchingCustomFilterOnly) {
   size_t schematized_test_filter_size =
       sizeof(SchematizedTestFilter) + sizeof(origin_filter) - 1 /*remove '\0'*/;
 
-  std::unique_ptr<unsigned char[]> schematized_test_filter_buf =
-      std::make_unique<unsigned char[]>(schematized_test_filter_size);
-  SchematizedTestFilter* schematized_test_filter =
-      reinterpret_cast<SchematizedTestFilter*>(
-          schematized_test_filter_buf.get());
-  std::memset(schematized_test_filter, 0 /*fill*/,
+  std::unique_ptr<SchematizedTestFilter> schematized_test_filter;
+  schematized_test_filter.reset(reinterpret_cast<SchematizedTestFilter*>(
+      new unsigned char[schematized_test_filter_size]));
+  std::memset(schematized_test_filter.get(), 0 /*fill*/,
               schematized_test_filter_size);
   std::memcpy(schematized_test_filter->data, origin_filter,
               sizeof(origin_filter) - 1 /*remove '\0'*/);
@@ -468,7 +460,7 @@ TEST_F(EtwControlTest, EnableWithNonMatchingCustomFilterOnly) {
       static_cast<ULONG>(schematized_test_filter_size);
 
   event_filter_descriptor.Ptr =
-      reinterpret_cast<ULONGLONG>(schematized_test_filter);
+      reinterpret_cast<ULONGLONG>(schematized_test_filter.get());
   event_filter_descriptor.Type = EVENT_FILTER_TYPE_SCHEMATIZED;
   event_filter_descriptor.Size =
       static_cast<ULONG>(schematized_test_filter_size);

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,8 +29,7 @@ namespace details {
 struct version_min_command;
 }
 
-/// Class that wraps the LC_VERSION_MIN_MACOSX, LC_VERSION_MIN_IPHONEOS, ...
-/// commands.
+/// Class that wraps the LC_VERSION_MIN_MACOSX, LC_VERSION_MIN_IPHONEOS, ... commands.
 class LIEF_API VersionMin : public LoadCommand {
 
   public:
@@ -50,7 +49,7 @@ class LIEF_API VersionMin : public LoadCommand {
   ~VersionMin() override = default;
 
   /// Return the version as an array
-  const version_t& version() const LIEF_LIFETIMEBOUND {
+  const version_t& version() const {
     return version_;
   }
   void version(const version_t& version) {
@@ -58,7 +57,7 @@ class LIEF_API VersionMin : public LoadCommand {
   }
 
   /// Return the sdk version as an array
-  const version_t& sdk() const LIEF_LIFETIMEBOUND {
+  const version_t& sdk() const {
     return sdk_;
   }
   void sdk(const version_t& sdk) {

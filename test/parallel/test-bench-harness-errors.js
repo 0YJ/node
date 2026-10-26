@@ -1,11 +1,16 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
-const { completeSample } = require('../common/bench');
 const assert = require('assert');
 const { createRunner } = require('node:bench');
 const { setImmediate } = require('timers/promises');
+
+function complete(b) {
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
+}
 
 async function testSynchronousSuiteFailure() {
   const runner = createRunner({ yieldBetweenSamples: false });
@@ -38,7 +43,7 @@ async function testRunSignal() {
     samples: 3,
   }, (b) => {
     invocations++;
-    completeSample(b);
+    complete(b);
     if (b.index === 0) {
       abortPromise = setImmediate().then(() => {
         controller.abort(new Error('run aborted'));
@@ -60,7 +65,7 @@ async function testRunSignalAfterSample() {
   const reason = new Error('sample aborted');
   const completion = runner.bench('aborted after sample', {
     samples: 2,
-  }, completeSample);
+  }, complete);
   const stream = runner.run({ signal: controller.signal });
   stream.once('bench:sample', common.mustCall(() => {
     controller.abort(reason);
@@ -75,7 +80,7 @@ async function testRunSignalAfterSample() {
 
 async function testStringNamePattern() {
   const runner = createRunner({ yieldBetweenSamples: false });
-  runner.bench('included', { samples: 1 }, completeSample);
+  runner.bench('included', { samples: 1 }, complete);
   runner.bench('excluded', { samples: 1 }, common.mustNotCall());
   const records = await runner.run({ namePattern: 'included' }).toArray();
   const excluded = records.find(
@@ -92,7 +97,7 @@ async function testStringNamePattern() {
 async function testTopLevelRecovery() {
   const runner = createRunner({ yieldBetweenSamples: false });
   const suiteCompletion = runner.suite('nested', () => {
-    runner.bench('listener failure', { samples: 1 }, completeSample);
+    runner.bench('listener failure', { samples: 1 }, complete);
   });
   const stream = runner.run();
   const failure = new Error();
@@ -118,7 +123,7 @@ async function testRepeatedReportingFailure() {
   const summary = new Error('summary listener failed');
   const completion = runner.bench('reporting failures', {
     samples: 1,
-  }, completeSample);
+  }, complete);
   const stream = runner.run();
   stream.on('bench:start', common.mustCall(() => { throw original; }));
   stream.on('bench:diagnostic', common.mustCall(() => {

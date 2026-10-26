@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-stringref
+// Flags: --wasm-staging
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -24,7 +24,8 @@ builder.addFunction(undefined, kSig_v_v)
       kExprBr, 0,
     ]).exportAs('callStringNewWtf16');
 
-const instance = builder.instantiate({});
+let kBuiltins = {builtins: ['js-string', 'text-decoder', 'text-encoder']};
+const instance = builder.instantiate({}, kBuiltins);
 
 assertTraps(kTrapMemOutOfBounds, () => instance.exports.callStringNewUtf8Try());
 assertTraps(kTrapMemOutOfBounds, () => instance.exports.callStringNewWtf16());

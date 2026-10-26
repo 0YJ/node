@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@
 #include <vector>
 #include <ostream>
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/errors.hpp"
 #include "LIEF/iterators.hpp"
@@ -35,16 +34,7 @@ class LinkEdit;
 
 namespace details {
 struct linkedit_data_command;
-
-// clang-format off
-// On-disk entry of a `LC_FUNCTION_VARIANTS` runtime table
-struct runtime_table_entry_t {
-  uint32_t impl          : 31,
-           another_table : 1;
-  uint8_t flag_bit_nums[4];
-};
-// clang-format on
-
+struct runtime_table_entry_t;
 }
 
 /// Class representing the `LC_FUNCTION_VARIANTS` load command.
@@ -74,16 +64,13 @@ class LIEF_API FunctionVariants : public LoadCommand {
   /// This class exposes information about a given implementation.
   class LIEF_API RuntimeTableEntry {
     public:
-    /// The implementation address/index is encoded on 31 bits
-    static constexpr uint32_t MAX_IMPL = (uint32_t(1) << 31) - 1;
-
     static constexpr uint32_t F_BIT = 20;
     static constexpr uint32_t F_MASK = (uint32_t(1) << F_BIT) - 1;
 
     static constexpr uint32_t F_PER_PROCESS = uint32_t(1) << F_BIT;
     static constexpr uint32_t F_SYSTEM_WIDE = uint32_t(2) << F_BIT;
-    static constexpr uint32_t F_ARM64 = uint32_t(3) << F_BIT;
-    static constexpr uint32_t F_X86_64 = uint32_t(4) << F_BIT;
+    static constexpr uint32_t F_ARM64       = uint32_t(3) << F_BIT;
+    static constexpr uint32_t F_X86_64      = uint32_t(4) << F_BIT;
 
     /// Flags describing the target platform, environment, or architecture
     /// for a given function implementation.
@@ -93,21 +80,21 @@ class LIEF_API FunctionVariants : public LoadCommand {
     enum class FLAGS : uint32_t {
       UNKNOWN = 0,
 
-#define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_ARM64),
-#include "LIEF/MachO/FunctionVariants/Arm64.def"
-#undef FUNCTION_VARIANT_FLAG
+      #define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_ARM64),
+        #include "LIEF/MachO/FunctionVariants/Arm64.def"
+      #undef FUNCTION_VARIANT_FLAG
 
-#define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_X86_64),
-#include "LIEF/MachO/FunctionVariants/X86_64.def"
-#undef FUNCTION_VARIANT_FLAG
+      #define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_X86_64),
+        #include "LIEF/MachO/FunctionVariants/X86_64.def"
+      #undef FUNCTION_VARIANT_FLAG
 
-#define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_SYSTEM_WIDE),
-#include "LIEF/MachO/FunctionVariants/SystemWide.def"
-#undef FUNCTION_VARIANT_FLAG
+      #define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_SYSTEM_WIDE),
+        #include "LIEF/MachO/FunctionVariants/SystemWide.def"
+      #undef FUNCTION_VARIANT_FLAG
 
-#define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_PER_PROCESS),
-#include "LIEF/MachO/FunctionVariants/PerProcess.def"
-#undef FUNCTION_VARIANT_FLAG
+      #define FUNCTION_VARIANT_FLAG(name, value, _) name = (value | F_PER_PROCESS),
+        #include "LIEF/MachO/FunctionVariants/PerProcess.def"
+      #undef FUNCTION_VARIANT_FLAG
     };
 
     static uint8_t get_raw(FLAGS f) {
@@ -131,28 +118,14 @@ class LIEF_API FunctionVariants : public LoadCommand {
       return impl_;
     }
 
-    /// Set the relative address of the implementation (or the index of the
-    /// target entry when another_table() is set).
-    ///
-    /// \note The value is stored on 31 bits, so the most significant bit is
-    ///       silently dropped.
-    void impl(uint32_t value) {
-      impl_ = value & MAX_IMPL;
-    }
-
     /// Indicates whether impl() refers to an entry in another runtime table,
     /// rather than a direct function implementation address.
     bool another_table() const {
       return another_table_;
     }
 
-    /// Set whether impl() refers to an entry in another runtime table.
-    void another_table(bool value) {
-      another_table_ = value;
-    }
-
     /// The `flagBitNums` value as a slice of bytes
-    span<const uint8_t> flag_bit_nums() const LIEF_LIFETIMEBOUND {
+    span<const uint8_t> flag_bit_nums() const {
       return flag_bit_nums_;
     }
 
@@ -163,19 +136,19 @@ class LIEF_API FunctionVariants : public LoadCommand {
 
     std::string to_string() const;
 
-    LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                             const RuntimeTableEntry& entry) {
+    LIEF_API friend
+      std::ostream& operator<<(std::ostream& os, const RuntimeTableEntry& entry)
+    {
       os << entry.to_string();
       return os;
     }
 
-    /// @private
+    /// \private
     LIEF_LOCAL void set_flags(std::vector<FLAGS> flags) {
       flags_ = std::move(flags);
     }
-
     private:
-    bool another_table_ = false;
+    bool another_table_;
     uint32_t impl_ = 0;
     std::array<uint8_t, 4> flag_bit_nums_ = {};
     std::vector<FLAGS> flags_;
@@ -190,10 +163,10 @@ class LIEF_API FunctionVariants : public LoadCommand {
     public:
     using entries_t = std::vector<RuntimeTableEntry>;
 
-    /// Iterator that outputs RuntimeTableEntry&
+    /// Iterator that output RuntimeTableEntry&
     using it_entries = ref_iterator<entries_t&>;
 
-    /// Iterator that outputs const RuntimeTableEntry&
+    /// Iterator that output const RuntimeTableEntry&
     using it_const_entries = const_ref_iterator<const entries_t&>;
 
     /// Enumeration describing the namespace or category of a function variant.
@@ -211,21 +184,20 @@ class LIEF_API FunctionVariants : public LoadCommand {
       /// Variants that apply on a per-process basis
       PER_PROCESS = 1,
 
-      /// Variants that are selected based on system-wide capabilities or
-      /// configurations.
+      /// Variants that are selected based on system-wide capabilities or configurations.
       SYSTEM_WIDE = 2,
 
       /// Variants optimized for the ARM64 architecture.
       ARM64 = 3,
 
       /// Variants optimized for the x86-64 architecture.
-      X86_64 = 4,
+      X86_64 = 4
     };
 
     RuntimeTable() = default;
     RuntimeTable(KIND kind, uint32_t offset) :
-      kind_(kind),
-      offset_(offset) {}
+      kind_(kind), offset_(offset)
+    {}
     RuntimeTable(const RuntimeTable&) = default;
     RuntimeTable& operator=(const RuntimeTable&) = default;
 
@@ -245,11 +217,11 @@ class LIEF_API FunctionVariants : public LoadCommand {
     }
 
     /// Iterator over the different RuntimeTableEntry entries
-    it_entries entries() LIEF_LIFETIMEBOUND {
+    it_entries entries() {
       return entries_;
     }
 
-    it_const_entries entries() const LIEF_LIFETIMEBOUND {
+    it_const_entries entries() const {
       return entries_;
     }
 
@@ -259,8 +231,9 @@ class LIEF_API FunctionVariants : public LoadCommand {
 
     std::string to_string() const;
 
-    LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                             const RuntimeTable& table) {
+    LIEF_API friend
+      std::ostream& operator<<(std::ostream& os, const RuntimeTable& table)
+    {
       os << table.to_string();
       return os;
     }
@@ -309,28 +282,22 @@ class LIEF_API FunctionVariants : public LoadCommand {
 
   /// Return the data slice in the `__LINKEDIT` segment referenced by
   /// data_offset and data_size;
-  span<const uint8_t> content() const LIEF_LIFETIMEBOUND {
+  span<const uint8_t> content() const {
     return content_;
   }
 
-  span<uint8_t> content() LIEF_LIFETIMEBOUND {
+  span<uint8_t> content() {
     return content_;
   }
 
   /// Iterator over the different RuntimeTable entries located in the content
   /// of this `__LINKEDIT` command
-  it_runtime_table runtime_table() LIEF_LIFETIMEBOUND {
+  it_runtime_table runtime_table() {
     return runtime_table_;
   }
 
-  it_const_runtime_table runtime_table() const LIEF_LIFETIMEBOUND {
+  it_const_runtime_table runtime_table() const {
     return runtime_table_;
-  }
-
-  /// Append a new RuntimeTable and return a reference to the inserted table
-  RuntimeTable& add(RuntimeTable table) LIEF_LIFETIMEBOUND {
-    runtime_table_.push_back(std::move(table));
-    return runtime_table_.back();
   }
 
   ~FunctionVariants() override = default;
@@ -342,8 +309,7 @@ class LIEF_API FunctionVariants : public LoadCommand {
   }
 
   LIEF_LOCAL static std::vector<RuntimeTable> parse_payload(SpanStream& stream);
-  LIEF_LOCAL static result<RuntimeTable> parse_entry(BinaryStream& stream,
-                                                     uint64_t max_entries);
+  LIEF_LOCAL static result<RuntimeTable> parse_entry(BinaryStream& stream);
 
   private:
   uint32_t data_offset_ = 0;

@@ -16,11 +16,8 @@
 
 #include <stdio.h>
 
-#include <cassert>
-#include <cstdint>
 #include <cstring>
 #include <forward_list>
-#include <iterator>
 #include <list>
 #include <memory>
 #include <numeric>
@@ -115,7 +112,7 @@ TEST(FixedArrayTest, CopyCtor) {
 TEST(FixedArrayTest, MoveCtor) {
   absl::FixedArray<std::unique_ptr<int>, 10> on_stack(5);
   for (int i = 0; i < 5; ++i) {
-    on_stack[i] = std::make_unique<int>(i);
+    on_stack[i] = absl::make_unique<int>(i);
   }
 
   absl::FixedArray<std::unique_ptr<int>, 10> stack_copy = std::move(on_stack);
@@ -124,7 +121,7 @@ TEST(FixedArrayTest, MoveCtor) {
 
   absl::FixedArray<std::unique_ptr<int>, 10> allocated(15);
   for (int i = 0; i < 15; ++i) {
-    allocated[i] = std::make_unique<int>(i);
+    allocated[i] = absl::make_unique<int>(i);
   }
 
   absl::FixedArray<std::unique_ptr<int>, 10> alloced_copy =
@@ -310,7 +307,7 @@ static void TestArrayOfArrays(int n) {
     using InnerArray = ConstructionTester[elements_per_inner_array];
     // Heap-allocate the FixedArray to avoid blowing the stack frame.
     auto array_ptr =
-        std::make_unique<absl::FixedArray<InnerArray, inline_elements>>(n);
+        absl::make_unique<absl::FixedArray<InnerArray, inline_elements>>(n);
     auto& array = *array_ptr;
 
     ASSERT_EQ(array.size(), n);
@@ -362,20 +359,20 @@ static void TestArrayOfArrays(int n) {
 
 TEST(IteratorConstructorTest, NonInline) {
   int const kInput[] = {2, 3, 5, 7, 11, 13, 17};
-  absl::FixedArray<int, std::size(kInput) - 1> const fixed(
-      kInput, kInput + std::size(kInput));
-  ASSERT_EQ(std::size(kInput), fixed.size());
-  for (size_t i = 0; i < std::size(kInput); ++i) {
+  absl::FixedArray<int, ABSL_ARRAYSIZE(kInput) - 1> const fixed(
+      kInput, kInput + ABSL_ARRAYSIZE(kInput));
+  ASSERT_EQ(ABSL_ARRAYSIZE(kInput), fixed.size());
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(kInput); ++i) {
     ASSERT_EQ(kInput[i], fixed[i]);
   }
 }
 
 TEST(IteratorConstructorTest, Inline) {
   int const kInput[] = {2, 3, 5, 7, 11, 13, 17};
-  absl::FixedArray<int, std::size(kInput)> const fixed(
-      kInput, kInput + std::size(kInput));
-  ASSERT_EQ(std::size(kInput), fixed.size());
-  for (size_t i = 0; i < std::size(kInput); ++i) {
+  absl::FixedArray<int, ABSL_ARRAYSIZE(kInput)> const fixed(
+      kInput, kInput + ABSL_ARRAYSIZE(kInput));
+  ASSERT_EQ(ABSL_ARRAYSIZE(kInput), fixed.size());
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(kInput); ++i) {
     ASSERT_EQ(kInput[i], fixed[i]);
   }
 }
@@ -383,9 +380,10 @@ TEST(IteratorConstructorTest, Inline) {
 TEST(IteratorConstructorTest, NonPod) {
   char const* kInput[] = {"red",  "orange", "yellow", "green",
                           "blue", "indigo", "violet"};
-  absl::FixedArray<std::string> const fixed(kInput, kInput + std::size(kInput));
-  ASSERT_EQ(std::size(kInput), fixed.size());
-  for (size_t i = 0; i < std::size(kInput); ++i) {
+  absl::FixedArray<std::string> const fixed(kInput,
+                                            kInput + ABSL_ARRAYSIZE(kInput));
+  ASSERT_EQ(ABSL_ARRAYSIZE(kInput), fixed.size());
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(kInput); ++i) {
     ASSERT_EQ(kInput[i], fixed[i]);
   }
 }
@@ -399,7 +397,7 @@ TEST(IteratorConstructorTest, FromEmptyVector) {
 
 TEST(IteratorConstructorTest, FromNonEmptyVector) {
   int const kInput[] = {2, 3, 5, 7, 11, 13, 17};
-  std::vector<int> const items(kInput, kInput + std::size(kInput));
+  std::vector<int> const items(kInput, kInput + ABSL_ARRAYSIZE(kInput));
   absl::FixedArray<int> const fixed(items.begin(), items.end());
   ASSERT_EQ(items.size(), fixed.size());
   for (size_t i = 0; i < items.size(); ++i) {
@@ -409,7 +407,7 @@ TEST(IteratorConstructorTest, FromNonEmptyVector) {
 
 TEST(IteratorConstructorTest, FromBidirectionalIteratorRange) {
   int const kInput[] = {2, 3, 5, 7, 11, 13, 17};
-  std::list<int> const items(kInput, kInput + std::size(kInput));
+  std::list<int> const items(kInput, kInput + ABSL_ARRAYSIZE(kInput));
   absl::FixedArray<int> const fixed(items.begin(), items.end());
   EXPECT_THAT(fixed, testing::ElementsAreArray(kInput));
 }
@@ -695,7 +693,7 @@ TEST(AllocatorSupportTest, CountOutoflineAllocations) {
     const int ia[] = {0, 1, 2, 3, 4, 5, 6, 7};
     Alloc alloc(&allocated, &active_instances);
 
-    AllocFxdArr arr(ia, ia + std::size(ia), alloc);
+    AllocFxdArr arr(ia, ia + ABSL_ARRAYSIZE(ia), alloc);
 
     EXPECT_EQ(allocated, arr.size() * sizeof(int));
     static_cast<void>(arr);

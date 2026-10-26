@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,8 +32,7 @@ class Relocation;
 
 /// Class which represents an entry of the PE relocation table
 ///
-/// It extends the LIEF::Relocation object to provide an uniform API across the
-/// file formats
+/// It extends the LIEF::Relocation object to provide an uniform API across the file formats
 class LIEF_API RelocationEntry : public LIEF::Relocation {
 
   friend class Parser;
@@ -95,23 +94,19 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
     /// occupies two slots.
     HIGHADJ = 4,
 
-    // clang-format off
+    MIPS_JMPADDR = 5 | (1 << 8),
+    ARM_MOV32 = 5 | (1 << 9),
+    RISCV_HI20 = 5 | (1 << 10),
 
-    MIPS_JMPADDR     = 5 | (1 << 8),
-    ARM_MOV32        = 5 | (1 << 9),
-    RISCV_HI20       = 5 | (1 << 10),
+    SECTION = 6,
 
-    SECTION          = 6,
+    THUMB_MOV32 = 7 | (1 << 11),
+    RISCV_LOW12I = 7 | (1 << 12),
 
-    THUMB_MOV32      = 7 | (1 << 11),
-    RISCV_LOW12I     = 7 | (1 << 12),
-
-    RISCV_LOW12S     = 8 | (1 << 13),
+    RISCV_LOW12S = 8 | (1 << 13),
     LOONARCH_MARK_LA = 8 | (1 << 14),
 
-    MIPS_JMPADDR16   = 9,
-
-    // clang-format on
+    MIPS_JMPADDR16 = 9,
 
     /// This value matches `IMAGE_REL_BASED_DIR64`
     ///
@@ -122,7 +117,7 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
     /// ```cpp
     /// write<int64_t_t>(ADDR, read<int64_t_t>(ADDR) + DELTA)
     /// ```
-    DIR64 = 10,
+    DIR64  = 10,
     HIGH3ADJ = 11,
   };
 
@@ -140,9 +135,9 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
   RelocationEntry(const RelocationEntry& other) :
     LIEF::Relocation(other),
     position_(other.position_),
-    type_(other.type_)
-  /* Parent relocation is not forwarded during copy
-   * relocation_(nullptr) */
+    type_(other.type_),
+    // Parent relocation is not forwarded during copy
+    relocation_(nullptr)
   {}
 
   RelocationEntry& operator=(RelocationEntry other) {
@@ -155,7 +150,8 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
 
   RelocationEntry(uint16_t position, BASE_TYPES type) :
     position_(position),
-    type_(type) {
+    type_(type)
+  {
     assert(position_ < MAX_ADDR);
   }
 
@@ -163,8 +159,8 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
 
   void swap(RelocationEntry& other) {
     LIEF::Relocation::swap(other);
-    std::swap(position_, other.position_);
-    std::swap(type_, other.type_);
+    std::swap(position_,   other.position_);
+    std::swap(type_,       other.type_);
     std::swap(relocation_, other.relocation_);
   }
 
@@ -206,20 +202,19 @@ class LIEF_API RelocationEntry : public LIEF::Relocation {
 
   void accept(Visitor& visitor) const override;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const RelocationEntry& entry);
+  LIEF_API friend std::ostream& operator<<(std::ostream& os, const RelocationEntry& entry);
 
-  /// @private
+  /// \private
   LIEF_LOCAL PE::Relocation* parent() {
     return relocation_;
   }
 
-  /// @private
+  /// \private
   LIEF_LOCAL const PE::Relocation* parent() const {
     return relocation_;
   }
 
-  /// @private
+  /// \private
   LIEF_LOCAL void parent(PE::Relocation& R) {
     relocation_ = &R;
   }

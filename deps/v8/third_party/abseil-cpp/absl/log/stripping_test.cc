@@ -33,9 +33,14 @@
 
 #include <stdio.h>
 
+#if defined(__MACH__)
+#include <mach-o/dyld.h>
+#elif defined(_WIN32)
+#include <Windows.h>
+#include <tchar.h>
+#endif
+
 #include <algorithm>
-#include <cerrno>
-#include <cstring>
 #include <functional>
 #include <memory>
 #include <ostream>
@@ -51,16 +56,8 @@
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/escaping.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#elif defined(_WIN32)
-#include <Windows.h>
-#include <tchar.h>
-#endif
 
 // Set a flag that controls whether we actually execute fatal statements, but
 // prevent the compiler from optimizing it out.
@@ -194,7 +191,7 @@ class StrippingTest : public ::testing::Test {
       absl::FPrintF(stderr, "Failed to open /pkg/bin/<binary name>: %s\n", err);
     }
     return fp;
-#elif defined(__APPLE__)
+#elif defined(__MACH__)
     uint32_t size = 0;
     int ret = _NSGetExecutablePath(nullptr, &size);
     if (ret != -1) {

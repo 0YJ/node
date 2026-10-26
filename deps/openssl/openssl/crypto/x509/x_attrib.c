@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,8 +14,6 @@
 #include <openssl/x509.h>
 #include "x509_local.h"
 #include <crypto/x509.h>
-
-#include <crypto/asn1.h>
 
 /*-
  * X509_ATTRIBUTE: this has the following form:
@@ -135,9 +133,7 @@ int ossl_print_attribute_value(BIO *out,
     case V_ASN1_OBJECT_DESCRIPTOR:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.generalstring->length,
-                   av->value.generalstring->length
-                       ? av->value.generalstring->data
-                       : (const unsigned char *)"")
+                   av->value.generalstring->data)
             >= 0;
 
         /* EXTERNAL would go here. */
@@ -146,9 +142,7 @@ int ossl_print_attribute_value(BIO *out,
     case V_ASN1_UTF8STRING:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.utf8string->length,
-                   av->value.utf8string->length
-                       ? av->value.utf8string->data
-                       : (const unsigned char *)"")
+                   av->value.utf8string->data)
             >= 0;
 
     case V_ASN1_REAL:
@@ -212,33 +206,25 @@ int ossl_print_attribute_value(BIO *out,
     case V_ASN1_NUMERICSTRING:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.visiblestring->length,
-                   av->value.visiblestring->length
-                       ? av->value.visiblestring->data
-                       : (const unsigned char *)"")
+                   av->value.visiblestring->data)
             >= 0;
 
     case V_ASN1_PRINTABLESTRING:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.printablestring->length,
-                   av->value.printablestring->length
-                       ? av->value.printablestring->data
-                       : (const unsigned char *)"")
+                   av->value.printablestring->data)
             >= 0;
 
     case V_ASN1_T61STRING:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.t61string->length,
-                   av->value.t61string->length
-                       ? av->value.t61string->data
-                       : (const unsigned char *)"")
+                   av->value.t61string->data)
             >= 0;
 
     case V_ASN1_IA5STRING:
         return BIO_printf(out, "%*s%.*s", indent, "",
                    av->value.ia5string->length,
-                   av->value.ia5string->length
-                       ? av->value.ia5string->data
-                       : (const unsigned char *)"")
+                   av->value.ia5string->data)
             >= 0;
 
     /* UniversalString would go here. */

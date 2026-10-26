@@ -6,7 +6,6 @@
 
 #include <iostream>
 
-#include "src/heap/heap-inl.h"
 #include "src/heap/new-spaces.h"
 #include "src/heap/paged-spaces.h"
 #include "src/heap/read-only-spaces.h"

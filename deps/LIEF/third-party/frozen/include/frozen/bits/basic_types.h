@@ -24,12 +24,11 @@
 #define FROZEN_LETITGO_BASIC_TYPES_H
 
 #include "frozen/bits/exceptions.h"
-#include "frozen/bits/constexpr_assert.h"
 
 #include <array>
 #include <utility>
+#include <iterator>
 #include <string>
-#include <type_traits>
 
 namespace frozen {
 
@@ -63,10 +62,8 @@ public:
   }
 
   // Iterators
-  constexpr       iterator begin() noexcept { return data; }
-  constexpr       iterator end() noexcept { return data + dsize; }
-  constexpr const_iterator begin() const noexcept { return data; }
-  constexpr const_iterator end() const noexcept { return data + dsize; }
+  constexpr iterator begin() noexcept { return data; }
+  constexpr iterator end() noexcept { return data + dsize; }
 
   // Capacity
   constexpr size_type size() const { return dsize; }
@@ -90,17 +87,12 @@ template <class T, std::size_t N>
 class carray {
   T data_ [N] = {}; // zero-initialization for scalar type T, default-initialized otherwise
 
+  template <std::size_t M, std::size_t... I>
+  constexpr carray(T const (&init)[M], std::index_sequence<I...>)
+      : data_{init[I]...} {}
   template <class Iter, std::size_t... I>
   constexpr carray(Iter iter, std::index_sequence<I...>)
       : data_{((void)I, *iter++)...} {}
-  template <std::size_t... I>
-  constexpr carray(const T& value, std::index_sequence<I...>)
-      : data_{((void)I, value)...} {}
-
-  static constexpr void check_initializer(std::initializer_list<T> init) {
-    (void)init;
-    constexpr_assert(init.size() == N, "Cannot initialize a carray with an initializer list of different size.");
-  }
 
 public:
   // Container typdefs
@@ -111,41 +103,46 @@ public:
   using const_pointer = const value_type *;
   using iterator = pointer;
   using const_iterator = const_pointer;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
 
   // Constructors
-  constexpr carray() = default;
-  constexpr carray(const value_type& val)
-    : carray(val, std::make_index_sequence<N>()) {}
-  template <typename U, std::enable_if_t<std::is_convertible<U, T>::value, std::size_t> M>
-  constexpr carray(U const (&init)[M])
+  constexpr carray(void) = default;
+  template <std::size_t M>
+  constexpr carray(T const (&init)[M])
     : carray(init, std::make_index_sequence<N>())
   {
     static_assert(M >= N, "Cannot initialize a carray with an smaller array");
   }
-  template <typename U, std::enable_if_t<std::is_convertible<U, T>::value, std::size_t> M>
-  constexpr carray(std::array<U, M> const &init)
-    : carray(init.begin(), std::make_index_sequence<N>())
+  template <std::size_t M>
+  constexpr carray(std::array<T, M> const &init)
+    : carray(&init[0], std::make_index_sequence<N>())
   {
     static_assert(M >= N, "Cannot initialize a carray with an smaller array");
   }
-  template <typename U, std::enable_if_t<std::is_convertible<U, T>::value>* = nullptr>
-  constexpr carray(std::initializer_list<U> init)
-    : carray((check_initializer(init), init.begin()), std::make_index_sequence<N>())
+  constexpr carray(std::initializer_list<T> init)
+    : carray(init.begin(), std::make_index_sequence<N>())
   {
-  }
-  template <typename U, std::enable_if_t<std::is_convertible<U, T>::value>* = nullptr>
-  constexpr carray(const carray<U, N>& rhs)
-    : carray(rhs.begin(), std::make_index_sequence<N>())
-  {
+    // clang & gcc doesn't recognize init.size() as a constexpr
+    // static_assert(init.size() >= N, "Cannot initialize a carray with an smaller initializer list");
   }
 
   // Iterators
   constexpr iterator begin() noexcept { return data_; }
   constexpr const_iterator begin() const noexcept { return data_; }
+  constexpr const_iterator cbegin() const noexcept { return data_; }
   constexpr iterator end() noexcept { return data_ + N; }
   constexpr const_iterator end() const noexcept { return data_ + N; }
+  constexpr const_iterator cend() const noexcept { return data_ + N; }
+
+  constexpr reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
+  constexpr const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
+  constexpr const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
+  constexpr reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
+  constexpr const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
+  constexpr const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
 
   // Capacity
   constexpr size_type size() const { return N; }
@@ -174,6 +171,12 @@ public:
 
   constexpr       value_type* data() noexcept { return data_; }
   constexpr const value_type* data() const noexcept { return data_; }
+
+  // Modifiers
+  constexpr void fill(const value_type& val) {
+    for (std::size_t i = 0; i < N; ++i)
+      data_[i] = val;
+  }
 };
 template <class T>
 class carray<T, 0> {
@@ -187,6 +190,8 @@ public:
   using const_pointer = const value_type *;
   using iterator = pointer;
   using const_iterator = const_pointer;
+  using reverse_iterator = std::reverse_iterator<iterator>;
+  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
   using size_type = std::size_t;
   using difference_type = std::ptrdiff_t;
 

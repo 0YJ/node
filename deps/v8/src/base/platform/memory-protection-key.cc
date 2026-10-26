@@ -6,11 +6,9 @@
 
 #if V8_HAS_PKU_SUPPORT
 
-#include <pthread.h>   // For SetKeyForCurrentThreadsStack.
+#include <pthread.h>  // For SetKeyForCurrentThreadsStack.
 #include <sys/mman.h>  // For {mprotect()} protection macros.
 #include <unistd.h>    // For sysconf.
-
-#include <cerrno>
 #undef MAP_TYPE  // Conflicts with MAP_TYPE in Torque-generated instance-types.h
 
 #include "src/base/logging.h"
@@ -107,11 +105,7 @@ bool MemoryProtectionKey::SetPermissionsAndKey(base::AddressRegion region,
 
   int protection = GetProtectionFromMemoryPermission(permissions);
 
-  bool success = pkey_mprotect(address, size, protection, key) == 0;
-  // If `pkey_mprotect` fails for something other than ENOMEM, then the input
-  // arguments were invalid.
-  CHECK(success || errno == ENOMEM);
-  return success;
+  return pkey_mprotect(address, size, protection, key) == 0;
 }
 
 // static

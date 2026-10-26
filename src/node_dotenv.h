@@ -30,8 +30,6 @@ class Dotenv {
   void AssignNodeOptionsIfAvailable(std::string* node_options) const;
   v8::Maybe<void> SetEnvironment(Environment* env);
   v8::MaybeLocal<v8::Object> ToObject(Environment* env) const;
-  // The names of the variables parsed from the env files.
-  std::vector<std::string> GetKeys() const;
 
   static std::vector<env_file_data> GetDataFromArgs(
       const std::vector<std::string>& args);
@@ -39,11 +37,6 @@ class Dotenv {
  private:
   std::map<std::string, std::string> store_;
 };
-
-namespace per_process {
-// The env files passed with --env-file and --env-file-if-exists.
-extern Dotenv dotenv_file;
-}  // namespace per_process
 
 }  // namespace node
 

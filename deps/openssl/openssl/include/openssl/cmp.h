@@ -1,1 +1,1 @@
-#include "../../../config/openssl_cmp.h"
+#include "../../../config/cmp.h"

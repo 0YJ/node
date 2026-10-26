@@ -23,7 +23,6 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   DEPS
     absl::config
-    absl::core_headers
   PUBLIC
 )
 
@@ -51,8 +50,6 @@ absl_cc_library(
     absl::algorithm
     absl::config
     absl::core_headers
-    absl::hardening
-    absl::iterator_traits_internal
     absl::meta
   PUBLIC
 )
@@ -69,7 +66,6 @@ absl_cc_test(
     absl::config
     absl::core_headers
     absl::memory
-    absl::meta
     absl::random_random
     absl::span
     GTest::gmock_main

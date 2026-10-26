@@ -12,7 +12,6 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
 class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
     : public NativeRegExpMacroAssembler {
@@ -56,8 +55,7 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   void CheckBitInTable(Handle<ByteArray> table, Label* on_bit_set) override;
   void SkipUntilBitInTable(int cp_offset, Handle<ByteArray> table,
                            Handle<ByteArray> nibble_table, int advance_by,
-                           int bounds_check_offset, Label* on_match,
-                           Label* on_no_match) override;
+                           Label* on_match, Label* on_no_match) override;
 
   // Checks whether the given offset from the current position is before
   // the end of the string.
@@ -65,8 +63,8 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   void CheckSpecialClassRanges(StandardCharacterSet type,
                                Label* on_no_match) override;
   void Fail() override;
-  DirectHandle<HeapObject> GetCode(DirectHandle<RegExpData> re_data,
-                                   Flags flags) override;
+  DirectHandle<HeapObject> GetCode(DirectHandle<String> source,
+                                   RegExpFlags flags) override;
   void GoTo(Label* label) override;
   void IfRegisterGE(int reg, int comparand, Label* if_ge) override;
   void IfRegisterLT(int reg, int comparand, Label* if_lt) override;
@@ -184,6 +182,10 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   // name to the register.
   static constexpr Register backtrack_stackpointer() { return ecx; }
 
+  // Equivalent to an unconditional branch to the label, unless the label
+  // is nullptr, in which case it is a Backtrack.
+  void BranchOrBacktrack(Label* to);
+
   // Equivalent to a conditional branch to the label, unless the label
   // is nullptr, in which case it is a conditional Backtrack.
   void BranchOrBacktrack(Condition condition, Label* to);
@@ -234,7 +236,6 @@ class V8_EXPORT_PRIVATE RegExpMacroAssemblerIA32
   Label fallback_label_;
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

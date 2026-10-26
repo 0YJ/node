@@ -15,16 +15,13 @@
 #include "absl/base/internal/endian.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <cstdint>
-#include <ios>
 #include <limits>
 #include <random>
 #include <vector>
 
 #include "gtest/gtest.h"
 #include "absl/base/config.h"
-#include "absl/base/internal/unaligned_access.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

@@ -1,4 +1,4 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 
 import '../common/index.mjs';
 import assert from 'node:assert';

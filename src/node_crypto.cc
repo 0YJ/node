@@ -52,7 +52,6 @@ namespace crypto {
   V(NativeCryptoKey)                                                           \
   V(NativeKeyObject)                                                           \
   V(PBKDF2Job)                                                                 \
-  V(PKCS12Parser)                                                              \
   V(Random)                                                                    \
   V(RSAAlg)                                                                    \
   V(SecureContext)                                                             \
@@ -77,7 +76,7 @@ namespace crypto {
 
 #if OPENSSL_WITH_EVP_MAC
 #define KMAC_NAMESPACE_LIST(V) V(Kmac)
-#elif defined(OPENSSL_IS_BORINGSSL)
+#else
 #define KMAC_NAMESPACE_LIST(V)
 #endif  // OPENSSL_WITH_EVP_MAC
 

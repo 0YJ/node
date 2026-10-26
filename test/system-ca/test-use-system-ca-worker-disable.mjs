@@ -14,8 +14,6 @@ if (!common.hasCrypto) {
   common.skip('requires crypto');
 }
 
-const { untrustedLeafErrorCode } = await import('../common/tls.js');
-
 // To run this test, the system needs to be configured to trust
 // the CA certificate first (which needs an interactive GUI approval, e.g. TouchID):
 // see the README.md in this folder for instructions on how to do this.
@@ -63,7 +61,7 @@ describe('use-system-ca', function() {
     const [message] = await once(worker, 'message');
     assert.strictEqual(message.ok, false);
     assert(
-      message.code === untrustedLeafErrorCode ||
+      message.code === 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' ||
         message.code === 'SELF_SIGNED_CERT_IN_CHAIN',
       `Expected certificate verification error but got: ${JSON.stringify(
         message,

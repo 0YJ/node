@@ -150,7 +150,7 @@ struct TestApproximateReciprocal {
       if (l1 > max_l1) {
         max_l1 = l1;
         worst_expected = expected;
-        worst_actual = ConvertScalarTo<double>(actual[i]);
+        worst_actual = actual[i];
       }
     }
     const double abs_worst_expected = ScalarAbs(worst_expected);
@@ -197,7 +197,7 @@ struct TestMaskedApproximateReciprocal {
       if (l1 > max_l1) {
         max_l1 = l1;
         worst_expected = expected;
-        worst_actual = ConvertScalarTo<double>(actual[i]);
+        worst_actual = actual[i];
       }
     }
     const double abs_worst_expected = ScalarAbs(worst_expected);
@@ -381,8 +381,19 @@ HWY_NOINLINE void TestAllRound() {
   ForFloatTypes(ForPartialVectors<TestRound>());
 }
 
-class TestNearestInt {
- public:
+struct TestNearestInt {
+  static HWY_INLINE int16_t RoundScalarFloatToInt(float16_t f) {
+    return static_cast<int16_t>(std::lrintf(ConvertScalarTo<float>(f)));
+  }
+
+  static HWY_INLINE int32_t RoundScalarFloatToInt(float f) {
+    return static_cast<int32_t>(std::lrintf(f));
+  }
+
+  static HWY_INLINE int64_t RoundScalarFloatToInt(double f) {
+    return static_cast<int64_t>(std::llrint(f));
+  }
+
   template <typename TF, class DF>
   HWY_NOINLINE void operator()(TF tf, const DF df) {
     using TI = MakeSigned<TF>;
@@ -411,19 +422,6 @@ class TestNearestInt {
       const auto no_nan = IfThenElse(Eq(v, v), v, Zero(df));
       HWY_ASSERT_VEC_EQ(di, &expected[i], NearestInt(no_nan));
     }
-  }
-
- private:
-  static HWY_INLINE int16_t RoundScalarFloatToInt(float16_t f) {
-    return static_cast<int16_t>(std::lrintf(ConvertScalarTo<float>(f)));
-  }
-
-  static HWY_INLINE int32_t RoundScalarFloatToInt(float f) {
-    return static_cast<int32_t>(std::lrintf(f));
-  }
-
-  static HWY_INLINE int64_t RoundScalarFloatToInt(double f) {
-    return static_cast<int64_t>(std::llrint(f));
   }
 };
 

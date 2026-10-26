@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 import '../common/index.mjs';
 import assert from 'assert';
 import { pathToFileURL } from 'node:url';

@@ -31,14 +31,7 @@ const endpoint = listen(mustCall(), {
   port: 0,
 });
 
-// `servername` is both the SNI value and the identity checked during
-// certificate verification. agent1-cert.pem has no subjectAltName, so the
-// identity has to be matched against its CN; connecting to the IP literal
-// alone would fail with X509_V_ERR_IP_ADDRESS_MISMATCH before the CA set is
-// ever exercised.
-const client = connect('127.0.0.1', endpoint.address.port, {
-  servername: 'agent1',
-});
+const client = connect('127.0.0.1', endpoint.address.port);
 await client.opened;
 
 await client.close();

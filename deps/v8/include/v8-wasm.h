@@ -7,15 +7,13 @@
 
 #include <functional>
 #include <memory>
-#include <span>
 #include <string>
-#include <string_view>
 #include <variant>
 
 #include "v8-internal.h"      // NOLINT(build/include_directory)
 #include "v8-local-handle.h"  // NOLINT(build/include_directory)
+#include "v8-memory-span.h"   // NOLINT(build/include_directory)
 #include "v8-object.h"        // NOLINT(build/include_directory)
-#include "v8-platform.h"      // NOLINT(build/include_directory)
 #include "v8config.h"         // NOLINT(build/include_directory)
 
 namespace v8 {
@@ -53,7 +51,7 @@ class V8_EXPORT CompiledWasmModule {
   /**
    * Get the (wasm-encoded) wire bytes that were used to compile this module.
    */
-  std::span<const uint8_t> GetWireBytesRef();
+  MemorySpan<const uint8_t> GetWireBytesRef();
 
   const std::string& source_url() const { return source_url_; }
 
@@ -109,46 +107,10 @@ class V8_EXPORT WasmModuleObject : public Object {
   CompiledWasmModule GetCompiledModule();
 
   /**
-   * Options that influence how a Wasm module is compiled. The compile-time
-   * import options mirror those accepted by the JS `WebAssembly.Module`
-   * constructor (`{ builtins, importedStringConstants }`).
-   */
-  struct CompileOptions {
-    // Builtin compile-time imports, mirroring the strings accepted in the
-    // `builtins` array of the JS `WebAssembly.Module` constructor options.
-    // Combine values with bitwise-or to enable multiple builtins.
-    struct Builtins {
-      enum {
-        kNone = 0,
-        kJsString = 1 << 0,  // "js-string"
-      };
-    };
-    // Bitwise-or of `Builtins` values to enable as compile-time imports.
-    int builtins = Builtins::kNone;
-    // If non-null, enable imported string constants from the named module
-    // (e.g. "wasm:js/string-constants"). The string must be null-terminated and
-    // remain valid for the duration of the compile call.
-    const char* imported_string_constants_module = nullptr;
-    // If non-empty, associated with the module's script as its source URL, for
-    // use in stack traces and developer tooling. If a script already exists in
-    // the isolate for the same module, its existing URL is retained. The
-    // string must remain valid for the duration of the compile call.
-    std::string_view source_url = {};
-  };
-
-  /**
    * Compile a Wasm module from the provided uncompiled bytes.
    */
   static MaybeLocal<WasmModuleObject> Compile(
-      Isolate* isolate, std::span<const uint8_t> wire_bytes);
-
-  /**
-   * Compile a Wasm module from the provided uncompiled bytes, applying the
-   * given compile options.
-   */
-  static MaybeLocal<WasmModuleObject> Compile(
-      Isolate* isolate, std::span<const uint8_t> wire_bytes,
-      const CompileOptions& options);
+      Isolate* isolate, MemorySpan<const uint8_t> wire_bytes);
 
   V8_INLINE static WasmModuleObject* Cast(Value* value) {
 #ifdef V8_ENABLE_CHECKS
@@ -169,14 +131,14 @@ class V8_EXPORT WasmModuleObject : public Object {
  */
 class V8_EXPORT WasmStreaming final {
  public:
-  static constexpr internal::ManagedTypeId kTypeID =
-      internal::ManagedTypeId::kWasmStreaming;
+  static constexpr internal::ExternalPointerTag kManagedTag =
+      internal::kWasmWasmStreamingTag;
   class WasmStreamingImpl;
 
   class ModuleCachingInterface {
    public:
     // Get the full wire bytes, to check against the cached version.
-    virtual std::span<const uint8_t> GetWireBytes() const = 0;
+    virtual MemorySpan<const uint8_t> GetWireBytes() const = 0;
     // Pass serialized (cached) compiled module bytes, to be deserialized and
     // used as the result of this streaming compilation.
     // The passed bytes will only be accessed inside this callback, i.e.
@@ -184,7 +146,7 @@ class V8_EXPORT WasmStreaming final {
     // The return value indicates whether V8 could use the passed bytes; {false}
     // would be returned on e.g. version mismatch.
     // This method can only be called once.
-    virtual bool SetCachedCompiledModuleBytes(std::span<const uint8_t>) = 0;
+    virtual bool SetCachedCompiledModuleBytes(MemorySpan<const uint8_t>) = 0;
   };
 
   using ModuleCachingCallback = std::function<void(ModuleCachingInterface&)>;
@@ -242,12 +204,12 @@ class V8_EXPORT WasmStreaming final {
   void SetUrl(const char* url, size_t length);
 
   /**
-   * Unpacks a {WasmStreaming} object wrapped in a {CppGCManaged} for the
-   * embedder. Since the embedder is on the other side of the API, it cannot
-   * unpack the {CppGCManaged} itself.
+   * Unpacks a {WasmStreaming} object wrapped in a  {Managed} for the embedder.
+   * Since the embedder is on the other side of the API, it cannot unpack the
+   * {Managed} itself.
    */
   static std::shared_ptr<WasmStreaming> Unpack(Isolate* isolate,
-                                               Local<Data> data);
+                                               Local<Value> value);
 
  private:
   std::unique_ptr<WasmStreamingImpl> impl_;
@@ -262,15 +224,13 @@ class V8_EXPORT WasmStreaming final {
 class V8_EXPORT WasmModuleCompilation final {
  public:
   using ModuleCachingCallback = WasmStreaming::ModuleCachingCallback;
-  using CompileOptions = WasmModuleObject::CompileOptions;
 
   /**
-   * Start an asynchronous module compilation, applying the given compile
-   * options. This can be called on any thread. Providing
-   * {CompileOptions::source_url} is equivalent to calling {SetUrl}.
+   * Start an asynchronous module compilation. This can be called on any thread.
    * TODO(clemensb): Add some way to pass enabled features.
+   * TODO(clemensb): Add some way to pass compile time imports.
    */
-  explicit WasmModuleCompilation(const CompileOptions& options = {});
+  WasmModuleCompilation();
 
   ~WasmModuleCompilation();
 
@@ -345,15 +305,20 @@ class V8_EXPORT WasmMemoryMapDescriptor : public Object {
  public:
   WasmMemoryMapDescriptor() = delete;
 
-  using WasmFileDescriptor = SharedMemoryHandle::PlatformHandle;
+  V8_INLINE static WasmMemoryMapDescriptor* Cast(Value* value) {
+#ifdef V8_ENABLE_CHECKS
+    CheckCast(value);
+#endif
+    return static_cast<WasmMemoryMapDescriptor*>(value);
+  }
+
+  using WasmFileDescriptor = int32_t;
 
   static Local<WasmMemoryMapDescriptor> New(Isolate* isolate,
                                             WasmFileDescriptor fd);
 
-  static bool Unmap(Isolate* isolate, Local<Object> wasm_memory_map_descriptor);
-
-  static size_t Map(Isolate* isolate, Local<Object> wasm_memory_map_descriptor,
-                    Local<WasmMemoryObject> memory, size_t offset);
+ private:
+  static void CheckCast(Value* object);
 };
 }  // namespace v8
 

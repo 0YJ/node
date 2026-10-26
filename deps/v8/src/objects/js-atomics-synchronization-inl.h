@@ -11,7 +11,7 @@
 #include "src/common/assert-scope.h"
 #include "src/common/globals.h"
 #include "src/heap/heap-write-barrier-inl.h"
-#include "src/objects/js-struct.h"
+#include "src/objects/js-struct-inl.h"
 #include "src/objects/objects-inl.h"
 
 // Has to be the last include (doesn't have include guards):
@@ -20,26 +20,15 @@
 namespace v8 {
 namespace internal {
 
-uint32_t JSSynchronizationPrimitive::state() const {
-  return state_.load(std::memory_order_relaxed);
-}
+#include "torque-generated/src/objects/js-atomics-synchronization-tq-inl.inc"
 
-void JSSynchronizationPrimitive::set_state(uint32_t value) {
-  state_.store(value, std::memory_order_relaxed);
-}
-
-int32_t JSAtomicsMutex::owner_thread_id() const {
-  return owner_thread_id_.load(std::memory_order_relaxed);
-}
-
-void JSAtomicsMutex::set_owner_thread_id(int32_t value) {
-  owner_thread_id_.store(value, std::memory_order_relaxed);
-}
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSSynchronizationPrimitive)
 
 std::atomic<JSSynchronizationPrimitive::StateT>*
 JSSynchronizationPrimitive::AtomicStatePtr() {
-  DCHECK(IsAligned(reinterpret_cast<uintptr_t>(&state_), sizeof(StateT)));
-  return &state_;
+  StateT* state_ptr = reinterpret_cast<StateT*>(field_address(kStateOffset));
+  DCHECK(IsAligned(reinterpret_cast<uintptr_t>(state_ptr), sizeof(StateT)));
+  return base::AsAtomicPtr(state_ptr);
 }
 
 void JSSynchronizationPrimitive::SetNullWaiterQueueHead() {
@@ -54,14 +43,14 @@ void JSSynchronizationPrimitive::SetNullWaiterQueueHead() {
 #if V8_COMPRESS_POINTERS
 ExternalPointerHandle*
 JSSynchronizationPrimitive::waiter_queue_head_handle_location() const {
-  return reinterpret_cast<ExternalPointerHandle*>(
-      waiter_queue_head_.storage_address());
+  Address location = field_address(kWaiterQueueHeadOffset);
+  return reinterpret_cast<ExternalPointerHandle*>(location);
 }
 #else
 WaiterQueueNode** JSSynchronizationPrimitive::waiter_queue_head_location()
     const {
-  return reinterpret_cast<WaiterQueueNode**>(
-      waiter_queue_head_.storage_address());
+  Address location = field_address(kWaiterQueueHeadOffset);
+  return reinterpret_cast<WaiterQueueNode**>(location);
 }
 #endif  // V8_COMPRESS_POINTERS
 
@@ -111,12 +100,8 @@ JSSynchronizationPrimitive::SetWaiterQueueHead(Isolate* requester,
       // threads may access an uninitialized table entry and crash.
       base::AsAtomic32::Release_Store(waiter_queue_head_handle_location(),
                                       handle);
-      WriteBarrier::ForExternalPointer(
-          this,
-          RawExternalPointerField(
-              offsetof(JSSynchronizationPrimitive, waiter_queue_head_),
-              kWaiterQueueNodeTag),
-          handle);
+      EXTERNAL_POINTER_WRITE_BARRIER(*this, kWaiterQueueHeadOffset,
+                                     kWaiterQueueNodeTag);
       return new_state;
     }
     if (DEBUG_BOOL) {
@@ -142,6 +127,8 @@ JSSynchronizationPrimitive::SetWaiterQueueHead(Isolate* requester,
 #endif  // V8_COMPRESS_POINTERS
   return new_state;
 }
+
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSAtomicsMutex)
 
 JSAtomicsMutex::LockGuardBase::LockGuardBase(Isolate* isolate,
                                              DirectHandle<JSAtomicsMutex> mutex,
@@ -255,8 +242,12 @@ void JSAtomicsMutex::ClearOwnerThread() {
 }
 
 std::atomic<int32_t>* JSAtomicsMutex::AtomicOwnerThreadIdPtr() {
-  return &owner_thread_id_;
+  int32_t* owner_thread_id_ptr =
+      reinterpret_cast<int32_t*>(field_address(kOwnerThreadIdOffset));
+  return base::AsAtomicPtr(owner_thread_id_ptr);
 }
+
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSAtomicsCondition)
 
 }  // namespace internal
 }  // namespace v8

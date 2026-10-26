@@ -12,16 +12,16 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-void AstNodePrinter::VisitCharacterRange(CharacterRange that) {
+void RegExpAstNodePrinter::VisitCharacterRange(CharacterRange that) {
   os() << AsUC32(that.from());
   if (!that.IsSingleton()) {
     os() << "-" << AsUC32(that.to());
   }
 }
 
-void* AstNodePrinter::VisitDisjunction(Disjunction* that, void* data) {
+void* RegExpAstNodePrinter::VisitDisjunction(RegExpDisjunction* that,
+                                             void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(|";
@@ -33,7 +33,8 @@ void* AstNodePrinter::VisitDisjunction(Disjunction* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitAlternative(Alternative* that, void* data) {
+void* RegExpAstNodePrinter::VisitAlternative(RegExpAlternative* that,
+                                             void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(:";
@@ -45,7 +46,8 @@ void* AstNodePrinter::VisitAlternative(Alternative* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitClassRanges(ClassRanges* that, void* data) {
+void* RegExpAstNodePrinter::VisitClassRanges(RegExpClassRanges* that,
+                                             void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   if (that->is_negated()) os() << "^";
@@ -58,7 +60,8 @@ void* AstNodePrinter::VisitClassRanges(ClassRanges* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitClassSetOperand(ClassSetOperand* that, void* data) {
+void* RegExpAstNodePrinter::VisitClassSetOperand(RegExpClassSetOperand* that,
+                                                 void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "![";
@@ -77,18 +80,18 @@ void* AstNodePrinter::VisitClassSetOperand(ClassSetOperand* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitClassSetExpression(ClassSetExpression* that,
-                                              void* data) {
+void* RegExpAstNodePrinter::VisitClassSetExpression(
+    RegExpClassSetExpression* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   switch (that->operation()) {
-    case ClassSetExpression::OperationType::kUnion:
+    case RegExpClassSetExpression::OperationType::kUnion:
       os() << "++";
       break;
-    case ClassSetExpression::OperationType::kIntersection:
+    case RegExpClassSetExpression::OperationType::kIntersection:
       os() << "&&";
       break;
-    case ClassSetExpression::OperationType::kSubtraction:
+    case RegExpClassSetExpression::OperationType::kSubtraction:
       os() << "--";
       break;
   }
@@ -102,36 +105,33 @@ void* AstNodePrinter::VisitClassSetExpression(ClassSetExpression* that,
   return nullptr;
 }
 
-void* AstNodePrinter::VisitAssertion(Assertion* that, void* data) {
+void* RegExpAstNodePrinter::VisitAssertion(RegExpAssertion* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   switch (that->assertion_type()) {
-    case Assertion::Type::START_OF_INPUT:
+    case RegExpAssertion::Type::START_OF_INPUT:
       os() << "@^i";
       break;
-    case Assertion::Type::END_OF_INPUT:
+    case RegExpAssertion::Type::END_OF_INPUT:
       os() << "@$i";
       break;
-    case Assertion::Type::END_OF_BUFFER:
-      os() << "@$Z";
-      break;
-    case Assertion::Type::START_OF_LINE:
+    case RegExpAssertion::Type::START_OF_LINE:
       os() << "@^l";
       break;
-    case Assertion::Type::END_OF_LINE:
+    case RegExpAssertion::Type::END_OF_LINE:
       os() << "@$l";
       break;
-    case Assertion::Type::BOUNDARY:
+    case RegExpAssertion::Type::BOUNDARY:
       os() << "@b";
       break;
-    case Assertion::Type::NON_BOUNDARY:
+    case RegExpAssertion::Type::NON_BOUNDARY:
       os() << "@B";
       break;
   }
   return nullptr;
 }
 
-void* AstNodePrinter::VisitAtom(Atom* that, void* data) {
+void* RegExpAstNodePrinter::VisitAtom(RegExpAtom* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "'";
@@ -143,7 +143,7 @@ void* AstNodePrinter::VisitAtom(Atom* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitText(Text* that, void* data) {
+void* RegExpAstNodePrinter::VisitText(RegExpText* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   if (that->elements()->length() == 1) {
@@ -159,11 +159,12 @@ void* AstNodePrinter::VisitText(Text* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitQuantifier(Quantifier* that, void* data) {
+void* RegExpAstNodePrinter::VisitQuantifier(RegExpQuantifier* that,
+                                            void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(# " << that->min() << " ";
-  if (that->max() == Tree::kInfinity) {
+  if (that->max() == RegExpTree::kInfinity) {
     os() << "- ";
   } else {
     os() << that->max() << " ";
@@ -174,7 +175,7 @@ void* AstNodePrinter::VisitQuantifier(Quantifier* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitCapture(Capture* that, void* data) {
+void* RegExpAstNodePrinter::VisitCapture(RegExpCapture* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(^ ";
@@ -183,7 +184,7 @@ void* AstNodePrinter::VisitCapture(Capture* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitGroup(Group* that, void* data) {
+void* RegExpAstNodePrinter::VisitGroup(RegExpGroup* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(?" << that->flags() << ": ";
@@ -192,18 +193,20 @@ void* AstNodePrinter::VisitGroup(Group* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitLookaround(Lookaround* that, void* data) {
+void* RegExpAstNodePrinter::VisitLookaround(RegExpLookaround* that,
+                                            void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(";
-  os() << (that->type() == Lookaround::LOOKAHEAD ? "->" : "<-");
+  os() << (that->type() == RegExpLookaround::LOOKAHEAD ? "->" : "<-");
   os() << (that->is_positive() ? " + " : " - ");
   that->body()->Accept(this, data);
   os() << ")";
   return nullptr;
 }
 
-void* AstNodePrinter::VisitBackReference(BackReference* that, void* data) {
+void* RegExpAstNodePrinter::VisitBackReference(RegExpBackReference* that,
+                                               void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << "(<- " << that->captures()->first()->index();
@@ -214,16 +217,18 @@ void* AstNodePrinter::VisitBackReference(BackReference* that, void* data) {
   return nullptr;
 }
 
-void* AstNodePrinter::VisitEmpty(Empty* that, void* data) {
+void* RegExpAstNodePrinter::VisitEmpty(RegExpEmpty* that, void* data) {
   RegisterNode(that);
   PrintNodeLabel(that);
   os() << '%';
   return nullptr;
 }
 
-void AstNodePrinter::Print(Tree* tree) { tree->Accept(this, nullptr); }
+void RegExpAstNodePrinter::Print(RegExpTree* tree) {
+  tree->Accept(this, nullptr);
+}
 
-TraceTreeScope::TraceTreeScope(Diagnostics* diagnostics)
+TraceRegExpTreeScope::TraceRegExpTreeScope(RegExpDiagnostics* diagnostics)
     : parent_(diagnostics ? diagnostics->trace_tree_scope() : nullptr),
       depth_(parent_ != nullptr ? parent_->depth_ + 1 : -1),
       diagnostics_(diagnostics) {
@@ -232,29 +237,28 @@ TraceTreeScope::TraceTreeScope(Diagnostics* diagnostics)
   }
 }
 
-TraceTreeScope::~TraceTreeScope() {
+TraceRegExpTreeScope::~TraceRegExpTreeScope() {
   if (diagnostics_) {
     diagnostics_->set_trace_tree_scope(parent_);
   }
 }
 
-void TraceTreeScope::PrintTree(Tree* tree) {
+void TraceRegExpTreeScope::PrintTree(RegExpTree* tree) {
   std::ostream& o = os();
-  AstNodePrinter* printer = diagnostics_->ast_printer();
-  printer->set_color(PrinterBase::Color::kRed);
+  RegExpAstNodePrinter* printer = diagnostics_->ast_printer();
+  printer->set_color(RegExpPrinterBase::Color::kRed);
   o << "- ";
   printer->Print(tree);
-  printer->set_color(PrinterBase::Color::kDefault);
+  printer->set_color(RegExpPrinterBase::Color::kDefault);
   o << std::endl;
 }
 
-std::ostream& TraceTreeScope::os() {
+std::ostream& TraceRegExpTreeScope::os() {
   std::ostream& os = diagnostics_->os();
   for (int i = 0; i < depth_; i++) os << "  ";
   return os;
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

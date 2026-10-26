@@ -19,7 +19,6 @@
 
 #include <atomic>
 
-#include "absl/base/config.h"
 #include "absl/base/optimization.h"
 #include "absl/profiling/internal/exponential_biased.h"
 

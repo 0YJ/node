@@ -39,7 +39,7 @@ class Mac final : public BaseObject {
   ncrypto::EVPMacCtxPointer context_;
   size_t output_size_ = 0;
   bool has_output_length_ = false;
-#elif defined(OPENSSL_IS_BORINGSSL)
+#else
   Mac(Environment* env, v8::Local<v8::Object> wrap);
 #endif
 };

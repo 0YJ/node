@@ -9,7 +9,6 @@
 
 #include <memory>
 
-#include "include/v8-extension.h"
 #include "include/v8-function.h"
 #include "include/v8-local-handle.h"
 #include "include/v8-profiler.h"
@@ -19,7 +18,6 @@
 #include "src/codegen/script-details.h"
 #include "src/heap/factory.h"
 #include "src/objects/allocation-site-inl.h"
-#include "src/objects/object-conversions-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "test/unittests/heap/heap-utils.h"  // For ManualGCScope.
@@ -139,16 +137,12 @@ TEST_F(CompilerTest, Sum) {
   EXPECT_EQ(5050.0, Sum(i_isolate(), 100));
 }
 
-class CompilerTestWithPrintExtension : public v8::TestWithIsolate {
- public:
-  CompilerTestWithPrintExtension() {
-    v8::RegisterExtension(std::make_unique<PrintExtension>());
-  }
-};
+using CompilerPrintTest = WithPrintExtensionMixin<v8::TestWithIsolate>;
 
-TEST_F(CompilerTestWithPrintExtension, Print) {
+TEST_F(CompilerPrintTest, Print) {
   v8::HandleScope scope(isolate());
-  const char* extension_names[1] = {PrintExtension::kName};
+  const char* extension_names[1] = {
+      WithPrintExtensionMixin::kPrintExtensionName};
   v8::ExtensionConfiguration config(1, extension_names);
   v8::Local<v8::Context> context = v8::Context::New(isolate(), &config);
   v8::Context::Scope context_scope(context);
@@ -209,16 +203,19 @@ TEST_F(CompilerTest, UncaughtThrow) {
   EXPECT_EQ(42.0, Object::NumberValue(isolate->exception()));
 }
 
+using CompilerC2JSFramesTest = WithPrintExtensionMixin<v8::TestWithIsolate>;
+
 // Tests calling a builtin function from C/C++ code, and the builtin function
 // performs GC. It creates a stack frame looks like following:
 //   | C (PerformGC) |
 //   |   JS-to-C     |
 //   |      JS       |
 //   |   C-to-JS     |
-TEST_F(CompilerTestWithPrintExtension, C2JSFrames) {
+TEST_F(CompilerC2JSFramesTest, C2JSFrames) {
   v8_flags.expose_gc = true;
   v8::HandleScope scope(isolate());
-  const char* extension_names[2] = {"v8/gc", PrintExtension::kName};
+  const char* extension_names[2] = {
+      "v8/gc", WithPrintExtensionMixin::kPrintExtensionName};
   v8::ExtensionConfiguration config(2, extension_names);
   v8::Local<v8::Context> context = v8::Context::New(isolate(), &config);
   v8::Context::Scope context_scope(context);
@@ -264,7 +261,7 @@ TEST_F(CompilerTest, GetScriptLineNumber) {
   const char function_f[] = "function f() {}";
   const int max_rows = 1000;
   const int buffer_size = max_rows + sizeof(function_f);
-  auto buffer = base::OwnedVector<char>::NewForOverwrite(buffer_size);
+  base::ScopedVector<char> buffer(buffer_size);
   memset(buffer.begin(), '\n', buffer_size - 1);
   buffer[buffer_size - 1] = '\0';
 
@@ -1149,59 +1146,6 @@ TEST_F(BackgroundMergeTest, GCDuringMerge) {
     // The old h died, so it's different.
     CHECK_NE(MakeWeak(h->shared()), unmutated_old_script_list->get(kHId));
   }
-}
-
-TEST_F(BackgroundMergeTest, MergeWithEval) {
-  v8_flags.verify_code_merge = true;
-
-  HandleScope handle_scope(isolate());
-  const char* source =
-      "var f = () => {"
-      "  'use strict';"
-      "  return eval('1');"
-      "};";
-  IndirectHandle<String> source_string =
-      isolate()
-          ->factory()
-          ->NewStringFromUtf8(base::CStrVector(source))
-          .ToHandleChecked();
-
-  ScriptCompiler::CompilationDetails compilation_details;
-  DirectHandle<SharedFunctionInfo> top_level_sfi =
-      Compiler::GetSharedFunctionInfoForScript(
-          isolate(), source_string, ScriptDetails(),
-          v8::ScriptCompiler::kNoCompileOptions,
-          ScriptCompiler::kNoCacheNoReason, NOT_NATIVES_CODE,
-          &compilation_details)
-          .ToHandleChecked();
-  DirectHandle<Script> old_script(Cast<Script>(top_level_sfi->script()),
-                                  isolate());
-
-  DirectHandle<JSFunction> top_level =
-      Factory::JSFunctionBuilder{isolate(), top_level_sfi,
-                                 isolate()->native_context()}
-          .Build();
-  DirectHandle<JSObject> global(isolate()->context()->global_object(),
-                                isolate());
-  Execution::CallScript(isolate(), top_level, global,
-                        isolate()->factory()->empty_fixed_array())
-      .Check();
-
-  DirectHandle<JSFunction> f = Cast<JSFunction>(
-      JSObject::GetProperty(isolate(), global, "f").ToHandleChecked());
-  Execution::Call(isolate(), f, global, {}).Check();
-
-  ScriptStreamingData streamed_source(
-      std::make_unique<DummySourceStream>(source),
-      v8::ScriptCompiler::StreamedSource::UTF8);
-  ScriptCompiler::CompilationDetails details;
-  streamed_source.task = std::make_unique<i::BackgroundCompileTask>(
-      &streamed_source, isolate(), ScriptType::kClassic,
-      ScriptCompiler::CompileOptions::kNoCompileOptions, &details);
-
-  streamed_source.task->RunOnMainThread(isolate());
-  streamed_source.task->FinalizeScript(isolate(), source_string,
-                                       ScriptDetails(), old_script);
 }
 
 }  // namespace internal

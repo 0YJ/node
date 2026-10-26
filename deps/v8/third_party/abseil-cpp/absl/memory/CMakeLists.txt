@@ -35,7 +35,7 @@ absl_cc_test(
   COPTS
     ${ABSL_TEST_COPTS}
   DEPS
-    absl::core_headers
     absl::memory
+    absl::core_headers
     GTest::gmock_main
 )

@@ -15,18 +15,19 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-class GraphPrinter::Scheduler final : public NodeVisitor {
+class RegExpGraphPrinter::Scheduler final : public NodeVisitor {
  public:
   auto begin() { return schedule_.begin(); }
   auto end() { return schedule_.end(); }
   size_t size() { return schedule_.size(); }
   auto operator[](size_t index) { return schedule_[index]; }
-  Node* at(size_t index) { return schedule_[index]; }
-  const std::vector<Node*>& successors(Node* node) { return successors_[node]; }
+  RegExpNode* at(size_t index) { return schedule_[index]; }
+  const std::vector<RegExpNode*>& successors(RegExpNode* node) {
+    return successors_[node];
+  }
   // Returns true iff |n1| is scheduled before |n2|.
-  bool ScheduledBefore(const Node* n1, const Node* n2) {
+  bool ScheduledBefore(const RegExpNode* n1, const RegExpNode* n2) {
     auto it1 = std::find(begin(), end(), n1);
     if (it1 == end()) return false;
     auto it2 = std::find(begin(), end(), n2);
@@ -37,13 +38,13 @@ class GraphPrinter::Scheduler final : public NodeVisitor {
 #define DECLARE_VISIT(Type) void Visit##Type(Type##Node* that) override;
   FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 #undef DECLARE_VISIT
-  void Visit(Node* node);
-  void CreateSchedule(Node* root) {
+  void Visit(RegExpNode* node);
+  void CreateSchedule(RegExpNode* root) {
     // TODO(pthier): Improve schedule to reduce number of edges in printer (I.e.
     // prefer to schedule success nodes directly after nodes).
     Visit(root);
-    std::set<Node*> visited;
-    std::queue<Node*> queue;
+    std::set<RegExpNode*> visited;
+    std::queue<RegExpNode*> queue;
     for (auto n : nodes_) {
       auto it = depends_on_.find(n);
       if (it == depends_on_.end() || it->second.size() == 0) {
@@ -52,7 +53,7 @@ class GraphPrinter::Scheduler final : public NodeVisitor {
       }
     }
     while (!queue.empty()) {
-      Node* node = queue.front();
+      RegExpNode* node = queue.front();
       queue.pop();
       schedule_.push_back(node);
       for (auto successor : successors_[node]) {
@@ -69,32 +70,32 @@ class GraphPrinter::Scheduler final : public NodeVisitor {
   }
 
  private:
-  void VisitSeqNode(SeqNode* node);
-  void VisitOther(Node* node);
-  void AddEdge(Node* from, Node* to) {
+  void VisitSeqRegExpNode(SeqRegExpNode* node);
+  void VisitOther(RegExpNode* node);
+  void AddEdge(RegExpNode* from, RegExpNode* to) {
     if (IsReachable(to, from)) return;
     successors_[from].push_back(to);
     depends_on_[to].insert(from);
   }
 
-  bool IsReachable(Node* start, Node* end) {
+  bool IsReachable(RegExpNode* start, RegExpNode* end) {
     if (start == end) return true;
 
-    std::queue<Node*> queue;
-    std::unordered_set<Node*> visited;
+    std::queue<RegExpNode*> queue;
+    std::unordered_set<RegExpNode*> visited;
 
     queue.push(start);
     visited.insert(start);
 
     while (!queue.empty()) {
-      Node* current = queue.front();
+      RegExpNode* current = queue.front();
       queue.pop();
 
       if (current == end) return true;
 
       auto it = successors_.find(current);
       if (it != successors_.end()) {
-        for (Node* successor : it->second) {
+        for (RegExpNode* successor : it->second) {
           if (visited.find(successor) == visited.end()) {
             visited.insert(successor);
             queue.push(successor);
@@ -104,44 +105,41 @@ class GraphPrinter::Scheduler final : public NodeVisitor {
     }
     return false;
   }
-  std::unordered_set<Node*> visited_;
-  std::vector<Node*> nodes_;
-  std::unordered_map<Node*, std::set<Node*>> depends_on_;
+  std::unordered_set<RegExpNode*> visited_;
+  std::vector<RegExpNode*> nodes_;
+  std::unordered_map<RegExpNode*, std::set<RegExpNode*>> depends_on_;
   // This is not strictly necessary. We could also use the NodeVisitor again to
   // iterate successors, but it's easier if we just have them independent of the
   // node type in one place.
-  std::unordered_map<Node*, std::vector<Node*>> successors_;
-  std::vector<Node*> schedule_;
+  std::unordered_map<RegExpNode*, std::vector<RegExpNode*>> successors_;
+  std::vector<RegExpNode*> schedule_;
 };
 
-void GraphPrinter::Scheduler::Visit(Node* node) {
+void RegExpGraphPrinter::Scheduler::Visit(RegExpNode* node) {
   if (visited_.contains(node)) return;
   visited_.insert(node);
   nodes_.push_back(node);
   node->Accept(this);
 }
 
-void GraphPrinter::Scheduler::VisitSeqNode(SeqNode* node) {
+void RegExpGraphPrinter::Scheduler::VisitSeqRegExpNode(SeqRegExpNode* node) {
   AddEdge(node, node->on_success());
   Visit(node->on_success());
 }
 
-void GraphPrinter::Scheduler::VisitOther(Node* node) {
+void RegExpGraphPrinter::Scheduler::VisitOther(RegExpNode* node) {
   // Nothing to do.
 }
 
-void GraphPrinter::Scheduler::VisitEnd(EndNode* node) { VisitOther(node); }
-
-void GraphPrinter::Scheduler::VisitAction(ActionNode* node) {
-  VisitSeqNode(node->AsSeqNode());
+void RegExpGraphPrinter::Scheduler::VisitEnd(EndNode* node) {
+  VisitOther(node);
 }
 
-void GraphPrinter::Scheduler::VisitUnanchoredAdvance(
-    UnanchoredAdvanceNode* node) {
-  VisitSeqNode(node->AsSeqNode());
+void RegExpGraphPrinter::Scheduler::VisitAction(ActionNode* node) {
+  VisitSeqRegExpNode(node->AsSeqRegExpNode());
 }
 
-void GraphPrinter::Scheduler::VisitChoice(ChoiceNode* node) {
+void RegExpGraphPrinter::Scheduler::VisitChoice(ChoiceNode* node) {
   ZoneList<GuardedAlternative>* alternatives = node->alternatives();
   for (int i = 0; i < alternatives->length(); i++) {
     const GuardedAlternative& guard = alternatives->at(i);
@@ -150,28 +148,29 @@ void GraphPrinter::Scheduler::VisitChoice(ChoiceNode* node) {
   }
 }
 
-void GraphPrinter::Scheduler::VisitLoopChoice(LoopChoiceNode* node) {
+void RegExpGraphPrinter::Scheduler::VisitLoopChoice(LoopChoiceNode* node) {
   AddEdge(node, node->loop_node());
   Visit(node->loop_node());
   AddEdge(node, node->continue_node());
   Visit(node->continue_node());
 }
 
-void GraphPrinter::Scheduler::VisitNegativeLookaroundChoice(
+void RegExpGraphPrinter::Scheduler::VisitNegativeLookaroundChoice(
     NegativeLookaroundChoiceNode* node) {
   VisitChoice(node);
 }
 
-void GraphPrinter::Scheduler::VisitBackReference(BackReferenceNode* node) {
-  VisitSeqNode(node->AsSeqNode());
+void RegExpGraphPrinter::Scheduler::VisitBackReference(
+    BackReferenceNode* node) {
+  VisitSeqRegExpNode(node->AsSeqRegExpNode());
 }
 
-void GraphPrinter::Scheduler::VisitAssertion(AssertionNode* node) {
-  VisitSeqNode(node->AsSeqNode());
+void RegExpGraphPrinter::Scheduler::VisitAssertion(AssertionNode* node) {
+  VisitSeqRegExpNode(node->AsSeqRegExpNode());
 }
 
-void GraphPrinter::Scheduler::VisitText(TextNode* node) {
-  VisitSeqNode(node->AsSeqNode());
+void RegExpGraphPrinter::Scheduler::VisitText(TextNode* node) {
+  VisitSeqRegExpNode(node->AsSeqRegExpNode());
 }
 
 namespace {
@@ -181,7 +180,7 @@ namespace {
 
 // Add a target to the target list in the first non-null position from the end.
 // This might have to extend the target list if there is no free spot.
-size_t AddTarget(std::vector<Node*>& targets, Node* target) {
+size_t AddTarget(std::vector<RegExpNode*>& targets, RegExpNode* target) {
   if (targets.size() == 0 || (targets.back() != nullptr)) {
     targets.push_back(target);
     return targets.size() - 1;
@@ -200,7 +199,8 @@ size_t AddTarget(std::vector<Node*>& targets, Node* target) {
 // non-null position from the end. This might have to extend the target list if
 // there is no free spot. Returns true if it was added, false if it was a
 // fallthrough.
-bool AddTargetIfNotNext(std::vector<Node*>& targets, Node* target, Node* next,
+bool AddTargetIfNotNext(std::vector<RegExpNode*>& targets, RegExpNode* target,
+                        RegExpNode* next,
                         std::set<size_t>* arrows_starting_here = nullptr) {
   if (next == target) return false;
   size_t index = AddTarget(targets, target);
@@ -280,8 +280,8 @@ int MaxIdWidth(int max_node_id, int padding_adjustment = 0) {
   return max_width + padding_adjustment;
 }
 
-void PrintPaddedId(std::ostream& os, GraphLabeller<Node>* labeller,
-                   int max_node_id, Node* node, std::string padding = " ",
+void PrintPaddedId(std::ostream& os, RegExpGraphLabeller<RegExpNode>* labeller,
+                   int max_node_id, RegExpNode* node, std::string padding = " ",
                    int padding_adjustment = 0) {
   int id_width = 0;
   if (node) {
@@ -307,12 +307,13 @@ void PrintPadding(std::ostream& os, int max_node_id, std::string padding = " ",
 
 }  // namespace
 
-GraphPrinter::GraphPrinter(std::unique_ptr<NodePrinter<Node>> printer)
+RegExpGraphPrinter::RegExpGraphPrinter(
+    std::unique_ptr<RegExpNodePrinter<RegExpNode>> printer)
     : printer_(std::move(printer)) {}
 
-GraphPrinter::~GraphPrinter() = default;
+RegExpGraphPrinter::~RegExpGraphPrinter() = default;
 
-size_t GraphPrinter::AddEdge(Node* from, Node* to) {
+size_t RegExpGraphPrinter::AddEdge(RegExpNode* from, RegExpNode* to) {
   if (edges_.size() == 0 || (edges_.back().IsValid())) {
     edges_.push_back({from, to});
     return edges_.size() - 1;
@@ -327,22 +328,24 @@ size_t GraphPrinter::AddEdge(Node* from, Node* to) {
   return i;
 }
 
-bool GraphPrinter::AddEdgeIfNotNext(Node* from, Node* to, Node* next,
-                                    std::set<size_t>* arrows_starting_here) {
+bool RegExpGraphPrinter::AddEdgeIfNotNext(
+    RegExpNode* from, RegExpNode* to, RegExpNode* next,
+    std::set<size_t>* arrows_starting_here) {
   if (next == to) return false;
   size_t index = AddEdge(from, to);
   if (arrows_starting_here != nullptr) arrows_starting_here->insert(index);
   return true;
 }
 
-void GraphPrinter::PreSizeTargets() {
+void RegExpGraphPrinter::PreSizeTargets() {
   std::fill(targets_.begin(), targets_.end(), nullptr);
   for (size_t i = 0; i < schedule_->size(); i++) {
-    Node* node = schedule_->at(i);
-    Node* next = i + 1 < schedule_->size() ? schedule_->at(i + 1) : nullptr;
+    RegExpNode* node = schedule_->at(i);
+    RegExpNode* next =
+        i + 1 < schedule_->size() ? schedule_->at(i + 1) : nullptr;
     max_node_id_ = std::max(max_node_id_, labeller()->NodeId(node));
     std::replace(targets_.begin(), targets_.end(), node,
-                 static_cast<Node*>(nullptr));
+                 static_cast<RegExpNode*>(nullptr));
     std::for_each(edges_.begin(), edges_.end(), [&](Edge& e) {
       if (EdgeEndsAt(e, node)) {
         e.Invalidate();
@@ -355,7 +358,8 @@ void GraphPrinter::PreSizeTargets() {
         if (loop->loop_node() == node) {
           is_loop = true;
           std::replace(targets_.begin(), targets_.end(),
-                       static_cast<Node*>(loop), static_cast<Node*>(nullptr));
+                       static_cast<RegExpNode*>(loop),
+                       static_cast<RegExpNode*>(nullptr));
         }
       }
       if (!is_loop) {
@@ -373,36 +377,38 @@ void GraphPrinter::PreSizeTargets() {
                      [](Edge e) { return !e.IsValid(); }));
 }
 
-bool GraphPrinter::IsBackEdge(const Edge& edge) const {
+bool RegExpGraphPrinter::IsBackEdge(const Edge& edge) const {
   return schedule_->ScheduledBefore(edge.to(), edge.from());
 }
 
-bool GraphPrinter::EdgeStartsAt(const Edge& edge, const Node* node) const {
+bool RegExpGraphPrinter::EdgeStartsAt(const Edge& edge,
+                                      const RegExpNode* node) const {
   if (!edge.IsValid() || node == nullptr) return false;
-  const Node* start = IsBackEdge(edge) ? edge.to() : edge.from();
+  const RegExpNode* start = IsBackEdge(edge) ? edge.to() : edge.from();
   return start == node;
 }
 
-bool GraphPrinter::EdgeEndsAt(const Edge& edge, const Node* node) const {
+bool RegExpGraphPrinter::EdgeEndsAt(const Edge& edge,
+                                    const RegExpNode* node) const {
   if (!edge.IsValid() || node == nullptr) return false;
-  const Node* end = IsBackEdge(edge) ? edge.from() : edge.to();
+  const RegExpNode* end = IsBackEdge(edge) ? edge.from() : edge.to();
   return end == node;
 }
 
-bool GraphPrinter::IsTarget(const Node* node) const {
+bool RegExpGraphPrinter::IsTarget(const RegExpNode* node) const {
   return node != nullptr &&
          std::find_if(edges_.begin(), edges_.end(), [node](Edge e) {
            return e.to() == node;
          }) != edges_.end();
 }
-bool GraphPrinter::IsStart(const Node* node) const {
+bool RegExpGraphPrinter::IsStart(const RegExpNode* node) const {
   return node != nullptr &&
          std::find_if(edges_.begin(), edges_.end(), [node](Edge e) {
            return e.from() == node;
          }) != edges_.end();
 }
 
-void GraphPrinter::PrintVerticalArrows(Node* current) {
+void RegExpGraphPrinter::PrintVerticalArrows(RegExpNode* current) {
   bool saw_start = false;
   bool saw_target = false;
   bool is_loop = false;
@@ -461,8 +467,8 @@ void GraphPrinter::PrintVerticalArrows(Node* current) {
   os() << (saw_target ? "► " : (!IsTarget(current) ? "  " : "─ "));
 }
 
-void GraphPrinter::PrintVerticalArrowsBelow(Node* current,
-                                            bool has_fallthrough) {
+void RegExpGraphPrinter::PrintVerticalArrowsBelow(RegExpNode* current,
+                                                  bool has_fallthrough) {
   if (!IsTarget(current) || !IsStart(current)) return;
   bool saw_start = false;
   bool saw_target = false;
@@ -514,16 +520,17 @@ void GraphPrinter::PrintVerticalArrowsBelow(Node* current,
   os() << std::endl;
 }
 
-void GraphPrinter::PrintGraph(Node* root) {
+void RegExpGraphPrinter::PrintGraph(RegExpNode* root) {
   schedule_ = std::make_unique<Scheduler>();
   schedule_->CreateSchedule(root);
   PreSizeTargets();
 
   // Print Graph.
   for (size_t i = 0; i < schedule_->size(); i++) {
-    Node* node = schedule_->at(i);
+    RegExpNode* node = schedule_->at(i);
     max_node_id_ = std::max(max_node_id_, labeller()->NodeId(node));
-    Node* next = i + 1 < schedule_->size() ? schedule_->at(i + 1) : nullptr;
+    RegExpNode* next =
+        i + 1 < schedule_->size() ? schedule_->at(i + 1) : nullptr;
     bool has_fallthrough = false;
     for (auto successor : schedule_->successors(node)) {
       if (LoopChoiceNode* loop = successor->AsLoopChoiceNode();
@@ -576,17 +583,17 @@ void GraphPrinter::PrintGraph(Node* root) {
   }
 }
 
-void GraphPrinter::PrintNode(Node* node) {
+void RegExpGraphPrinter::PrintNode(RegExpNode* node) {
   PrintNodeNoNewline(node);
   os() << std::endl;
 }
 
-void GraphPrinter::PrintNodeNoNewline(Node* node) {
+void RegExpGraphPrinter::PrintNodeNoNewline(RegExpNode* node) {
   node->Accept(printer());
-  set_color(PrinterBase::Color::kDefault);
+  set_color(RegExpPrinterBase::Color::kDefault);
 }
 
-void GraphPrinter::PrintTrace(Trace* trace) {
+void RegExpGraphPrinter::PrintTrace(Trace* trace) {
   if (trace->is_trivial()) return;
 
   os() << "Trace: ";
@@ -616,7 +623,7 @@ void GraphPrinter::PrintTrace(Trace* trace) {
     }
     if (trace_part->action() != nullptr) {
       os() << ", action:";
-      Node* action_node = trace_part->action();
+      RegExpNode* action_node = trace_part->action();
       PrintNodeLabel(action_node);
     }
     if (trace_part->special_loop_state() != nullptr) {
@@ -626,7 +633,7 @@ void GraphPrinter::PrintTrace(Trace* trace) {
   }
 }
 
-void GraphPrinter::PrintBoyerMoorePositionInfo(
+void RegExpGraphPrinter::PrintBoyerMoorePositionInfo(
     const BoyerMoorePositionInfo* pi) {
   os() << "[";
   bool first = true;
@@ -640,7 +647,8 @@ void GraphPrinter::PrintBoyerMoorePositionInfo(
   os() << "]";
 }
 
-void GraphPrinter::PrintBoyerMooreLookahead(const BoyerMooreLookahead* bm) {
+void RegExpGraphPrinter::PrintBoyerMooreLookahead(
+    const BoyerMooreLookahead* bm) {
   os() << "BM Info:" << std::endl;
   for (int i = 0; i < bm->length(); ++i) {
     os() << "     " << i << ": ";
@@ -649,7 +657,6 @@ void GraphPrinter::PrintBoyerMooreLookahead(const BoyerMooreLookahead* bm) {
   }
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

@@ -14,15 +14,15 @@
 
   %OptimizeMaglevOnNextCall(add);
   assertEquals(4.2, add(2.1, 2.1));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   // We don't deopt if we use smis.
   assertEquals(42, add(22, 20));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   // We deopt if not a number.
   assertEquals("42", add("4", "2"));
-  assertNotMaglevved(add);
+  assertFalse(isMaglevved(add));
 })();
 
 // Deopt in the second Float64Unbox when the first argument is a Smi.
@@ -36,11 +36,11 @@
 
   %OptimizeMaglevOnNextCall(add);
   assertEquals(4.2, add(2.1, 2.1));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   // We deopt if not a number.
   assertEquals("42", add(4, "2"));
-  assertNotMaglevved(add);
+  assertFalse(isMaglevved(add));
 })();
 
 // Deopt in the second Float64Unbox when the first argument is a double.
@@ -54,11 +54,11 @@
 
   %OptimizeMaglevOnNextCall(add);
   assertEquals(4.2, add(2.1, 2.1));
-  assertMaglevved(add);
+  assertTrue(isMaglevved(add));
 
   // We deopt if not a number.
   assertEquals("4.2!", add(4.2, "!"));
-  assertNotMaglevved(add);
+  assertFalse(isMaglevved(add));
 })();
 
 // Emit FloatAdd through SmiAdd bytecode.

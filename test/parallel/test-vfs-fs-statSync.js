@@ -1,10 +1,10 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.statSync / fs.lstatSync / fs.statfsSync dispatch through the VFS layer,
 // including the `throwIfNoEntry: false` option.
 
-const common = require('../common');
+require('../common');
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -56,20 +56,5 @@ assert.strictEqual(
                           { bigint: true });
   assert.strictEqual(typeof s.bsize, 'bigint');
 }
-
-// statfsSync on a missing path throws ENOENT
-assert.throws(() => fs.statfsSync(path.join(mountPoint, 'missing')),
-              {
-                code: 'ENOENT',
-                syscall: 'statfs',
-                path: path.join(mountPoint, 'missing'),
-              });
-
-// Statfs on a missing path reports ENOENT through the callback
-fs.statfs(path.join(mountPoint, 'missing'), common.mustCall((err) => {
-  assert.strictEqual(err.code, 'ENOENT');
-  assert.strictEqual(err.syscall, 'statfs');
-  assert.strictEqual(err.path, path.join(mountPoint, 'missing'));
-}));
 
 myVfs.unmount();

@@ -22,10 +22,7 @@ try {
     getInstanceTypeIdOf: () => undefined,
     getInstanceTypeIdOfObjectAt: () => undefined,
     getInstanceTypeIdFor: () => 0,
-    getFieldOffset: () => 31,
-    getMetadata: () => ({
-      trustedPointerHandleShift: 9
-    })
+    getFieldOffset: () => 31
   };
 }
 

@@ -6,7 +6,6 @@
 #include "src/base/strings.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-buffer.h"
-#include "src/objects/object-conversions-inl.h"
 #include "test/cctest/heap/heap-utils.h"
 #include "test/cctest/test-api.h"
 
@@ -107,7 +106,7 @@ void ObjectWithExternalArrayTestHelper(v8::Isolate* v8_isolate,
       "sum;");
   CHECK_EQ(28, result->Int32Value(context).FromJust());
 
-  auto test_buf = v8::base::OwnedVector<char>::NewForOverwrite(1024);
+  v8::base::ScopedVector<char> test_buf(1024);
 
   // Check legal boundary conditions.
   // The repeated loads and stores ensure the ICs are exercised.
@@ -120,11 +119,11 @@ void ObjectWithExternalArrayTestHelper(v8::Isolate* v8_isolate,
       "  }"
       "}"
       "res;";
-  v8::base::SNPrintF(test_buf.as_vector(), boundary_program, low);
+  v8::base::SNPrintF(test_buf, boundary_program, low);
   result = CompileRun(test_buf.begin());
   CHECK_EQ(low, result->IntegerValue(context).FromJust());
 
-  v8::base::SNPrintF(test_buf.as_vector(), boundary_program, high);
+  v8::base::SNPrintF(test_buf, boundary_program, high);
   result = CompileRun(test_buf.begin());
   CHECK_EQ(high, result->IntegerValue(context).FromJust());
 
@@ -145,7 +144,7 @@ void ObjectWithExternalArrayTestHelper(v8::Isolate* v8_isolate,
   CHECK_EQ(28, result->Int32Value(context).FromJust());
 
   // Make sure out-of-range loads do not throw.
-  v8::base::SNPrintF(test_buf.as_vector(),
+  v8::base::SNPrintF(test_buf,
                      "var caught_exception = false;"
                      "try {"
                      "  ext_array[%d];"
@@ -158,7 +157,7 @@ void ObjectWithExternalArrayTestHelper(v8::Isolate* v8_isolate,
   CHECK(!result->BooleanValue(v8_isolate));
 
   // Make sure out-of-range stores do not throw.
-  v8::base::SNPrintF(test_buf.as_vector(),
+  v8::base::SNPrintF(test_buf,
                      "var caught_exception = false;"
                      "try {"
                      "  ext_array[%d] = 1;"
@@ -250,7 +249,7 @@ void ObjectWithExternalArrayTestHelper(v8::Isolate* v8_isolate,
     bool is_pixel_data = array_type == i::kExternalUint8ClampedArray;
 
     v8::base::SNPrintF(
-        test_buf.as_vector(),
+        test_buf,
         "%s"
         "var all_passed = true;"
         "for (var i = 0; i < source_data.length; i++) {"
@@ -696,13 +695,12 @@ void TestOnHeapHasBuffer(const char* array_name, size_t elem_size) {
   v8::Isolate* isolate = env.isolate();
   v8::HandleScope handle_scope(isolate);
 
-  auto source = v8::base::OwnedVector<char>::NewForOverwrite(128);
+  v8::base::ScopedVector<char> source(128);
   // Test on-heap sizes.
   for (size_t size = 0; size <= i::JSTypedArray::kMaxSizeInHeap;
        size += elem_size) {
     size_t length = size / elem_size;
-    v8::base::SNPrintF(source.as_vector(), "new %sArray(%zu)", array_name,
-                       length);
+    v8::base::SNPrintF(source, "new %sArray(%zu)", array_name, length);
     auto typed_array =
         v8::Local<v8::TypedArray>::Cast(CompileRun(source.begin()));
 
@@ -729,13 +727,12 @@ void TestOffHeapHasBuffer(const char* array_name, size_t elem_size) {
   v8::Isolate* isolate = env.isolate();
   v8::HandleScope handle_scope(isolate);
 
-  auto source = v8::base::OwnedVector<char>::NewForOverwrite(128);
+  v8::base::ScopedVector<char> source(128);
   // Test off-heap sizes.
   size_t size = i::JSTypedArray::kMaxSizeInHeap;
   for (int i = 0; i < 3; i++) {
     size_t length = 1 + (size / elem_size);
-    v8::base::SNPrintF(source.as_vector(), "new %sArray(%zu)", array_name,
-                       length);
+    v8::base::SNPrintF(source, "new %sArray(%zu)", array_name, length);
     auto typed_array =
         v8::Local<v8::TypedArray>::Cast(CompileRun(source.begin()));
     CHECK_EQ(length, typed_array->Length());

@@ -11,7 +11,6 @@
 #include "src/heap/heap-visitor.h"
 #include "src/heap/heap.h"
 #include "src/heap/marking-worklist.h"
-#include "src/heap/pending-allocations.h"
 #include "src/heap/pretenuring-handler.h"
 
 namespace v8 {
@@ -37,9 +36,7 @@ class YoungGenerationMarkingVisitor final
 
   YoungGenerationMarkingVisitor(
       Heap* heap,
-      PretenuringHandler::PretenuringFeedbackMap* local_pretenuring_feedback,
-      YoungPendingAllocations::Snapshot* young_pending_allocations_snapshot =
-          nullptr);
+      PretenuringHandler::PretenuringFeedbackMap* local_pretenuring_feedback);
 
   ~YoungGenerationMarkingVisitor() override;
 
@@ -128,8 +125,6 @@ class YoungGenerationMarkingVisitor final
   EphemeronRememberedSet::TableList::Local ephemeron_table_list_local_;
   PretenuringHandler* const pretenuring_handler_;
   PretenuringHandler::PretenuringFeedbackMap* const local_pretenuring_feedback_;
-  const YoungPendingAllocations::Snapshot* const
-      young_pending_allocations_snapshot_;
   const bool shortcut_strings_;
 };
 

@@ -1,1 +1,1 @@
-#include "../../../config/openssl_fipskey.h"
+#include "../../../config/fipskey.h"

@@ -8,8 +8,6 @@
 
 #include "src/objects/js-locale.h"
 
-#include <algorithm>
-#include <cctype>
 #include <map>
 #include <memory>
 #include <string>
@@ -40,7 +38,7 @@ namespace internal {
 namespace {
 
 struct OptionData {
-  Handle<InternalizedString> (Factory::*object_key)();
+  Handle<String> (Factory::*object_key)();
   const char* key;
   const std::span<const std::string_view> possible_values;
   bool is_bool_value;
@@ -147,7 +145,7 @@ Maybe<bool> InsertOptionsIntoLocale(Isolate* isolate,
 DirectHandle<Object> UnicodeKeywordValue(Isolate* isolate,
                                          DirectHandle<JSLocale> locale,
                                          const char* key) {
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
+  icu::Locale* icu_locale = locale->icu_locale()->raw();
   UErrorCode status = U_ZERO_ERROR;
   std::string value =
       icu_locale->getUnicodeKeywordValue<std::string>(key, status);
@@ -287,30 +285,28 @@ bool JSLocale::StartsWithUnicodeLanguageId(std::string_view value) {
 }
 
 namespace {
-// Return false if variants contain duplicate elements or invalid delimiters.
-bool IsValidVariants(std::string_view variants) {
+// Return true if variants contain duplicate elements.
+bool DuplicateVariants(std::string variants) {
   // The length of one unicode_variant_subtag is between 4-8. To have
-  // duplicate or multiple subtags, the length of the variants need to be >=
-  // 4+1+4 = 9.
+  // duplicate, the length of the variants need to be >= 4+1+4 = 9.
   if (variants.length() >= 9) {
+    std::transform(
+        variants.begin(), variants.end(), variants.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    size_t pos = 0;
+    size_t count = 1;
     std::set<std::string> set;
-    size_t start = 0;
-    for (size_t i = 0; i <= variants.length(); ++i) {
-      if (i == variants.length() || variants[i] == '-') {
-        std::string subtag(variants.substr(start, i - start));
-        std::transform(
-            subtag.begin(), subtag.end(), subtag.begin(),
-            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (!set.insert(subtag).second) {
-          return false;
-        }
-        start = i + 1;
-      } else if (variants[i] == '_') {
-        return false;
-      }
+    while ((pos = variants.find('-')) != std::string::npos) {
+      set.insert(variants.substr(0, pos));
+      variants.erase(0, pos + 1);
+      count++;
+    }
+    set.insert(variants);
+    if (count != set.size()) {
+      return true;
     }
   }
-  return true;
+  return false;
 }
 Maybe<bool> ApplyOptionsToTag(Isolate* isolate, DirectHandle<String> tag,
                               DirectHandle<JSReceiver> options,
@@ -395,31 +391,33 @@ Maybe<bool> ApplyOptionsToTag(Isolate* isolate, DirectHandle<String> tag,
     }
   }
 
-  // 8. Let variants be ? GetOption(options, "variants", string, empty,
-  // GetLocaleVariants(baseName)).
-  DirectHandle<String> variants_str;
-  Maybe<bool> maybe_variants =
-      GetStringOption(isolate, options, isolate->factory()->variants_string(),
-                      "ApplyOptionsToTag", &variants_str);
-  MAYBE_RETURN(maybe_variants, Nothing<bool>());
-  // 9. If variants is not undefined, then
-  if (maybe_variants.FromJust()) {
-    // a. If variants is the empty String, throw a RangeError exception.
-    // b. Let lowerVariants be the ASCII-lowercase of variants.
-    std::string variants_stdstr = variants_str->ToStdString();
-    // c. Let variantSubtags be StringSplitToList(lowerVariants, "-").
-    // d. For each element variant of variantSubtags, do
-    // i. If variant cannot be matched by the unicode_variant_subtag Unicode
-    // locale nonterminal, throw a RangeError exception.
-    builder->setVariant(variants_stdstr);
-    builder->build(status);
-    if (U_FAILURE(status) || variants_stdstr.empty()) {
-      return Just(false);
-    }
-    // e. If variantSubtags contains any duplicate elements, throw a
-    // RangeError exception.
-    if (!IsValidVariants(variants_stdstr)) {
-      return Just(false);
+  if (v8_flags.js_intl_locale_variants) {
+    // 8. Let variants be ? GetOption(options, "variants", string, empty,
+    // GetLocaleVariants(baseName)).
+    DirectHandle<String> variants_str;
+    Maybe<bool> maybe_variants =
+        GetStringOption(isolate, options, isolate->factory()->variants_string(),
+                        "ApplyOptionsToTag", &variants_str);
+    MAYBE_RETURN(maybe_variants, Nothing<bool>());
+    // 9. If variants is not undefined, then
+    if (maybe_variants.FromJust()) {
+      // a. If variants is the empty String, throw a RangeError exception.
+      // b. Let lowerVariants be the ASCII-lowercase of variants.
+      std::string variants_stdstr = variants_str->ToStdString();
+      // c. Let variantSubtags be StringSplitToList(lowerVariants, "-").
+      // d. For each element variant of variantSubtags, do
+      // i. If variant cannot be matched by the unicode_variant_subtag Unicode
+      // locale nonterminal, throw a RangeError exception.
+      builder->setVariant(variants_stdstr);
+      builder->build(status);
+      if (U_FAILURE(status) || variants_stdstr.empty()) {
+        return Just(false);
+      }
+      // e. If variantSubtags contains any duplicate elements, throw a
+      // RangeError exception.
+      if (DuplicateVariants(variants_stdstr)) {
+        return Just(false);
+      }
     }
   }
 
@@ -519,7 +517,7 @@ MaybeDirectHandle<JSLocale> JSLocale::Maximize(Isolate* isolate,
   // ICU has limitation on the length of the locale while addLikelySubtags
   // is called. Work around the issue by only perform addLikelySubtags
   // on the base locale and merge the extension if needed.
-  icu::Locale source(*(locale->icu_locale()->ptr()));
+  icu::Locale source(*(locale->icu_locale()->raw()));
   icu::Locale result = icu::Locale::createFromName(source.getBaseName());
   UErrorCode status = U_ZERO_ERROR;
   result.addLikelySubtags(status);
@@ -553,7 +551,7 @@ MaybeDirectHandle<JSLocale> JSLocale::Minimize(Isolate* isolate,
   // ICU has limitation on the length of the locale while minimizeSubtags
   // is called. Work around the issue by only perform addLikelySubtags
   // on the base locale and merge the extension if needed.
-  icu::Locale source(*(locale->icu_locale()->ptr()));
+  icu::Locale source(*(locale->icu_locale()->raw()));
   icu::Locale result = icu::Locale::createFromName(source.getBaseName());
   UErrorCode status = U_ZERO_ERROR;
   result.minimizeSubtags(status);
@@ -613,118 +611,6 @@ MaybeDirectHandle<JSArray> GetKeywordValuesFromLocale(
 
 namespace {
 
-// https://tc39.es/ecma402/#sec-canonicalunicodesubdivision
-std::string CanonicalUnicodeSubdivision(const icu::Locale& icu_locale,
-                                        const char* key) {
-  UErrorCode status = U_ZERO_ERROR;
-  // 1. Let subdivision be UnicodeExtensionValue(locale, key).
-  std::string subdivision =
-      icu_locale.getUnicodeKeywordValue<std::string>(key, status);
-
-  // 2. If subdivision is ~empty~, return undefined.
-  if (U_FAILURE(status) || subdivision.empty()) return "";
-
-  // 3. If subdivision cannot be matched by the unicode_subdivision_id Unicode
-  // locale nonterminal, return undefined.
-  // unicode_subdivision_id = unicode_region_subtag unicode_subdivision_suffix
-  // unicode_region_subtag = (alpha{2} | digit{3})
-  // unicode_subdivision_suffix = alphanum{1,4}
-  //
-  // 4. Let region be the longest prefix of subdivision matched by the
-  // unicode_region_subtag Unicode locale nonterminal.
-  // Real examples: "gbeng" -> region "GB", "usca" -> region "US", "001abc" ->
-  // region "001".
-  std::string_view sub_view(subdivision);
-  std::string_view region;
-  if (sub_view.length() >= 4 && IsDigit(sub_view.substr(0, 3), 3, 3)) {
-    if (!IsAlphanum(sub_view.substr(3), 1, 4)) return "";
-    region = sub_view.substr(0, 3);
-  } else {
-    if (sub_view.length() < 3 || !IsAlpha(sub_view.substr(0, 2), 2, 2) ||
-        !IsAlphanum(sub_view.substr(2), 1, 4)) {
-      return "";
-    }
-    region = sub_view.substr(0, 2);
-  }
-
-  // 5. Let regionLocale be the string-concatenation of "und-" and region.
-  // 6. Set regionLocale to CanonicalizeUnicodeLocaleId(regionLocale).
-  // 7. Return GetLocaleRegion(regionLocale).
-  std::string result(region);
-  std::transform(result.begin(), result.end(), result.begin(),
-                 [](unsigned char c) { return std::toupper(c); });
-  return result;
-}
-
-struct RegionPreferenceRecord {
-  std::string region;
-  std::string region_override;
-};
-
-// https://tc39.es/ecma402/#sec-regionpreference
-RegionPreferenceRecord RegionPreference(const icu::Locale& icu_locale) {
-  // 1. Let region be GetLocaleRegion(locale).
-  const char* country = icu_locale.getCountry();
-  std::string region = (country != nullptr) ? country : "";
-
-  // 2. If region is undefined, then
-  if (region.empty()) {
-    // a. Set region to CanonicalUnicodeSubdivision(locale, "sd").
-    region = CanonicalUnicodeSubdivision(icu_locale, "sd");
-
-    // b. If region is undefined, then
-    if (region.empty()) {
-      // i. Let maximal be the result of the Add Likely Subtags algorithm
-      // applied to locale. If an error is signaled, set maximal to locale.
-      // ii. Set maximal to CanonicalizeUnicodeLocaleId(maximal).
-      UErrorCode status = U_ZERO_ERROR;
-      icu::Locale maximal = icu_locale;
-      maximal.addLikelySubtags(status);
-      if (U_FAILURE(status)) maximal = icu_locale;
-
-      // iii. Set region to GetLocaleRegion(maximal).
-      const char* max_country = maximal.getCountry();
-      region = (max_country != nullptr) ? max_country : "";
-
-      // iv. If region is undefined, then
-      if (region.empty()) {
-        // 1. Set region to "001".
-        region = "001";
-      }
-    }
-  }
-
-  // 3. Let regionOverride be CanonicalUnicodeSubdivision(locale, "rg").
-  std::string region_override = CanonicalUnicodeSubdivision(icu_locale, "rg");
-
-  // 4. Return { [[Region]]: region, [[RegionOverride]]: regionOverride }.
-  return {region, region_override};
-}
-
-// Applies RegionPreference(icu_locale) to construct an icu::Locale with the
-// preferred lookup region. Implements region resolution for:
-// - (CalendarsOfLocale) 2-3. Let preference be
-// RegionPreference(loc.[[Locale]]).
-//   If preference.[[RegionOverride]] is not undefined, let preferredRegions be
-//   « preference.[[RegionOverride]], preference.[[Region]] »; else ...
-// - (HourCyclesOfLocale) 2-3. Let preference be
-// RegionPreference(loc.[[Locale]]).
-//   If preference.[[RegionOverride]] is not undefined, let preferredRegions be
-//   « preference.[[RegionOverride]], preference.[[Region]] »; else ...
-// - (WeekInfoOfLocale) 1-5. Let preference be RegionPreference(loc.[[Locale]]).
-//   Select lookupRegion based on regionOverride or region.
-icu::Locale ApplyRegionPreference(const icu::Locale& icu_locale) {
-  RegionPreferenceRecord pref = RegionPreference(icu_locale);
-  std::string lookup_region =
-      !pref.region_override.empty() ? pref.region_override : pref.region;
-  UErrorCode status = U_ZERO_ERROR;
-  icu::Locale res = icu::LocaleBuilder()
-                        .setLocale(icu_locale)
-                        .setRegion(lookup_region)
-                        .build(status);
-  return U_SUCCESS(status) ? res : icu_locale;
-}
-
 MaybeDirectHandle<JSArray> CalendarsForLocale(Isolate* isolate,
                                               const icu::Locale& icu_locale,
                                               bool commonly_used, bool sort) {
@@ -736,9 +622,8 @@ MaybeDirectHandle<JSArray> CalendarsForLocale(Isolate* isolate,
 
 MaybeDirectHandle<JSArray> JSLocale::GetCalendars(
     Isolate* isolate, DirectHandle<JSLocale> locale) {
-  icu::Locale icu_locale(*(locale->icu_locale()->ptr()));
-  return CalendarsForLocale(isolate, ApplyRegionPreference(icu_locale), true,
-                            false);
+  icu::Locale icu_locale(*(locale->icu_locale()->raw()));
+  return CalendarsForLocale(isolate, icu_locale, true, false);
 }
 
 MaybeDirectHandle<JSArray> Intl::AvailableCalendars(Isolate* isolate) {
@@ -748,7 +633,7 @@ MaybeDirectHandle<JSArray> Intl::AvailableCalendars(Isolate* isolate) {
 
 MaybeDirectHandle<JSArray> JSLocale::GetCollations(
     Isolate* isolate, DirectHandle<JSLocale> locale) {
-  icu::Locale icu_locale(*(locale->icu_locale()->ptr()));
+  icu::Locale icu_locale(*(locale->icu_locale()->raw()));
   return GetKeywordValuesFromLocale<icu::Collator>(
       isolate, "collations", "co", icu_locale, Intl::RemoveCollation, true,
       true);
@@ -758,7 +643,7 @@ MaybeDirectHandle<JSArray> JSLocale::GetHourCycles(
     Isolate* isolate, DirectHandle<JSLocale> locale) {
   // Let preferred be loc.[[HourCycle]].
   // Let locale be loc.[[Locale]].
-  icu::Locale icu_locale(*(locale->icu_locale()->ptr()));
+  icu::Locale icu_locale(*(locale->icu_locale()->raw()));
   Factory* factory = isolate->factory();
 
   // Assert: locale matches the unicode_locale_id production.
@@ -780,8 +665,7 @@ MaybeDirectHandle<JSArray> JSLocale::GetHourCycles(
   }
   status = U_ZERO_ERROR;
   std::unique_ptr<icu::DateTimePatternGenerator> generator(
-      icu::DateTimePatternGenerator::createInstance(
-          ApplyRegionPreference(icu_locale), status));
+      icu::DateTimePatternGenerator::createInstance(icu_locale, status));
   if (U_FAILURE(status)) {
     THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError));
   }
@@ -817,7 +701,7 @@ MaybeDirectHandle<JSArray> JSLocale::GetNumberingSystems(
   // Let preferred be loc.[[NumberingSystem]].
 
   // Let locale be loc.[[Locale]].
-  icu::Locale icu_locale(*(locale->icu_locale()->ptr()));
+  icu::Locale icu_locale(*(locale->icu_locale()->raw()));
   Factory* factory = isolate->factory();
 
   // Assert: locale matches the unicode_locale_id production.
@@ -849,7 +733,7 @@ MaybeDirectHandle<Object> JSLocale::GetTimeZones(
   // Perform ? RequireInternalSlot(loc, [[InitializedLocale]])
 
   // Let locale be loc.[[Locale]].
-  icu::Locale icu_locale(*(locale->icu_locale()->ptr()));
+  icu::Locale icu_locale(*(locale->icu_locale()->raw()));
   Factory* factory = isolate->factory();
 
   // If the unicode_language_id production of locale does not contain the
@@ -897,7 +781,7 @@ MaybeDirectHandle<JSObject> JSLocale::GetTextInfo(
       factory->NewJSObject(isolate->object_function());
 
   // Let dir be "ltr".
-  DirectHandle<String> dir = locale->icu_locale()->ptr()->isRightToLeft()
+  DirectHandle<String> dir = locale->icu_locale()->raw()->isRightToLeft()
                                  ? factory->rtl_string()
                                  : factory->ltr_string();
 
@@ -925,8 +809,8 @@ MaybeDirectHandle<JSObject> JSLocale::GetWeekInfo(
   DirectHandle<JSObject> info =
       factory->NewJSObject(isolate->object_function());
   UErrorCode status = U_ZERO_ERROR;
-  std::unique_ptr<icu::Calendar> calendar(icu::Calendar::createInstance(
-      ApplyRegionPreference(*(locale->icu_locale()->ptr())), status));
+  std::unique_ptr<icu::Calendar> calendar(
+      icu::Calendar::createInstance(*(locale->icu_locale()->raw()), status));
   if (U_FAILURE(status)) {
     THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError));
   }
@@ -974,8 +858,7 @@ MaybeDirectHandle<JSObject> JSLocale::GetWeekInfo(
 DirectHandle<Object> JSLocale::Language(Isolate* isolate,
                                         DirectHandle<JSLocale> locale) {
   Factory* factory = isolate->factory();
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
-  const char* language = icu_locale->getLanguage();
+  const char* language = locale->icu_locale()->raw()->getLanguage();
   constexpr const char kUnd[] = "und";
   if (strlen(language) == 0) {
     language = kUnd;
@@ -986,16 +869,14 @@ DirectHandle<Object> JSLocale::Language(Isolate* isolate,
 DirectHandle<Object> JSLocale::Script(Isolate* isolate,
                                       DirectHandle<JSLocale> locale) {
   Factory* factory = isolate->factory();
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
-  const char* script = icu_locale->getScript();
+  const char* script = locale->icu_locale()->raw()->getScript();
   if (strlen(script) == 0) return factory->undefined_value();
   return factory->NewStringFromAsciiChecked(script);
 }
-
 DirectHandle<Object> JSLocale::Variants(Isolate* isolate,
                                         DirectHandle<JSLocale> locale) {
   Factory* factory = isolate->factory();
-  std::string variants = locale->icu_locale()->ptr()->getVariant();
+  std::string variants = locale->icu_locale()->raw()->getVariant();
   if (variants.length() == 0) return factory->undefined_value();
   // icu::Locale::getVariants() return the variants in upper case characters
   // with '_', we need to convert it to lower case and '-' before return.
@@ -1011,8 +892,7 @@ DirectHandle<Object> JSLocale::Variants(Isolate* isolate,
 DirectHandle<Object> JSLocale::Region(Isolate* isolate,
                                       DirectHandle<JSLocale> locale) {
   Factory* factory = isolate->factory();
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
-  const char* region = icu_locale->getCountry();
+  const char* region = locale->icu_locale()->raw()->getCountry();
   if (strlen(region) == 0) return factory->undefined_value();
   return factory->NewStringFromAsciiChecked(region);
 }
@@ -1020,7 +900,7 @@ DirectHandle<Object> JSLocale::Region(Isolate* isolate,
 DirectHandle<String> JSLocale::BaseName(Isolate* isolate,
                                         DirectHandle<JSLocale> locale) {
   icu::Locale icu_locale =
-      icu::Locale::createFromName(locale->icu_locale()->ptr()->getBaseName());
+      icu::Locale::createFromName(locale->icu_locale()->raw()->getBaseName());
   std::string base_name = Intl::ToLanguageTag(icu_locale).FromJust();
   return isolate->factory()->NewStringFromAsciiChecked(base_name.c_str());
 }
@@ -1052,7 +932,7 @@ DirectHandle<Object> JSLocale::HourCycle(Isolate* isolate,
 DirectHandle<Object> JSLocale::Numeric(Isolate* isolate,
                                        DirectHandle<JSLocale> locale) {
   Factory* factory = isolate->factory();
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
+  icu::Locale* icu_locale = locale->icu_locale()->raw();
   UErrorCode status = U_ZERO_ERROR;
   std::string numeric =
       icu_locale->getUnicodeKeywordValue<std::string>("kn", status);
@@ -1065,7 +945,7 @@ DirectHandle<Object> JSLocale::NumberingSystem(Isolate* isolate,
 }
 
 std::string JSLocale::ToString(DirectHandle<JSLocale> locale) {
-  Managed<icu::Locale>::Ptr icu_locale = locale->icu_locale()->ptr();
+  icu::Locale* icu_locale = locale->icu_locale()->raw();
   return Intl::ToLanguageTag(*icu_locale).FromJust();
 }
 

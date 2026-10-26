@@ -58,18 +58,14 @@ void TTYWrap::Initialize(Local<Object> target,
 
   Local<String> ttyString = FIXED_ONE_BYTE_STRING(env->isolate(), "TTY");
 
-  Local<FunctionTemplate> t = env->tty_constructor_template();
-  if (t.IsEmpty()) {
-    t = NewFunctionTemplate(isolate, New);
-    t->SetClassName(ttyString);
-    t->InstanceTemplate()->SetInternalFieldCount(TTYWrap::kInternalFieldCount);
-    t->Inherit(LibuvStreamWrap::GetConstructorTemplate(env));
+  Local<FunctionTemplate> t = NewFunctionTemplate(isolate, New);
+  t->SetClassName(ttyString);
+  t->InstanceTemplate()->SetInternalFieldCount(TTYWrap::kInternalFieldCount);
+  t->Inherit(LibuvStreamWrap::GetConstructorTemplate(env));
 
-    SetProtoMethodNoSideEffect(
-        isolate, t, "getWindowSize", TTYWrap::GetWindowSize);
-    SetProtoMethod(isolate, t, "setRawMode", SetRawMode);
-    env->set_tty_constructor_template(t);
-  }
+  SetProtoMethodNoSideEffect(
+      isolate, t, "getWindowSize", TTYWrap::GetWindowSize);
+  SetProtoMethod(isolate, t, "setRawMode", SetRawMode);
 
   SetMethodNoSideEffect(context, target, "isTTY", IsTTY);
   NODE_DEFINE_CONSTANT(target, UV_TTY_MODE_NORMAL);
@@ -77,8 +73,9 @@ void TTYWrap::Initialize(Local<Object> target,
   NODE_DEFINE_CONSTANT(target, UV_TTY_MODE_RAW_VT);
 
   Local<Value> func;
-  if (t->GetFunction(context).ToLocal(&func)) {
-    target->Set(context, ttyString, func).Check();
+  if (t->GetFunction(context).ToLocal(&func) &&
+      target->Set(context, ttyString, func).IsJust()) {
+    env->set_tty_constructor_template(t);
   }
 }
 

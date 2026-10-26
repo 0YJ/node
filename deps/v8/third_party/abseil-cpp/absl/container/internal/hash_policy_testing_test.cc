@@ -14,10 +14,7 @@
 
 #include "absl/container/internal/hash_policy_testing.h"
 
-#include <utility>
-
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

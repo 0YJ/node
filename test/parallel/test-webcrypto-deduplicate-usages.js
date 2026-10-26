@@ -54,7 +54,7 @@ function assertSameSet(actual, expected, msg) {
     symmetric.splice(symmetric.findIndex(({ algorithm }) =>
       algorithm.name === 'ChaCha20-Poly1305'), 1);
 
-  if (!isBoringSSL) {
+  if (hasOpenSSL(3)) {
     symmetric.push({
       algorithm: { name: 'AES-OCB', length: 128 },
       usages: ['decrypt', 'encrypt', 'decrypt', 'encrypt'],
@@ -66,19 +66,12 @@ function assertSameSet(actual, expected, msg) {
       expected: ['sign', 'verify'],
     });
   } else {
-    common.printSkipMessage('AES-OCB and KMAC are not supported by BoringSSL');
+    common.printSkipMessage('AES-OCB and KMAC require OpenSSL >= 3');
   }
 
   for (const { algorithm, usages, expected } of symmetric) {
     tests.push((async () => {
-      const generated = subtle.generateKey(algorithm, true, usages);
-      if (hasFIPS(3) && algorithm.name === 'AES-OCB') {
-        await assert.rejects(generated, {
-          name: 'NotSupportedError', message: 'Unrecognized algorithm name',
-        });
-        return;
-      }
-      const key = await generated;
+      const key = await subtle.generateKey(algorithm, true, usages);
       assertSameSet(key.usages, expected,
                     `generateKey ${algorithm.name}`);
       assert.strictEqual(key.usages.length, expected.length,
@@ -178,7 +171,7 @@ function assertSameSet(actual, expected, msg) {
       expected: ['wrapKey', 'unwrapKey'] },
   ];
 
-  if (!isBoringSSL) {
+  if (hasOpenSSL(3)) {
     // KMAC does not support `raw` format, only `raw-secret` and `jwk`.
     tests.push((async () => {
       const key = await subtle.importKey(
@@ -203,7 +196,7 @@ function assertSameSet(actual, expected, msg) {
       assert.strictEqual(key.usages.length, 2);
     })());
   } else {
-    common.printSkipMessage('AES-OCB and KMAC are not supported by BoringSSL');
+    common.printSkipMessage('AES-OCB and KMAC require OpenSSL >= 3');
   }
 
   for (const { algorithm, keyData, usages, expected } of rawSymmetric) {
@@ -235,19 +228,12 @@ function assertSameSet(actual, expected, msg) {
   // Argon2 only supports raw-secret import.
   if (hasOpenSSL(3, 2)) {
     tests.push((async () => {
-      const imported = subtle.importKey(
+      const key = await subtle.importKey(
         'raw-secret',
         new Uint8Array(16),
         'Argon2id',
         false,
         ['deriveBits', 'deriveBits']);
-      if (hasFIPS(3)) {
-        await assert.rejects(imported, {
-          name: 'NotSupportedError', message: 'Unrecognized algorithm name',
-        });
-        return;
-      }
-      const key = await imported;
       assertSameSet(key.usages, ['deriveBits'],
                     'importKey raw-secret Argon2id');
       assert.strictEqual(key.usages.length, 1);
@@ -374,26 +360,19 @@ function assertSameSet(actual, expected, msg) {
   })());
 
   // AES-OCB raw-secret import.
-  if (!isBoringSSL) {
+  if (hasOpenSSL(3)) {
     tests.push((async () => {
-      const imported = subtle.importKey(
+      const key = await subtle.importKey(
         'raw-secret',
         new Uint8Array(16),
         { name: 'AES-OCB' },
         true,
         ['decrypt', 'encrypt', 'decrypt', 'encrypt']);
-      if (hasFIPS(3)) {
-        await assert.rejects(imported, {
-          name: 'NotSupportedError', message: 'Unrecognized algorithm name',
-        });
-        return;
-      }
-      const key = await imported;
       assertSameSet(key.usages, ['encrypt', 'decrypt']);
       assert.strictEqual(key.usages.length, 2);
     })());
   } else {
-    common.printSkipMessage('AES-OCB is not supported by BoringSSL');
+    common.printSkipMessage('AES-OCB requires OpenSSL >= 3');
   }
 
   Promise.all(tests).then(common.mustCall());
@@ -469,7 +448,7 @@ function assertSameSet(actual, expected, msg) {
       expected: ['wrapKey', 'unwrapKey'] },
   ];
 
-  if (!isBoringSSL) {
+  if (hasOpenSSL(3)) {
     jwkVectors.push({
       algorithm: { name: 'AES-OCB', length: 128 },
       usages: ['decrypt', 'encrypt', 'decrypt', 'encrypt'],
@@ -481,19 +460,12 @@ function assertSameSet(actual, expected, msg) {
       expected: ['sign', 'verify'],
     });
   } else {
-    common.printSkipMessage('AES-OCB and KMAC are not supported by BoringSSL');
+    common.printSkipMessage('AES-OCB and KMAC require OpenSSL >= 3');
   }
 
   for (const { algorithm, usages, expected } of jwkVectors) {
     tests.push((async () => {
-      const generated = subtle.generateKey(algorithm, true, usages);
-      if (hasFIPS(3) && algorithm.name === 'AES-OCB') {
-        await assert.rejects(generated, {
-          name: 'NotSupportedError', message: 'Unrecognized algorithm name',
-        });
-        return;
-      }
-      const key = await generated;
+      const key = await subtle.generateKey(algorithm, true, usages);
       const jwk = await subtle.exportKey('jwk', key);
       assertSameSet(jwk.key_ops, expected,
                     `jwk key_ops for ${algorithm.name}`);

@@ -21,16 +21,14 @@ namespace {
 using wasm::WasmOpcode;
 using wasm::WasmOpcodes;
 
+static constexpr bool kNotShared = false;
+
 class WasmIntoJSInlinerImpl : private wasm::Decoder {
   using ValidationTag = NoValidationTag;
 
   struct Value {
     Node* node = nullptr;
     wasm::ValueType type = wasm::kWasmBottom;
-
-    CheckForNull null_check() const {
-      return type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
-    }
   };
 
  public:
@@ -192,16 +190,15 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
     DCHECK(input.type.is_reference_to(wasm::GenericKind::kExtern) ||
            input.type.is_reference_to(wasm::GenericKind::kNoExtern));
     wasm::ValueType result_type = wasm::ValueType::Generic(
-        wasm::GenericKind::kAny, input.type.nullability(), SharedFlag{false});
+        wasm::GenericKind::kAny, input.type.nullability(), kNotShared);
     Node* internalized = gasm_.WasmAnyConvertExtern(input.node);
     return TypeNode(internalized, result_type);
   }
 
   Value ParseExternConvertAny(Value input) {
     DCHECK(input.type.is_ref());
-    wasm::ValueType result_type =
-        wasm::ValueType::Generic(wasm::GenericKind::kExtern,
-                                 input.type.nullability(), SharedFlag{false});
+    wasm::ValueType result_type = wasm::ValueType::Generic(
+        wasm::GenericKind::kExtern, input.type.nullability(), kNotShared);
     Node* internalized = gasm_.WasmExternConvertAny(input.node);
     return TypeNode(internalized, result_type);
   }
@@ -223,8 +220,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       return {};
     }
     const bool is_signed = opcode == wasm::kExprStructGetS;
+    const CheckForNull null_check =
+        struct_val.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
     Node* member = gasm_.StructGet(struct_val.node, struct_type, field_index,
-                                   is_signed, struct_val.null_check());
+                                   is_signed, null_check);
     SetSourcePosition(member);
     return TypeNode(member, struct_type->field(field_index).Unpacked());
   }
@@ -239,8 +238,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       is_inlineable_ = false;
       return;
     }
+    const CheckForNull null_check =
+        wasm_struct.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
     gasm_.StructSet(wasm_struct.node, value.node, struct_type, field_index,
-                    wasm_struct.null_check());
+                    null_check);
     SetSourcePosition(gasm_.effect());
   }
 
@@ -254,14 +255,28 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
         is_inlineable_ = false;
         return {};
       }
-      wasm::ValueType target_type = wasm::ValueType::Generic(
+      auto done = gasm_.MakeLabel();
+      // Abstract cast to array.
+      if (input.type.is_nullable() && null_succeeds) {
+        gasm_.GotoIf(gasm_.IsNull(input.node, input.type), &done);
+      }
+      gasm_.TrapIf(gasm_.IsSmi(input.node), TrapId::kTrapIllegalCast);
+      gasm_.TrapUnless(gasm_.HasInstanceType(input.node, WASM_ARRAY_TYPE),
+                       TrapId::kTrapIllegalCast);
+      SetSourcePosition(gasm_.effect());
+      gasm_.Goto(&done);
+      gasm_.Bind(&done);
+      // Add TypeGuard for graph typing.
+      TFGraph* graph = mcgraph_->graph();
+      wasm::ValueType result_type = wasm::ValueType::Generic(
           wasm::GenericKind::kArray,
-          null_succeeds ? wasm::kNullable : wasm::kNonNullable,
-          SharedFlag{false});
-      Node* cast =
-          gasm_.WasmTypeCastAbstract(input.node, {input.type, target_type});
-      SetSourcePosition(cast);
-      return TypeNode(cast, target_type);
+          null_succeeds ? wasm::kNullable : wasm::kNonNullable, kNotShared);
+      Node* type_guard =
+          graph->NewNode(mcgraph_->common()->TypeGuard(
+                             Type::Wasm(result_type, module_, graph->zone())),
+                         input.node, gasm_.effect(), gasm_.control());
+      gasm_.InitializeEffectControl(type_guard, gasm_.control());
+      return TypeNode(type_guard, result_type);
     }
     wasm::ModuleTypeIndex target_type_index{static_cast<uint32_t>(heap_index)};
     if (module_->has_signature(target_type_index)) {
@@ -290,13 +305,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
 
   Value ParseArrayLen(Value input) {
     DCHECK(wasm::IsHeapSubtypeOf(input.type.heap_type(),
-                                 wasm::kWasmArrayRef.heap_type(), module_) ||
-           wasm::IsHeapSubtypeOf(
-               input.type.heap_type(),
-               wasm::IndependentHeapType{wasm::GenericKind::kArray,
-                                         wasm::kNullable, SharedFlag{true}},
-               module_));
-    Node* len = gasm_.ArrayLength(input.node, input.null_check());
+                                 wasm::kWasmArrayRef.heap_type(), module_));
+    const CheckForNull null_check =
+        input.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
+    Node* len = gasm_.ArrayLength(input.node, null_check);
     SetSourcePosition(len);
     return TypeNode(len, wasm::kWasmI32);
   }
@@ -310,8 +322,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       return {};
     }
     const bool is_signed = opcode == WasmOpcode::kExprArrayGetS;
+    const CheckForNull null_check =
+        array.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
     // Perform bounds check.
-    Node* length = gasm_.ArrayLength(array.node, array.null_check());
+    Node* length = gasm_.ArrayLength(array.node, null_check);
     SetSourcePosition(length);
     gasm_.TrapUnless(gasm_.Uint32LessThan(index.node, length),
                      TrapId::kTrapArrayOutOfBounds);
@@ -330,8 +344,10 @@ class WasmIntoJSInlinerImpl : private wasm::Decoder {
       is_inlineable_ = false;
       return;
     }
+    const CheckForNull null_check =
+        array.type.is_nullable() ? kWithNullCheck : kWithoutNullCheck;
     // Perform bounds check.
-    Node* length = gasm_.ArrayLength(array.node, array.null_check());
+    Node* length = gasm_.ArrayLength(array.node, null_check);
     SetSourcePosition(length);
     gasm_.TrapUnless(gasm_.Uint32LessThan(index.node, length),
                      TrapId::kTrapArrayOutOfBounds);

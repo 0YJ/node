@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --wasm-staging
+
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 (function TestArrayNewS128Unreachable() {
   print(arguments.callee.name);
   const builder = new WasmModuleBuilder();
-  let array = builder.addArray(kWasmS128);
+  let array = builder.addArray(kWasmS128, true);
   let empty_sig = builder.addType(makeSig([], []));
   builder.addFunction(undefined, empty_sig)
     .addBody([
@@ -31,7 +33,7 @@ d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
   print(arguments.callee.name);
   const builder = new WasmModuleBuilder();
   let empty_sig = builder.addType(makeSig([], []));
-  let array = builder.addArray(wasmRefType(empty_sig));
+  let array = builder.addArray(wasmRefType(empty_sig), true);
   let empty_func = builder.addFunction(undefined, empty_sig)
     .addBody([]).exportFunc();
   builder.addFunction("main", empty_sig)

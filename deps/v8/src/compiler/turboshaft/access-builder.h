@@ -78,7 +78,7 @@ class AccessBuilderTS : public AllStatic {
   }
   static FieldAccessTS<FeedbackVector, Word32> ForFeedbackVectorLength() {
     return FieldAccessTS<FeedbackVector, Word32>(compiler::FieldAccess{
-        BaseTaggedness::kTaggedBase, offsetof(FeedbackVector, length_),
+        BaseTaggedness::kTaggedBase, FeedbackVector::kLengthOffset,
         Handle<Name>(), OptionalMapRef(), TypeCache::Get()->kInt32,
         MachineType::Int32(), WriteBarrierKind::kNoWriteBarrier});
   }
@@ -88,14 +88,14 @@ class AccessBuilderTS : public AllStatic {
   }
   static FieldAccessTS<PropertyCell, Object> ForPropertyCellValue() {
     return FieldAccessTS<PropertyCell, Object>(compiler::FieldAccess{
-        BaseTaggedness::kTaggedBase, offsetof(PropertyCell, value_),
-        Handle<Name>(), OptionalMapRef(), compiler::Type::Any(),
-        MachineType::AnyTagged(), WriteBarrierKind::kFullWriteBarrier});
+        BaseTaggedness::kTaggedBase, PropertyCell::kValueOffset, Handle<Name>(),
+        OptionalMapRef(), compiler::Type::Any(), MachineType::AnyTagged(),
+        WriteBarrierKind::kFullWriteBarrier});
   }
   static FieldAccessTS<JSPrimitiveWrapper, Object>
   ForJSPrimitiveWrapperValue() {
     return FieldAccessTS<JSPrimitiveWrapper, Object>(compiler::FieldAccess{
-        BaseTaggedness::kTaggedBase, offsetof(JSPrimitiveWrapper, value_),
+        BaseTaggedness::kTaggedBase, JSPrimitiveWrapper::kValueOffset,
         Handle<Name>(), OptionalMapRef(), compiler::Type::Any(),
         MachineType::AnyTagged(), WriteBarrierKind::kFullWriteBarrier});
   }

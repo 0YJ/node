@@ -250,7 +250,7 @@
       "path": ["Iterators"],
       "main": "run.js",
       "resources": ["forof.js"],
-      "flags": ["--for_of_optimization", "--maglev", "--no-turbofan"],
+      "flags": ["--for_of_optimization"],
       "results_regexp": "^%s\\-Iterators\\(Score\\): (.+)$",
       "tests": [
         {"name": "ForOf"}
@@ -652,14 +652,6 @@
             {"name": "JSLoop"},
             {"name": "PureJSLoop"}
           ]
-        },
-        {
-          "name": "AdditiveSafeIntFeedback",
-          "main": "run.js",
-          "flags": [],
-          "resources": ["additiveSafeIntFeedback.js"],
-          "test_flags": ["additiveSafeIntFeedback"],
-          "results_regexp": "^AdditiveSafeIntFeedback\\-TurboFan\\(Score\\): (.+)$"
         }
       ]
     },

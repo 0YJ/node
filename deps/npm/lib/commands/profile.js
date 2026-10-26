@@ -16,6 +16,8 @@ const knownProfileKeys = [
   'two-factor auth',
   'fullname',
   'homepage',
+  'freenode',
+  'twitter',
   'github',
   'created',
   'updated',
@@ -26,6 +28,8 @@ const writableProfileKeys = [
   'password',
   'fullname',
   'homepage',
+  'freenode',
+  'twitter',
   'github',
 ]
 

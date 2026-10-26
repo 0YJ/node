@@ -23,7 +23,10 @@ where
     T: Into<PathSegment>,
 {
     fn from(segment: T) -> Self {
-        let mut path = Path { leading_colon: None, segments: Punctuated::new() };
+        let mut path = Path {
+            leading_colon: None,
+            segments: Punctuated::new(),
+        };
         path.segments.push_value(segment.into());
         path
     }
@@ -37,8 +40,8 @@ impl Path {
     ///
     /// - the path has no leading colon,
     /// - the number of path segments is 1,
-    /// - the first path segment has no angle bracketed or parenthesized path
-    ///   arguments, and
+    /// - the first path segment has no angle bracketed or parenthesized
+    ///   path arguments, and
     /// - the ident of the first path segment is equal to the given one.
     ///
     /// # Example
@@ -75,8 +78,8 @@ impl Path {
     ///
     /// - the path has no leading colon,
     /// - the number of path segments is 1, and
-    /// - the first path segment has no angle bracketed or parenthesized path
-    ///   arguments.
+    /// - the first path segment has no angle bracketed or parenthesized
+    ///   path arguments.
     pub fn get_ident(&self) -> Option<&Ident> {
         if self.leading_colon.is_none()
             && self.segments.len() == 1
@@ -116,7 +119,10 @@ where
     T: Into<Ident>,
 {
     fn from(ident: T) -> Self {
-        PathSegment { ident: ident.into(), arguments: PathArguments::None }
+        PathSegment {
+            ident: ident.into(),
+            arguments: PathArguments::None,
+        }
     }
 }
 
@@ -425,11 +431,11 @@ pub(crate) mod parsing {
 
             #[cfg(not(feature = "full"))]
             {
-                let begin = input.cursor();
+                let begin = input.fork();
                 let content;
                 braced!(content in input);
                 content.parse::<Expr>()?;
-                let verbatim = verbatim::between(begin, input.cursor());
+                let verbatim = verbatim::between(&begin, input);
                 return Ok(Expr::Verbatim(verbatim));
             }
         }
@@ -527,7 +533,10 @@ pub(crate) mod parsing {
                 && !input.peek(Token![<<=])
                 || input.peek(Token![::]) && input.peek3(Token![<])
             {
-                Ok(PathSegment { ident, arguments: PathArguments::AngleBracketed(input.parse()?) })
+                Ok(PathSegment {
+                    ident,
+                    arguments: PathArguments::AngleBracketed(input.parse()?),
+                })
             } else {
                 Ok(PathSegment::from(ident))
             }
@@ -627,7 +636,9 @@ pub(crate) mod parsing {
         }
 
         pub(crate) fn is_mod_style(&self) -> bool {
-            self.segments.iter().all(|segment| segment.arguments.is_none())
+            self.segments
+                .iter()
+                .all(|segment| segment.arguments.is_none())
         }
     }
 
@@ -662,11 +673,20 @@ pub(crate) mod parsing {
                     (pos, Some(as_token), path)
                 }
                 None => {
-                    let path = Path { leading_colon: Some(colon2_token), segments: rest };
+                    let path = Path {
+                        leading_colon: Some(colon2_token),
+                        segments: rest,
+                    };
                     (0, None, path)
                 }
             };
-            let qself = QSelf { lt_token, ty: Box::new(this), position, as_token, gt_token };
+            let qself = QSelf {
+                lt_token,
+                ty: Box::new(this),
+                position,
+                as_token,
+                gt_token,
+            };
             Ok((Some(qself), path))
         } else {
             let path = Path::parse_helper(input, expr_style)?;

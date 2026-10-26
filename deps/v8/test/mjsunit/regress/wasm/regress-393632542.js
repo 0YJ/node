@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --jit-fuzzing
+// Flags: --jit-fuzzing --experimental-wasm-type-reflection
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
-const funcI32 = new WebAssemblyFunction({
+const funcVoid = new WebAssembly.Function({
+  parameters: [],
+  results: []
+}, arg => null);
+
+const funcI32 = new WebAssembly.Function({
   parameters: [],
   results: ["i32"]
-}, function () {});
+}, funcVoid);
 
 (function TestCallImport() {
   let builder = new WasmModuleBuilder();

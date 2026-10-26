@@ -44,8 +44,7 @@ const reifyOutput = (npm, arb, extras = {}) => {
   }
 
   if (diff) {
-    const showDiff = !npm.flatOptions.json &&
-      (npm.config.get('dry-run') || npm.config.get('long'))
+    const showDiff = npm.config.get('dry-run') || npm.config.get('long')
     const chalk = npm.chalk
 
     depth({
@@ -222,7 +221,7 @@ const packagesChangedMessage = (npm, { added, removed, changed, audited }) => {
 }
 
 const packagesFundingMessage = (npm, { funding }) => {
-  if (!funding || npm.global) {
+  if (!funding) {
     return
   }
 
@@ -243,9 +242,8 @@ const unreviewedScriptsMessage = (npm, unreviewedScripts) => {
   // stdout is reserved for things the user explicitly asked to see
   // (npm ls, npm view).
   const count = unreviewedScripts.length
-  const pkg = count === 1 ? 'package had' : 'packages had'
-  const header =
-    `${count} ${pkg} install scripts blocked because they are not covered by allowScripts:`
+  const pkg = count === 1 ? 'package has' : 'packages have'
+  const header = `${count} ${pkg} install scripts not yet covered by allowScripts:`
 
   const names = []
   const lines = unreviewedScripts.map(({ node, scripts }) => {

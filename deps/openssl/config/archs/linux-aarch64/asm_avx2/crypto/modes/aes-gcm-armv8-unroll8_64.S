@@ -1,4 +1,4 @@
-#include "arch/arm_arch.h"
+#include "arm_arch.h"
 
 #if __ARM_MAX_ARCH__>=8
 .arch	armv8-a+crypto

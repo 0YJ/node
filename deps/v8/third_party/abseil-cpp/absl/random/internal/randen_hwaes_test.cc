@@ -14,14 +14,13 @@
 
 #include "absl/random/internal/randen_hwaes.h"
 
-#include <cstdint>
-#include <cstring>
-
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/log/log.h"
 #include "absl/random/internal/platform.h"
 #include "absl/random/internal/randen_detect.h"
 #include "absl/random/internal/randen_traits.h"
+#include "absl/strings/str_format.h"
 
 namespace {
 

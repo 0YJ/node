@@ -15,7 +15,7 @@
 #include "internal/cryptlib.h"
 
 #define OPENSSL_RISCVCAP_IMPL
-#include "arch/riscv_arch.h"
+#include "crypto/riscv_arch.h"
 
 #ifdef OSSL_RISCV_HWPROBE
 #include <unistd.h>
@@ -129,7 +129,7 @@ size_t riscv_vlen(void)
     return vlen;
 }
 
-#if defined(__GNUC__)
+#if defined(__GNUC__) && __GNUC__ >= 2
 __attribute__((constructor))
 #endif
 void OPENSSL_cpuid_setup(void)

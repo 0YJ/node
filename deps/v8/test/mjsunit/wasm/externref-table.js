@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --experimental-wasm-type-reflection
+
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function TestExternRefTableSetWithMultipleTypes() {
@@ -170,7 +172,7 @@ function getDummy(val) {
   print(arguments.callee.name);
 
   const js_function = function (i) { return i + 1; };
-  const wasm_js_function = new WebAssemblyFunction(
+  const wasm_js_function = new WebAssembly.Function(
     {parameters:['i32', 'i32'], results: ['i32']},
     function(a, b) { return a * b; })
 
@@ -214,7 +216,7 @@ function getDummy(val) {
       .exportAs('dummy');
   let instance = builder.instantiate();
   const js_function = function (i) { return i + 1; };
-  const wasm_js_function = new WebAssemblyFunction(
+  const wasm_js_function = new WebAssembly.Function(
     {parameters:['i32', 'i32'], results: ['i32']},
     function(a, b) { return a * b; })
 

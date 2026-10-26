@@ -3,7 +3,6 @@
 const Dispatcher = require('./dispatcher')
 const { InvalidArgumentError } = require('../core/errors')
 const { toRawHeaders } = require('../core/util')
-const { kOriginless, kUrl } = require('../core/symbols')
 
 class LegacyHandlerWrapper {
   #handler
@@ -17,16 +16,12 @@ class LegacyHandlerWrapper {
   }
 
   onRequestUpgrade (controller, statusCode, headers, socket) {
-    const rawHeaders = Array.isArray(controller?.rawHeaders)
-      ? controller.rawHeaders
-      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
+    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
     this.#handler.onUpgrade?.(statusCode, rawHeaders, socket)
   }
 
   onResponseStart (controller, statusCode, headers, statusMessage) {
-    const rawHeaders = Array.isArray(controller?.rawHeaders)
-      ? controller.rawHeaders
-      : toRawHeaders(controller?.rawHeaders ?? headers ?? {})
+    const rawHeaders = controller?.rawHeaders ?? toRawHeaders(headers ?? {})
 
     if (this.#handler.onHeaders?.(statusCode, rawHeaders, () => controller.resume(), statusMessage) === false) {
       controller.pause()
@@ -40,9 +35,7 @@ class LegacyHandlerWrapper {
   }
 
   onResponseEnd (controller, trailers) {
-    const rawTrailers = Array.isArray(controller?.rawTrailers)
-      ? controller.rawTrailers
-      : toRawHeaders(controller?.rawTrailers ?? trailers ?? {})
+    const rawTrailers = controller?.rawTrailers ?? toRawHeaders(trailers ?? {})
     this.#handler.onComplete?.(rawTrailers)
   }
 
@@ -78,8 +71,6 @@ class Dispatcher1Wrapper extends Dispatcher {
     }
 
     this.#dispatcher = dispatcher
-    this[kUrl] = dispatcher[kUrl]
-    this[kOriginless] = dispatcher[kOriginless]
   }
 
   static wrapHandler (handler) {
@@ -102,17 +93,6 @@ class Dispatcher1Wrapper extends Dispatcher {
     }
 
     return this.#dispatcher.dispatch(opts, Dispatcher1Wrapper.wrapHandler(handler))
-  }
-
-  // Older undici versions read WebSocket and EventSource receive limits from
-  // the (legacy) global dispatcher, which is this wrapper, so report the
-  // wrapped dispatcher's settings.
-  get webSocketOptions () {
-    return this.#dispatcher.webSocketOptions
-  }
-
-  get eventSourceOptions () {
-    return this.#dispatcher.eventSourceOptions
   }
 
   close (...args) {

@@ -69,54 +69,50 @@ impl AttrsHelper {
             return Ok(Some(display));
         }
 
-        let literals = attrs
+        let num_doc_attrs = attrs
             .iter()
             .filter(|attr| attr.path().is_ident("doc"))
-            .map(|attr| match &attr.meta {
-                Meta::NameValue(syn::MetaNameValue {
-                    value:
-                        syn::Expr::Lit(syn::ExprLit {
-                            lit: syn::Lit::Str(lit),
-                            ..
-                        }),
-                    ..
-                }) => lit,
-                _ => unimplemented!(),
-            });
+            .count();
 
-        let span = match literals.clone().next() {
-            Some(lit) => lit.span(),
-            None => return Ok(None),
-        };
+        if !self.ignore_extra_doc_attributes && num_doc_attrs > 1 {
+            panic!("Multi-line comments are disabled by default by displaydoc. Please consider using block doc comments (/** */) or adding the #[ignore_extra_doc_attributes] attribute to your type next to the derive.");
+        }
 
-        let strs = literals.map(|lit| {
-            // Make an attempt at cleaning up multiline doc comments.
-            let doc_str = lit
-                .value()
-                .lines()
-                .map(|line| line.trim().trim_start_matches('*').trim())
-                .collect::<Vec<&str>>()
-                .join("\n")
-                .trim()
-                .to_string();
-            (!doc_str.is_empty()).then_some(doc_str)
-        });
+        for attr in attrs {
+            if attr.path().is_ident("doc") {
+                let lit = match &attr.meta {
+                    Meta::NameValue(syn::MetaNameValue {
+                        value:
+                            syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(lit),
+                                ..
+                            }),
+                        ..
+                    }) => lit,
+                    _ => unimplemented!(),
+                };
 
-        let joined = if self.ignore_extra_doc_attributes {
-            strs.take_while(|x| x.is_some()).collect::<Option<Vec<_>>>()
-        } else {
-            strs.collect::<Option<Vec<_>>>()
-        }.unwrap_or_else(|| {
-            panic!("Paragraph breaks in multi-line doc comments are disabled by default by displaydoc. Please consider using block doc comments (/** */) or adding the #[ignore_extra_doc_attributes] attribute to your type next to the derive");
-        }).join(" ");
+                // Make an attempt at cleaning up multiline doc comments.
+                let doc_str = lit
+                    .value()
+                    .lines()
+                    .map(|line| line.trim().trim_start_matches('*').trim())
+                    .collect::<Vec<&str>>()
+                    .join("\n");
 
-        let mut display = Display {
-            fmt: LitStr::new(&joined, span),
-            args: TokenStream::new(),
-        };
+                let lit = LitStr::new(doc_str.trim(), lit.span());
 
-        display.expand_shorthand();
-        Ok(Some(display))
+                let mut display = Display {
+                    fmt: lit,
+                    args: TokenStream::new(),
+                };
+
+                display.expand_shorthand();
+                return Ok(Some(display));
+            }
+        }
+
+        Ok(None)
     }
 
     pub(crate) fn display_with_input(

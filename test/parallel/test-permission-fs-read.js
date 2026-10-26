@@ -1,4 +1,4 @@
-// Flags: --permission --allow-fs-read=* --allow-fs-write=* --allow-child-process --allow-env=NODE_TEST_DIR,TEST_*
+// Flags: --permission --allow-fs-read=* --allow-fs-write=* --allow-child-process
 'use strict';
 
 const common = require('../common');
@@ -43,7 +43,6 @@ const commonPath = path.join(__filename, '../../common');
     process.execPath,
     [
       '--permission',
-      '--allow-env=BOUNDARY_FILE',
       ...grantedFiles.map((file) => `--allow-fs-read=${file}`),
       ...grantedFiles.map((file) => `--allow-fs-write=${file}`),
       '-e',
@@ -80,7 +79,6 @@ const commonPath = path.join(__filename, '../../common');
     process.execPath,
     [
       '--permission',
-      '--allow-env=BLOCKEDFILE,BLOCKEDFOLDER,ALLOWEDFOLDER',
       // Do not uncomment this line
       // `--allow-fs-read=${file}`,
       `--allow-fs-read=${commonPathWildcard}`,

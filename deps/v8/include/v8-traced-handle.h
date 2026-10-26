@@ -82,10 +82,9 @@ class TracedReferenceBase : public api_internal::IndirectHandleBase {
   /**
    * Update this reference in a thread-safe way.
    */
-  void SetSlotThreadSafe(internal::Address* new_val,
-                         std::memory_order order = std::memory_order_relaxed) {
-    reinterpret_cast<std::atomic<internal::Address*>*>(&slot())->store(new_val,
-                                                                       order);
+  void SetSlotThreadSafe(internal::Address* new_val) {
+    reinterpret_cast<std::atomic<internal::Address*>*>(&slot())->store(
+        new_val, std::memory_order_relaxed);
   }
 
   /**
@@ -186,12 +185,10 @@ class TracedReference : public BasicTracedReference<T> {
     if (V8_UNLIKELY(that.IsEmpty())) {
       return;
     }
-    this->SetSlotThreadSafe(
-        this->NewFromNonEmptyValue(
-            isolate, *that, &this->slot(),
-            internal::TracedReferenceStoreMode::kInitializingStore,
-            internal::TracedReferenceHandling::kDefault),
-        std::memory_order_release);
+    this->slot() = this->NewFromNonEmptyValue(
+        isolate, *that, &this->slot(),
+        internal::TracedReferenceStoreMode::kInitializingStore,
+        internal::TracedReferenceHandling::kDefault);
   }
 
   /**
@@ -209,12 +206,10 @@ class TracedReference : public BasicTracedReference<T> {
     if (V8_UNLIKELY(that.IsEmpty())) {
       return;
     }
-    this->SetSlotThreadSafe(
-        this->NewFromNonEmptyValue(
-            isolate, *that, &this->slot(),
-            internal::TracedReferenceStoreMode::kInitializingStore,
-            internal::TracedReferenceHandling::kDroppable),
-        std::memory_order_release);
+    this->slot() = this->NewFromNonEmptyValue(
+        isolate, *that, &this->slot(),
+        internal::TracedReferenceStoreMode::kInitializingStore,
+        internal::TracedReferenceHandling::kDroppable);
   }
 
   /**
@@ -361,12 +356,10 @@ void TracedReference<T>::Reset(Isolate* isolate, const Local<S>& other) {
   if (V8_UNLIKELY(other.IsEmpty())) {
     return;
   }
-  this->SetSlotThreadSafe(
-      this->NewFromNonEmptyValue(
-          isolate, *other, &this->slot(),
-          internal::TracedReferenceStoreMode::kAssigningStore,
-          internal::TracedReferenceHandling::kDefault),
-      std::memory_order_release);
+  this->SetSlotThreadSafe(this->NewFromNonEmptyValue(
+      isolate, *other, &this->slot(),
+      internal::TracedReferenceStoreMode::kAssigningStore,
+      internal::TracedReferenceHandling::kDefault));
 }
 
 template <class T>
@@ -378,12 +371,10 @@ void TracedReference<T>::Reset(Isolate* isolate, const Local<S>& other,
   if (V8_UNLIKELY(other.IsEmpty())) {
     return;
   }
-  this->SetSlotThreadSafe(
-      this->NewFromNonEmptyValue(
-          isolate, *other, &this->slot(),
-          internal::TracedReferenceStoreMode::kAssigningStore,
-          internal::TracedReferenceHandling::kDroppable),
-      std::memory_order_release);
+  this->SetSlotThreadSafe(this->NewFromNonEmptyValue(
+      isolate, *other, &this->slot(),
+      internal::TracedReferenceStoreMode::kAssigningStore,
+      internal::TracedReferenceHandling::kDroppable));
 }
 
 template <class T>

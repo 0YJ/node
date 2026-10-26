@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-imported-strings-utf8 --future
+// Flags: --wasm-staging --no-liftoff --future
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -10,12 +10,12 @@ let generateUselessCode = (n) => new Array(n).fill([kExprMemoryGrow, 0]).flat();
 
 const builder = new WasmModuleBuilder();
 builder.startRecGroup();
-builder.addArray(kWasmI8, {final: true});
+builder.addArray(kWasmI8, true, kNoSuperType, true);
 builder.endRecGroup();
 builder.startRecGroup();
-builder.addArray(kWasmI16, {final: true});
+builder.addArray(kWasmI16, true, kNoSuperType, true);
 builder.endRecGroup();
-builder.addStruct([]);
+builder.addStruct([], kNoSuperType, false);
 let mainSig = builder.addType(
     makeSig([kWasmI32, kWasmI32, kWasmI32], [kWasmI32]));
 let decodeSig = builder.addType(makeSig(

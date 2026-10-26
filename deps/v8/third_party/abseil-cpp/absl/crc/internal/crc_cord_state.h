@@ -16,9 +16,7 @@
 #define ABSL_CRC_INTERNAL_CRC_CORD_STATE_H_
 
 #include <atomic>
-#include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <deque>
 
 #include "absl/base/config.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,27 +30,17 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
     CMS_ContentInfo *cms;
     BIO *in;
 
-    if (len == 0 || len > INT_MAX)
+    if (len == 0)
         return 0;
 
     in = BIO_new(BIO_s_mem());
-    if (in == NULL) {
-        ERR_clear_error();
-        return 0;
-    }
-    if ((size_t)BIO_write(in, buf, (int)len) != len) {
-        BIO_free(in);
-        ERR_clear_error();
-        return 0;
-    }
+    OPENSSL_assert((size_t)BIO_write(in, buf, len) == len);
     cms = d2i_CMS_bio(in, NULL);
     if (cms != NULL) {
         BIO *out = BIO_new(BIO_s_null());
 
-        if (out != NULL) {
-            i2d_CMS_bio(out, cms);
-            BIO_free(out);
-        }
+        i2d_CMS_bio(out, cms);
+        BIO_free(out);
         CMS_ContentInfo_free(cms);
     }
 

@@ -1,7 +1,7 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
-// Constructor variants for vfs.create() and
+// Constructor variants and option validation for vfs.create() and
 // `new VirtualFileSystem(...)`.
 
 require('../common');
@@ -14,9 +14,10 @@ const vfs = require('node:vfs');
   assert.ok(myVfs.provider instanceof vfs.MemoryProvider);
 }
 
-// vfs.create with the options object as its first argument
+// vfs.create with first arg as options object (no provider)
 {
   const myVfs = vfs.create({ emitExperimentalWarning: false });
+  assert.ok(myVfs);
   assert.ok(myVfs.provider instanceof vfs.MemoryProvider);
 }
 
@@ -27,7 +28,7 @@ const vfs = require('node:vfs');
   assert.strictEqual(myVfs.provider, provider);
 }
 
-// new VirtualFileSystem() directly
+// new VirtualFileSystem(options) directly
 {
   const myVfs = new vfs.VirtualFileSystem({ emitExperimentalWarning: false });
   assert.ok(myVfs);

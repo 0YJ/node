@@ -116,7 +116,9 @@ class SimulatorStack : public v8::internal::AllStatic {
     return base::VectorOf(reinterpret_cast<uint8_t*>(lower_bound), size);
   }
 
-  static int JSStackLimitMargin() { return V8_STACK_LIMIT_MARGIN_KB * KB; }
+  static int JSStackLimitMargin() {
+    return wasm::StackMemory::JSCentralStackLimitMarginKB() * KB;
+  }
 #endif
 
   static void IterateRegistersAndStack(Isolate* isolate,
@@ -179,7 +181,7 @@ class GeneratedCode {
   }
 #else
 
-  __attribute__((nodebug)) DISABLE_CFI_ICALL Return Call(Args... args) {
+  DISABLE_CFI_ICALL Return Call(Args... args) {
     // When running without a simulator we call the entry directly.
 // Starboard is a platform abstraction interface that also include Windows
 // platforms like UWP.
@@ -191,16 +193,9 @@ class GeneratedCode {
 #if V8_OS_ZOS
     // z/OS ABI requires function descriptors (FD). Artificially create a pseudo
     // FD to ensure correct dispatch to generated code.
-    extern void ZosFuncForJSEnv();
-    typedef struct {
-      void* env;
-      void* addr;
-    } FuncDesc;
-    volatile FuncDesc func_desc;
-    func_desc.env = (reinterpret_cast<FuncDesc*>(&ZosFuncForJSEnv))->env;
-    func_desc.addr = reinterpret_cast<void*>(fn_ptr_);
-    Signature* fn;
-    asm volatile(" " : "=a"(fn) : "0"(&func_desc) : "memory");
+    void* function_desc[2] = {0, reinterpret_cast<void*>(fn_ptr_)};
+    asm volatile(" stg 5,%0 " : "=m"(function_desc[0])::"r5");
+    Signature* fn = reinterpret_cast<Signature*>(function_desc);
     return fn(args...);
 #else
     // AIX ABI requires function descriptors (FD).  Artificially create a pseudo
@@ -223,8 +218,7 @@ class GeneratedCode {
   }
 #endif  // USE_SIMULATOR
 
-  __attribute__((nodebug)) DISABLE_CFI_ICALL Return
-  CallSandboxed(Args... args) {
+  DISABLE_CFI_ICALL Return CallSandboxed(Args... args) {
     EnterSandboxScope sandboxed;
     return Call(args...);
   }

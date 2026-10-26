@@ -23,4 +23,4 @@ assertEquals('exception', foo());
 
 assertEquals(100, foo(dv));
 assertEquals('exception', foo());
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));

@@ -9,7 +9,6 @@
 #include "src/heap/mark-compact-inl.h"
 #include "src/objects/allocation-site.h"
 #include "src/objects/casting-inl.h"
-#include "src/objects/heap-object-field-inl.h"
 #include "src/objects/js-weak-refs.h"
 
 namespace v8 {
@@ -52,7 +51,7 @@ Tagged<Object> VisitWeakList(Heap* heap, Tagged<Object> list,
         }
       }
       // Retained object is new tail.
-      DCHECK(!IsUndefined(retained));
+      DCHECK(!IsUndefined(retained, heap->isolate()));
       tail = Cast<T>(retained);
 
       // tail is a live object, visit it.
@@ -77,7 +76,7 @@ struct WeakListVisitor<Context> {
     // Record the slots of the weak entries in the native context.
     for (int idx = Context::FIRST_WEAK_SLOT;
          idx < Context::NATIVE_CONTEXT_SLOTS; ++idx) {
-      ObjectSlot slot(&context->elements()[idx]);
+      ObjectSlot slot = context->RawField(Context::OffsetOfElementAt(idx));
       MarkCompactCollector::RecordSlot(context, slot, Cast<HeapObject>(*slot));
     }
   }
@@ -94,7 +93,7 @@ struct WeakListVisitor<AllocationSiteWithWeakNext> {
 template <>
 struct WeakListVisitor<JSFinalizationRegistry> {
   static constexpr int kWeakNextOffset =
-      offsetof(JSFinalizationRegistry, next_dirty_);
+      JSFinalizationRegistry::kNextDirtyOffset;
 
   static void VisitLiveObject(Heap* heap, Tagged<JSFinalizationRegistry> obj) {
     heap->set_dirty_js_finalization_registries_list_tail(obj);

@@ -35,7 +35,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "include/cppgc/macros.h"
 #include "include/v8-exception.h"
 #include "include/v8-local-handle.h"
 #include "include/v8-persistent-handle.h"
@@ -152,8 +151,6 @@ class InjectedScript final {
   void setLastEvaluationResult(v8::Local<v8::Value> result);
 
   class Scope {
-    CPPGC_STACK_ALLOCATED();
-
    public:
     Response initialize();
     void installCommandLineAPI();
@@ -162,7 +159,7 @@ class InjectedScript final {
     void allowCodeGenerationFromStrings();
     void setTryCatchVerbose();
     v8::Local<v8::Context> context() const { return m_context; }
-    InjectedScript* injectedScript() const { return m_injectedScript.get(); }
+    InjectedScript* injectedScript() const { return m_injectedScript; }
     const v8::TryCatch& tryCatch() const { return m_tryCatch; }
     V8InspectorImpl* inspector() const { return m_inspector; }
 
@@ -172,8 +169,7 @@ class InjectedScript final {
     virtual Response findInjectedScript(V8InspectorSessionImpl*) = 0;
 
     V8InspectorImpl* m_inspector;
-    std::shared_ptr<InjectedScript> m_injectedScript;
-    std::shared_ptr<InspectedContext> m_inspectedContext;
+    InjectedScript* m_injectedScript;
 
    private:
     void cleanup();
@@ -193,8 +189,6 @@ class InjectedScript final {
   };
 
   class ContextScope : public Scope {
-    CPPGC_STACK_ALLOCATED();
-
    public:
     ContextScope(V8InspectorSessionImpl*, int executionContextId);
     ~ContextScope() override;
@@ -207,8 +201,6 @@ class InjectedScript final {
   };
 
   class ObjectScope : public Scope {
-    CPPGC_STACK_ALLOCATED();
-
    public:
     ObjectScope(V8InspectorSessionImpl*, const String16& remoteObjectId);
     ~ObjectScope() override;
@@ -225,8 +217,6 @@ class InjectedScript final {
   };
 
   class CallFrameScope : public Scope {
-    CPPGC_STACK_ALLOCATED();
-
    public:
     CallFrameScope(V8InspectorSessionImpl*, const String16& remoteCallFrameId);
     ~CallFrameScope() override;

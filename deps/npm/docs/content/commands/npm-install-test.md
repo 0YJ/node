@@ -116,7 +116,8 @@ on deeper dependencies. Sets `--install-strategy=shallow`.
 Dependency types to omit from the installation tree on disk.
 
 Note that these dependencies _are_ still resolved and added to the
-`package-lock.json` file. They are just not physically installed on disk.
+`package-lock.json` or `npm-shrinkwrap.json` file. They are just not
+physically installed on disk.
 
 If a package type appears in both the `--include` and `--omit` lists, then
 it will be included.
@@ -224,9 +225,6 @@ Note that commands explicitly intended to run a particular script, such as
 run their intended script if `ignore-scripts` is set, but they will *not*
 run any pre- or post-scripts.
 
-Setting `ignore-scripts` also disables `.npm-extension` execution, as if
-`ignore-extension` were set.
-
 
 
 #### `allow-directory`
@@ -267,7 +265,7 @@ dependencies to be used for other commands like `npm view`
 
 #### `allow-git`
 
-* Default: "none"
+* Default: "all"
 * Type: "all", "none", or "root"
 
 Limits the ability for npm to fetch dependencies from git references. That
@@ -275,11 +273,6 @@ is, dependencies that point to a git repo instead of a version or semver
 range. Please note that this could leave your tree incomplete and some
 packages may not function as intended or designed. Changing this setting
 will not remove dependencies that are already installed.
-
-As of npm 12 the default is `none`. Git dependencies run `git` against a
-remote repo and may install configuration the project does not control. Opt
-in explicitly per project (in `.npmrc`) or per command (on the CLI) when you
-need git deps.
 
 `all` allows any git dependencies to be fetched and installed. `none`
 prevents any git dependencies from being fetched and installed. `root` only
@@ -291,7 +284,7 @@ like `npm view`
 
 #### `allow-remote`
 
-* Default: "none"
+* Default: "all"
 * Type: "all", "none", or "root"
 
 Limits the ability for npm to fetch dependencies from urls. That is,
@@ -299,13 +292,6 @@ dependencies that point to a tarball url instead of a version or semver
 range. Please note that this could leave your tree incomplete and some
 packages may not function as intended or designed. Changing this setting
 will not remove dependencies that are already installed.
-
-As of npm 12 the default is `none`. Tarballs that share a hostname with the
-configured registry (the typical case for the npm registry, GitHub Packages,
-and most private registries) are still installed normally. If your registry
-serves tarballs from a different host, set `replace-registry-host` or
-override this setting. Opt in explicitly per project (in `.npmrc`) or per
-command (on the CLI) when you intentionally install from a URL.
 
 `all` allows any url to be installed. `none` prevents any url from being
 installed. `root` only allows urls defined in your project's package.json to
@@ -334,7 +320,7 @@ Each name is matched against a dependency's resolved identity, not against
 the package's self-reported name. `--ignore-scripts` and
 `--dangerously-allow-all-scripts` both override this setting.
 
-This value is not exported to the environment for child processes.
+
 
 #### `strict-allow-scripts`
 
@@ -342,12 +328,11 @@ This value is not exported to the environment for child processes.
 * Type: Boolean
 
 If `true`, turn the install-script policy from a warning into a hard error:
-any dependency with install scripts that is not covered by `allowScripts`
-will fail the install instead of being blocked with a warning.
+any dependency with install scripts not covered by `allowScripts` will fail
+the install instead of running with a notice.
 
 Dependencies explicitly denied with `false` in `allowScripts` are always
-silently skipped; this setting only affects unreviewed entries (packages
-with install scripts that are neither approved nor denied).
+silently skipped; this setting only affects unreviewed entries.
 `--ignore-scripts` and `--dangerously-allow-all-scripts` both override this
 setting.
 

@@ -296,9 +296,8 @@ class BasicSlotSet {
     template <AccessMode access_mode = AccessMode::ATOMIC>
     uint32_t LoadCell(int cell_index) {
       DCHECK_LT(cell_index, kCellsPerBucket);
-      if constexpr (access_mode == AccessMode::ATOMIC) {
+      if constexpr (access_mode == AccessMode::ATOMIC)
         return v8::base::AsAtomic32::Acquire_Load(cell(cell_index));
-      }
       return *(cell(cell_index));
     }
 
@@ -416,9 +415,8 @@ class BasicSlotSet {
 
   template <AccessMode access_mode = AccessMode::ATOMIC>
   Bucket* LoadBucket(Bucket** bucket) {
-    if (access_mode == AccessMode::ATOMIC) {
+    if (access_mode == AccessMode::ATOMIC)
       return v8::base::AsAtomicPointer::Acquire_Load(bucket);
-    }
     return *bucket;
   }
 

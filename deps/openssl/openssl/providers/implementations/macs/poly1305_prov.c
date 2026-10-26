@@ -7,8 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <string.h>
-
 #include <openssl/core_dispatch.h>
 #include <openssl/core_names.h>
 #include <openssl/params.h>
@@ -16,12 +14,10 @@
 #include <openssl/err.h>
 #include <openssl/proverr.h>
 
-#include "internal/cryptlib.h"
 #include "crypto/poly1305.h"
 
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
-#include "providers/implementations/macs/poly1305_prov.inc"
 
 /*
  * Forward declaration of everything implemented here.  This is not strictly
@@ -145,42 +141,43 @@ static int poly1305_final(void *vmacctx, unsigned char *out, size_t *outl,
     return 1;
 }
 
+static const OSSL_PARAM known_gettable_params[] = {
+    OSSL_PARAM_size_t(OSSL_MAC_PARAM_SIZE, NULL),
+    OSSL_PARAM_END
+};
 static const OSSL_PARAM *poly1305_gettable_params(void *provctx)
 {
-    return poly1305_get_params_list;
+    return known_gettable_params;
 }
 
 static int poly1305_get_params(OSSL_PARAM params[])
 {
-    struct poly1305_get_params_st p;
+    OSSL_PARAM *p;
 
-    if (!poly1305_get_params_decoder(params, &p))
-        return 0;
-
-    if (p.size != NULL && !OSSL_PARAM_set_size_t(p.size, poly1305_size()))
-        return 0;
+    if ((p = OSSL_PARAM_locate(params, OSSL_MAC_PARAM_SIZE)) != NULL)
+        return OSSL_PARAM_set_size_t(p, poly1305_size());
 
     return 1;
 }
 
+static const OSSL_PARAM known_settable_ctx_params[] = {
+    OSSL_PARAM_octet_string(OSSL_MAC_PARAM_KEY, NULL, 0),
+    OSSL_PARAM_END
+};
 static const OSSL_PARAM *poly1305_settable_ctx_params(ossl_unused void *ctx,
     ossl_unused void *provctx)
 {
-    return poly1305_set_ctx_params_list;
+    return known_settable_ctx_params;
 }
 
 static int poly1305_set_ctx_params(void *vmacctx, const OSSL_PARAM *params)
 {
     struct poly1305_data_st *ctx = vmacctx;
-    struct poly1305_set_ctx_params_st p;
+    const OSSL_PARAM *p;
 
-    if (ctx == NULL || !poly1305_set_ctx_params_decoder(params, &p))
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_MAC_PARAM_KEY)) != NULL
+        && !poly1305_setkey(ctx, p->data, p->data_size))
         return 0;
-
-    if (p.key != NULL)
-        if (p.key->data_type != OSSL_PARAM_OCTET_STRING
-            || !poly1305_setkey(ctx, p.key->data, p.key->data_size))
-            return 0;
     return 1;
 }
 

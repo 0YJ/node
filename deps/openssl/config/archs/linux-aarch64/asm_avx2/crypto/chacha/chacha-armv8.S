@@ -1,4 +1,4 @@
-#include "arch/arm_arch.h"
+#include "arm_arch.h"
 #ifndef	__KERNEL__
 
 .hidden	OPENSSL_armcap_P

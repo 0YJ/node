@@ -11,13 +11,14 @@
 
 #include <memory>
 
-#include "src/base/logging.h"
 #include "src/wasm/value-type.h"
 #include "src/zone/zone-containers.h"
 
 namespace v8 {
 namespace internal {
 namespace wasm {
+
+struct WasmModule;
 
 // Representation of an constant expression. Unlike {ConstantExpression}, this
 // does not use {WireBytesRef}, i.e., it does not depend on a wasm module's
@@ -205,7 +206,6 @@ class WasmInitExpr : public ZoneObject {
       case kRef:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
  private:

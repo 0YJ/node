@@ -8,8 +8,6 @@
 #include "src/execution/local-isolate.h"
 // Include the non-inl header before the rest of the headers.
 
-#include <utility>
-
 #include "src/execution/isolate.h"
 #include "src/roots/roots-inl.h"
 
@@ -24,10 +22,6 @@ Address LocalIsolate::code_cage_base() const {
 
 ReadOnlyHeap* LocalIsolate::read_only_heap() const {
   return isolate_->read_only_heap();
-}
-
-bool LocalIsolate::is_short_builtin_calls_enabled() const {
-  return isolate_->is_short_builtin_calls_enabled();
 }
 
 RootsTable& LocalIsolate::roots_table() { return isolate_->roots_table(); }
@@ -47,7 +41,7 @@ Handle<Object> LocalIsolate::root_handle(RootIndex index) const {
 
 template <typename Callback>
 V8_INLINE void LocalIsolate::ExecuteMainThreadWhileParked(Callback callback) {
-  heap_.ExecuteMainThreadWhileParked(std::move(callback));
+  heap_.ExecuteMainThreadWhileParked(callback);
 }
 
 template <typename Callback>
@@ -55,7 +49,7 @@ V8_INLINE void LocalIsolate::ParkIfOnBackgroundAndExecute(Callback callback) {
   if (is_main_thread()) {
     callback();
   } else {
-    heap_.ExecuteBackgroundThreadWhileParked(std::move(callback));
+    heap_.ExecuteBackgroundThreadWhileParked(callback);
   }
 }
 

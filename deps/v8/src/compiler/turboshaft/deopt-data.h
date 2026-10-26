@@ -33,7 +33,7 @@ struct FrameStateData {
 
   class Builder {
    public:
-    void AddParentFrameState(V<AnyFrameState> parent) {
+    void AddParentFrameState(V<FrameState> parent) {
       DCHECK(inputs_.empty());
       inlined_ = true;
       inputs_.push_back(parent);

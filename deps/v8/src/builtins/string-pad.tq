@@ -93,7 +93,7 @@ transitioning macro StringPad(
   return receiverString + padding;
 }
 
-// https://tc39.es/ecma262/#sec-string.prototype.padstart
+// ES6 #sec-string.prototype.padstart
 transitioning javascript builtin StringPrototypePadStart(
     js-implicit context: NativeContext, receiver: JSAny)(
     ...arguments): String {
@@ -101,7 +101,7 @@ transitioning javascript builtin StringPrototypePadStart(
   return StringPad(receiver, arguments, methodName, kStringPadStart);
 }
 
-// https://tc39.es/ecma262/#sec-string.prototype.padend
+// ES6 #sec-string.prototype.padend
 transitioning javascript builtin StringPrototypePadEnd(
     js-implicit context: NativeContext, receiver: JSAny)(
     ...arguments): String {

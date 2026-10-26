@@ -9,17 +9,22 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-/// Generates `Deserialize::deserialize` body for a `struct Tuple(...);`
-/// including `struct Newtype(T);`
+/// Generates `Deserialize::deserialize` body for a `struct Tuple(...);` including `struct Newtype(T);`
 pub(super) fn deserialize(
     params: &Parameters,
     fields: &[Field],
     cattrs: &attr::Container,
     form: TupleForm,
 ) -> Fragment {
-    assert!(!has_flatten(fields), "tuples and tuple variants cannot have flatten fields");
+    assert!(
+        !has_flatten(fields),
+        "tuples and tuple variants cannot have flatten fields"
+    );
 
-    let field_count = fields.iter().filter(|field| !field.attrs.skip_deserializing()).count();
+    let field_count = fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing())
+        .count();
 
     let this_type = &params.this_type;
     let this_value = &params.this_value;
@@ -60,7 +65,9 @@ pub(super) fn deserialize(
         _ => None,
     };
 
-    let visit_seq = Stmts(deserialize_seq(&type_path, params, fields, false, cattrs, expecting));
+    let visit_seq = Stmts(deserialize_seq(
+        &type_path, params, fields, false, cattrs, expecting,
+    ));
 
     let visitor_expr = quote! {
         __Visitor {
@@ -89,7 +96,11 @@ pub(super) fn deserialize(
         },
     };
 
-    let visitor_var = if field_count == 0 { quote!(_) } else { quote!(mut __seq) };
+    let visitor_var = if field_count == 0 {
+        quote!(_)
+    } else {
+        quote!(mut __seq)
+    };
 
     quote_block! {
         #[doc(hidden)]
@@ -170,17 +181,22 @@ fn deserialize_newtype_struct(
     }
 }
 
-/// Generates `Deserialize::deserialize_in_place` body for a `struct
-/// Tuple(...);` including `struct Newtype(T);`
+/// Generates `Deserialize::deserialize_in_place` body for a `struct Tuple(...);` including `struct Newtype(T);`
 #[cfg(feature = "deserialize_in_place")]
 pub(super) fn deserialize_in_place(
     params: &Parameters,
     fields: &[Field],
     cattrs: &attr::Container,
 ) -> Fragment {
-    assert!(!has_flatten(fields), "tuples and tuple variants cannot have flatten fields");
+    assert!(
+        !has_flatten(fields),
+        "tuples and tuple variants cannot have flatten fields"
+    );
 
-    let field_count = fields.iter().filter(|field| !field.attrs.skip_deserializing()).count();
+    let field_count = fields
+        .iter()
+        .filter(|field| !field.attrs.skip_deserializing())
+        .count();
 
     let this_type = &params.this_type;
     let (de_impl_generics, de_ty_generics, ty_generics, where_clause) =
@@ -226,7 +242,11 @@ pub(super) fn deserialize_in_place(
         quote!(_serde::Deserializer::deserialize_tuple_struct(__deserializer, #type_name, #field_count, #visitor_expr))
     };
 
-    let visitor_var = if field_count == 0 { quote!(_) } else { quote!(mut __seq) };
+    let visitor_var = if field_count == 0 {
+        quote!(_)
+    } else {
+        quote!(mut __seq)
+    };
 
     let in_place_impl_generics = de_impl_generics.in_place();
     let in_place_ty_generics = de_ty_generics.in_place();

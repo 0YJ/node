@@ -70,7 +70,6 @@ DirectHandle<String> PendingCompilationErrorHandler::MessageDetails::ArgString(
     case kAstRawString:
       UNREACHABLE();
   }
-  UNREACHABLE();
 }
 
 MessageLocation PendingCompilationErrorHandler::MessageDetails::GetLocation(
@@ -82,8 +81,6 @@ void PendingCompilationErrorHandler::ReportMessageAt(int start_position,
                                                      int end_position,
                                                      MessageTemplate message,
                                                      const char* arg) {
-  DCHECK((start_position == -1 && end_position == -1) ||
-         (start_position != -1 && start_position <= end_position));
   if (has_pending_error_ && end_position >= error_details_.start_pos()) return;
 
   has_pending_error_ = true;
@@ -95,8 +92,6 @@ void PendingCompilationErrorHandler::ReportMessageAt(int start_position,
                                                      int end_position,
                                                      MessageTemplate message,
                                                      const AstRawString* arg) {
-  DCHECK((start_position == -1 && end_position == -1) ||
-         (start_position != -1 && start_position <= end_position));
   if (has_pending_error_ && end_position >= error_details_.start_pos()) return;
 
   has_pending_error_ = true;
@@ -109,8 +104,6 @@ void PendingCompilationErrorHandler::ReportMessageAt(int start_position,
                                                      MessageTemplate message,
                                                      const AstRawString* arg0,
                                                      const char* arg1) {
-  DCHECK((start_position == -1 && end_position == -1) ||
-         (start_position != -1 && start_position <= end_position));
   if (has_pending_error_ && end_position >= error_details_.start_pos()) return;
 
   has_pending_error_ = true;
@@ -121,8 +114,6 @@ void PendingCompilationErrorHandler::ReportMessageAt(int start_position,
 void PendingCompilationErrorHandler::ReportMessageAt(
     int start_position, int end_position, MessageTemplate message,
     const AstRawString* arg0, const AstRawString* arg1, const char* arg2) {
-  DCHECK((start_position == -1 && end_position == -1) ||
-         (start_position != -1 && start_position <= end_position));
   if (has_pending_error_ && end_position >= error_details_.start_pos()) return;
 
   has_pending_error_ = true;

@@ -2,13 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/wasm/streaming-decoder.h"
+#include "test/unittests/test-utils.h"
+
+#include "src/objects/objects-inl.h"
 
 #include "src/wasm/module-decoder.h"
-#include "src/wasm/wasm-engine.h"
-#include "test/common/flag-utils.h"
+#include "src/wasm/streaming-decoder.h"
+
+#include "src/objects/descriptor-array.h"
+#include "src/objects/dictionary.h"
 #include "test/common/wasm/wasm-macro-gen.h"
-#include "test/unittests/test-utils.h"
 
 namespace v8 {
 namespace internal {
@@ -102,7 +105,7 @@ class WasmStreamingDecoderTest : public ::testing::Test {
                       size_t expected_sections, size_t expected_functions) {
     for (size_t split = 0; split <= data.size(); ++split) {
       MockStreamingResult result;
-      auto stream = StreamingDecoder::Create(
+      auto stream = StreamingDecoder::CreateAsyncStreamingDecoder(
           std::make_unique<MockStreamingProcessor>(&result));
       stream->OnBytesReceived(data.SubVector(0, split));
       stream->OnBytesReceived(data.SubVector(split, data.size()));
@@ -117,7 +120,7 @@ class WasmStreamingDecoderTest : public ::testing::Test {
   void ExpectFailure(base::Vector<const uint8_t> data) {
     for (size_t split = 0; split <= data.size(); ++split) {
       MockStreamingResult result;
-      auto stream = StreamingDecoder::Create(
+      auto stream = StreamingDecoder::CreateAsyncStreamingDecoder(
           std::make_unique<MockStreamingProcessor>(&result));
       stream->OnBytesReceived(data.SubVector(0, split));
       stream->OnBytesReceived(data.SubVector(split, data.size()));
@@ -130,7 +133,7 @@ class WasmStreamingDecoderTest : public ::testing::Test {
 
 TEST_F(WasmStreamingDecoderTest, EmptyStream) {
   MockStreamingResult result;
-  auto stream = StreamingDecoder::Create(
+  auto stream = StreamingDecoder::CreateAsyncStreamingDecoder(
       std::make_unique<MockStreamingProcessor>(&result));
   stream->Finish({});
   EXPECT_FALSE(result.ok());
@@ -140,7 +143,7 @@ TEST_F(WasmStreamingDecoderTest, IncompleteModuleHeader) {
   const uint8_t data[] = {U32_LE(kWasmMagic), U32_LE(kWasmVersion)};
   {
     MockStreamingResult result;
-    auto stream = StreamingDecoder::Create(
+    auto stream = StreamingDecoder::CreateAsyncStreamingDecoder(
         std::make_unique<MockStreamingProcessor>(&result));
     stream->OnBytesReceived(base::VectorOf(data, 1));
     stream->Finish({});
@@ -656,43 +659,6 @@ TEST_F(WasmStreamingDecoderTest, InvalidSectionCode) {
   uint8_t kInvalidSectionCode = 61;
   const uint8_t data[] = {WASM_MODULE_HEADER, SECTION(Invalid)};
   ExpectFailure(base::ArrayVector(data));
-}
-
-class EmptyResolver : public CompilationResultResolver {
- public:
-  void OnCompilationSucceeded(DirectHandle<WasmModuleObject> module) override {}
-  void OnCompilationFailed(DirectHandle<JSAny> error_reason) override {}
-};
-
-using WasmStreamingCompilationTest = TestWithNativeContext;
-
-TEST_F(WasmStreamingCompilationTest, ContextDisposeDuringValidation) {
-  FlagScope<bool> lazy_compilation(&v8_flags.wasm_lazy_compilation, true);
-
-  std::shared_ptr<EmptyResolver> resolver = std::make_shared<EmptyResolver>();
-  WasmEnabledFeatures features = WasmEnabledFeatures::FromIsolate(isolate());
-
-  std::shared_ptr<StreamingDecoder> stream =
-      GetWasmEngine()->StartStreamingCompilation(
-          features, CompileTimeImports{}, "WebAssembly.compileStreaming()",
-          resolver);
-  stream->InitializeIsolateSpecificInfo(isolate());
-
-  const uint8_t data[] = {
-      0x00, 0x61, 0x73, 0x6d,  // wasm magic
-      0x01, 0x00, 0x00, 0x00,  // wasm version
-      0x01, 0x04,              // Type section, length: 4
-      0x01, 0x60, 0x00, 0x00,  // One type, signature, no params, no results
-      0x03, 0x02,              // Function section, length: 2
-      0x01, 0x00,              // One function, type $sig0
-      0x0a, 0x04,              // Code section, length: 4
-      0x01, 0x02, 0x00, 0x0b,  // One function, length: 2, unreachable, end
-  };
-
-  stream->OnBytesReceived(base::VectorOf(data));
-
-  // Dispose context. This triggered crbug.com/523030583 before the fix.
-  v8_isolate()->ContextDisposedNotification(ContextDependants::kNoDependants);
 }
 
 }  // namespace wasm

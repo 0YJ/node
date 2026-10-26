@@ -95,6 +95,19 @@ int Code::SourceStatementPosition(int offset) const {
   return position;
 }
 
+SafepointEntry Code::GetSafepointEntry(Isolate* isolate, Address pc) {
+  DCHECK(!is_maglevved());
+  SafepointTable table(isolate, pc, *this);
+  return table.FindEntry(pc);
+}
+
+MaglevSafepointEntry Code::GetMaglevSafepointEntry(Isolate* isolate,
+                                                   Address pc) {
+  DCHECK(is_maglevved());
+  MaglevSafepointTable table(isolate, pc, *this);
+  return table.FindEntry(pc);
+}
+
 bool Code::IsIsolateIndependent(Isolate* isolate) {
   static constexpr int kModeMask =
       RelocInfo::AllRealModesMask() &
@@ -102,8 +115,7 @@ bool Code::IsIsolateIndependent(Isolate* isolate) {
       ~RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET) &
       ~RelocInfo::ModeMask(RelocInfo::VENEER_POOL) &
       ~RelocInfo::ModeMask(RelocInfo::WASM_CANONICAL_SIG_ID) &
-      ~RelocInfo::ModeMask(RelocInfo::WASM_CODE_POINTER_TABLE_ENTRY) &
-      ~RelocInfo::ModeMask(RelocInfo::WASM_CODE_POINTER);
+      ~RelocInfo::ModeMask(RelocInfo::WASM_CODE_POINTER_TABLE_ENTRY);
   static_assert(kModeMask ==
                 (RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
                  RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET) |
@@ -118,21 +130,20 @@ bool Code::IsIsolateIndependent(Isolate* isolate) {
                  RelocInfo::ModeMask(RelocInfo::WASM_STUB_CALL)));
 
 #if defined(V8_TARGET_ARCH_PPC64) || defined(V8_TARGET_ARCH_MIPS64)
-  return RelocIterator(this, kModeMask).done();
+  return RelocIterator(*this, kModeMask).done();
 #elif defined(V8_TARGET_ARCH_X64) || defined(V8_TARGET_ARCH_ARM64) ||  \
     defined(V8_TARGET_ARCH_ARM) || defined(V8_TARGET_ARCH_S390X) ||    \
     defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_RISCV64) || \
     defined(V8_TARGET_ARCH_LOONG64) || defined(V8_TARGET_ARCH_RISCV32)
-  for (RelocIterator it(this, kModeMask); !it.done(); it.next()) {
+  for (RelocIterator it(*this, kModeMask); !it.done(); it.next()) {
     // On these platforms we emit relative builtin-to-builtin
     // jumps for isolate independent builtins in the snapshot. They are later
     // rewritten as pc-relative jumps to the off-heap instruction stream and are
     // thus process-independent. See also: FinalizeEmbeddedCodeTargets.
     if (RelocInfo::IsCodeTargetMode(it.rinfo()->rmode())) {
       Address target_address = it.rinfo()->target_address();
-      if (OffHeapInstructionStream::PcIsOffHeap(isolate, target_address)) {
+      if (OffHeapInstructionStream::PcIsOffHeap(isolate, target_address))
         continue;
-      }
 
       Tagged<Code> target = Code::FromTargetAddress(target_address);
       if (Builtins::IsIsolateIndependentBuiltin(target)) {
@@ -152,7 +163,7 @@ bool Code::Inlines(Tagged<SharedFunctionInfo> sfi) {
   DCHECK(is_optimized_code());
   DisallowGarbageCollection no_gc;
   Tagged<DeoptimizationData> const data = deoptimization_data();
-  if (data->ulength().value() == 0) return false;
+  if (data->length() == 0) return false;
   if (data->GetSharedFunctionInfo() == sfi) return true;
   Tagged<DeoptimizationLiteralArray> const literals = data->LiteralArray();
   int const inlined_count = data->InlinedFunctionCount().value();
@@ -164,8 +175,6 @@ bool Code::Inlines(Tagged<SharedFunctionInfo> sfi) {
 
 void Code::SetMarkedForDeoptimization(Isolate* isolate,
                                       LazyDeoptimizeReason reason) {
-  // We've already marked for deoptimization, return.
-  if (marked_for_deoptimization()) return;
   set_marked_for_deoptimization(true);
   // Eager deopts are already logged by the deoptimizer.
   if (reason != LazyDeoptimizeReason::kEagerDeopt &&
@@ -176,12 +185,11 @@ void Code::SetMarkedForDeoptimization(Isolate* isolate,
   if (handle != kNullJSDispatchHandle) {
     JSDispatchTable& jdt = isolate->js_dispatch_table();
     Tagged<Code> cur = jdt.GetCode(handle);
-    if (Tagged{this}.SafeEquals(cur)) {
+    if (SafeEquals(cur)) {
       if (v8_flags.reopt_after_lazy_deopts &&
           isolate->concurrent_recompilation_enabled()) {
         jdt.SetCodeNoWriteBarrier(
-            handle, *BUILTIN_CODE(isolate, InterpreterEntryTrampoline),
-            isolate);
+            handle, *BUILTIN_CODE(isolate, InterpreterEntryTrampoline));
         // Somewhat arbitrary list of lazy deopt reasons which we expect to be
         // stable enough to warrant either immediate re-optimization, or
         // re-optimization after one invocation (to detect potential follow-up
@@ -216,8 +224,7 @@ void Code::SetMarkedForDeoptimization(Isolate* isolate,
             break;
         }
       } else {
-        jdt.SetCodeNoWriteBarrier(handle, *BUILTIN_CODE(isolate, CompileLazy),
-                                  isolate);
+        jdt.SetCodeNoWriteBarrier(handle, *BUILTIN_CODE(isolate, CompileLazy));
       }
     }
     // Ensure we don't try to patch the entry multiple times.
@@ -227,7 +234,7 @@ void Code::SetMarkedForDeoptimization(Isolate* isolate,
   // TODO(422951610): Zapping code discovered a bug in
   // --maglev-inline-api-calls. Remove the flag check here once the bug is
   // fixed.
-  if (tmp->ulength().value() > 0 && !v8_flags.maglev_inline_api_calls) {
+  if (tmp->length() > 0 && !v8_flags.maglev_inline_api_calls) {
     Address start = instruction_start();
     Address end = start + deoptimization_data()->DeoptExitStart().value();
     RelocIterator it(instruction_stream(), RelocIterator::kAllModesMask);
@@ -377,20 +384,20 @@ void Disassemble(const char* name, std::ostream& os, Isolate* isolate,
 
 void Code::Disassemble(const char* name, std::ostream& os, Isolate* isolate,
                        Address current_pc) {
-  i::Disassemble(name, os, isolate, this, current_pc);
+  i::Disassemble(name, os, isolate, *this, current_pc);
 }
 
 void Code::DisassembleOnlyCode(const char* name, std::ostream& os,
                                Isolate* isolate, Address current_pc,
                                size_t range_limit) {
-  i::DisassembleOnlyCode(name, os, isolate, this, current_pc, range_limit);
+  i::DisassembleOnlyCode(name, os, isolate, *this, current_pc, range_limit);
 }
 
 #endif  // ENABLE_DISASSEMBLER
 
 void Code::TraceMarkForDeoptimization(Isolate* isolate,
                                       LazyDeoptimizeReason reason) {
-  Deoptimizer::TraceMarkForDeoptimization(isolate, this, reason);
+  Deoptimizer::TraceMarkForDeoptimization(isolate, *this, reason);
 }
 
 #if V8_ENABLE_GEARBOX

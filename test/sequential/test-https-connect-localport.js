@@ -26,9 +26,7 @@ const assert = require('assert');
       family: 4,
       localPort: common.PORT,
       rejectUnauthorized: false,
-      agent: false,
-    }, common.mustCall((res) => {
-      res.resume();
+    }, common.mustCall(() => {
       assert.strictEqual(req.socket.localPort, common.PORT);
       assert.strictEqual(req.socket.remotePort, port);
     }));

@@ -15,7 +15,6 @@ macro_rules! impl_write_num {
                 let mut n = *self;
                 let mut i = MAX_LEN;
                 #[expect(clippy::indexing_slicing)] // n < 10^i
-                #[allow(trivial_numeric_casts)]
                 while n != 0 {
                     i -= 1;
                     buf[i] = b'0' + (n % 10) as u8;
@@ -50,7 +49,6 @@ macro_rules! impl_write_num {
         }
 
         #[test]
-        #[allow(trivial_numeric_casts)]
         fn $test() {
             use $crate::assert_writeable_eq;
             assert_writeable_eq!(&(0 as $u), "0");
@@ -113,7 +111,22 @@ impl Writeable for str {
 }
 
 #[cfg(feature = "alloc")]
-crate::impl_writeable_delegate!(String, |&self| self.as_str());
+impl Writeable for String {
+    #[inline]
+    fn write_to<W: fmt::Write + ?Sized>(&self, sink: &mut W) -> fmt::Result {
+        sink.write_str(self)
+    }
+
+    #[inline]
+    fn writeable_length_hint(&self) -> LengthHint {
+        LengthHint::exact(self.len())
+    }
+
+    #[inline]
+    fn writeable_borrow(&self) -> Option<&str> {
+        Some(self)
+    }
+}
 
 impl Writeable for char {
     #[inline]
@@ -135,13 +148,38 @@ impl Writeable for char {
     }
 }
 
-crate::impl_writeable_delegate!(&T, |&self| *self, #[cfg(feature = "alloc")] fn write_to_string, where T: Writeable + ?Sized);
+impl<T: Writeable + ?Sized> Writeable for &T {
+    #[inline]
+    fn write_to<W: fmt::Write + ?Sized>(&self, sink: &mut W) -> fmt::Result {
+        (*self).write_to(sink)
+    }
+
+    #[inline]
+    fn write_to_parts<W: PartsWrite + ?Sized>(&self, sink: &mut W) -> fmt::Result {
+        (*self).write_to_parts(sink)
+    }
+
+    #[inline]
+    fn writeable_length_hint(&self) -> LengthHint {
+        (*self).writeable_length_hint()
+    }
+
+    #[inline]
+    fn writeable_borrow(&self) -> Option<&str> {
+        (*self).writeable_borrow()
+    }
+
+    #[inline]
+    #[cfg(feature = "alloc")]
+    fn write_to_string(&self) -> Cow<'_, str> {
+        (*self).write_to_string()
+    }
+}
 
 #[cfg(feature = "alloc")]
 macro_rules! impl_write_smart_pointer {
     ($ty:path, T: $extra_bound:path) => {
-        #[allow(unused_qualifications)]
-        impl<T: ?Sized + Writeable + $extra_bound> Writeable for $ty {
+        impl<'a, T: ?Sized + Writeable + $extra_bound> Writeable for $ty {
             #[inline]
             fn write_to<W: fmt::Write + ?Sized>(&self, sink: &mut W) -> fmt::Result {
                 core::borrow::Borrow::<T>::borrow(self).write_to(sink)
@@ -171,7 +209,7 @@ macro_rules! impl_write_smart_pointer {
 }
 
 #[cfg(feature = "alloc")]
-impl_write_smart_pointer!(Cow<'_, T>, T: alloc::borrow::ToOwned);
+impl_write_smart_pointer!(Cow<'a, T>, T: alloc::borrow::ToOwned);
 #[cfg(feature = "alloc")]
 impl_write_smart_pointer!(alloc::boxed::Box<T>);
 #[cfg(feature = "alloc")]
@@ -203,7 +241,7 @@ fn test_string_impls() {
         assert_writeable_eq!(&chars[i], s);
         for j in 0..chars.len() {
             assert_eq!(
-                cmp_str(&chars[j], &s),
+                crate::cmp_str(&chars[j], &s),
                 chars[j].cmp(&chars[i]),
                 "{:?} vs {:?}",
                 chars[j],

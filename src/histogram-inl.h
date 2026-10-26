@@ -33,16 +33,9 @@ void Histogram::UpdateEwma(double value) {
   }
 }
 
-void Histogram::InvalidateRecordedSnapshot() {
-  mutation_generation_++;
-  recorded_snapshot_cache_.reset();
-}
-
 void Histogram::Reset() {
   RwLock::ScopedWriteLock lock(mutex_);
   hdr_reset(histogram_.get());
-  InvalidateRecordedSnapshot();
-  reset_count_++;
   exceeds_ = 0;
   prev_ = 0;
   ewma_mean_ = 0;
@@ -56,10 +49,8 @@ double Histogram::Add(const Histogram& other) {
     exceeds_ += other.exceeds_;
     if (other.prev_ > prev_) prev_ = other.prev_;
     // hdr_add merges all bucket counts and total_count internally.
-    const double dropped =
-        static_cast<double>(hdr_add(histogram_.get(), other.histogram_.get()));
-    InvalidateRecordedSnapshot();
-    return dropped;
+    return static_cast<double>(
+        hdr_add(histogram_.get(), other.histogram_.get()));
   };
 
   // When adding a histogram to itself, a single write lock suffices.
@@ -89,11 +80,6 @@ size_t Histogram::Count() const {
 size_t Histogram::Exceeds() const {
   RwLock::ScopedReadLock lock(mutex_);
   return exceeds_;
-}
-
-uint64_t Histogram::ResetCount() const {
-  RwLock::ScopedReadLock lock(mutex_);
-  return reset_count_;
 }
 
 int64_t Histogram::Min() const {
@@ -160,10 +146,8 @@ bool Histogram::RecordCorrected(int64_t value, int64_t expected_interval) {
       hdr_record_corrected_value(histogram_.get(), value, expected_interval);
   if (!recorded)
     exceeds_++;
-  else {
-    InvalidateRecordedSnapshot();
+  else
     UpdateEwma(static_cast<double>(value));
-  }
   return recorded;
 }
 
@@ -172,10 +156,8 @@ bool Histogram::Record(int64_t value) {
   bool recorded = hdr_record_value(histogram_.get(), value);
   if (!recorded)
     exceeds_++;
-  else {
-    InvalidateRecordedSnapshot();
+  else
     UpdateEwma(static_cast<double>(value));
-  }
   return recorded;
 }
 
@@ -188,10 +170,8 @@ uint64_t Histogram::RecordDelta() {
     delta = time - prev_;
     if (!hdr_record_value(histogram_.get(), delta))
       exceeds_++;
-    else {
-      InvalidateRecordedSnapshot();
+    else
       UpdateEwma(static_cast<double>(delta));
-    }
   }
   prev_ = time;
   return delta;

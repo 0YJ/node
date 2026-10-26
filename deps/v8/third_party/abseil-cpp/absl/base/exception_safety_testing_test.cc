@@ -20,10 +20,7 @@
 #include <exception>
 #include <iostream>
 #include <list>
-#include <memory>
-#include <sstream>
 #include <type_traits>
-#include <utility>
 #include <vector>
 
 #include "gtest/gtest-spi.h"
@@ -239,8 +236,8 @@ void TestAllocatingOp(const F& f) {
 TEST(ThrowingValueTest, ThrowingAllocatingOps) {
   // make_unique calls unqualified operator new, so these exercise the
   // ThrowingValue overloads.
-  TestAllocatingOp([]() { return std::make_unique<ThrowingValue<>>(1); });
-  TestAllocatingOp([]() { return std::make_unique<ThrowingValue<>[]>(2); });
+  TestAllocatingOp([]() { return absl::make_unique<ThrowingValue<>>(1); });
+  TestAllocatingOp([]() { return absl::make_unique<ThrowingValue<>[]>(2); });
 }
 
 TEST(ThrowingValueTest, NonThrowingMoveCtor) {
@@ -521,7 +518,7 @@ struct NullaryTestValidator : public std::false_type {};
 template <typename TesterInstance>
 struct NullaryTestValidator<
     TesterInstance,
-    std::void_t<decltype(std::declval<TesterInstance>().Test())>>
+    absl::void_t<decltype(std::declval<TesterInstance>().Test())>>
     : public std::true_type {};
 
 template <typename TesterInstance>
@@ -537,7 +534,7 @@ struct UnaryTestValidator : public std::false_type {};
 template <typename TesterInstance>
 struct UnaryTestValidator<
     TesterInstance,
-    std::void_t<decltype(std::declval<TesterInstance>().Test(DummyOp))>>
+    absl::void_t<decltype(std::declval<TesterInstance>().Test(DummyOp))>>
     : public std::true_type {};
 
 template <typename TesterInstance>
@@ -549,7 +546,7 @@ TEST(ExceptionSafetyTesterTest, IncompleteTypesAreNotTestable) {
   using T = exceptions_internal::UninitializedT;
   auto op = [](T* t) {};
   auto inv = [](T*) { return testing::AssertionSuccess(); };
-  auto fac = []() { return std::make_unique<T>(); };
+  auto fac = []() { return absl::make_unique<T>(); };
 
   // Test that providing operation and inveriants still does not allow for the
   // the invocation of .Test() and .Test(op) because it lacks a factory
@@ -578,7 +575,7 @@ TEST(ExceptionSafetyTesterTest, IncompleteTypesAreNotTestable) {
 struct ExampleStruct {};
 
 std::unique_ptr<ExampleStruct> ExampleFunctionFactory() {
-  return std::make_unique<ExampleStruct>();
+  return absl::make_unique<ExampleStruct>();
 }
 
 void ExampleFunctionOperation(ExampleStruct*) {}
@@ -795,7 +792,7 @@ struct NonCopyable : public NonNegative {
 };
 
 TEST(ExceptionCheckTest, NonCopyable) {
-  auto factory = []() { return std::make_unique<NonCopyable>(); };
+  auto factory = []() { return absl::make_unique<NonCopyable>(); };
   EXPECT_TRUE(tester.WithFactory(factory).Test());
   EXPECT_TRUE(strong_tester.WithFactory(factory).Test());
 }
@@ -872,14 +869,14 @@ TEST(ExceptionCheckTest, Exhaustiveness) {
 }
 
 struct LeaksIfCtorThrows : private exceptions_internal::TrackedObject {
-  LeaksIfCtorThrows() : TrackedObject(ABSL_INTERNAL_PRETTY_FUNCTION) {
+  LeaksIfCtorThrows() : TrackedObject(ABSL_PRETTY_FUNCTION) {
     ++counter;
     ThrowingValue<> v;
     static_cast<void>(v);
     --counter;
   }
   LeaksIfCtorThrows(const LeaksIfCtorThrows&) noexcept
-      : TrackedObject(ABSL_INTERNAL_PRETTY_FUNCTION) {}
+      : TrackedObject(ABSL_PRETTY_FUNCTION) {}
   static int counter;
 };
 int LeaksIfCtorThrows::counter = 0;
@@ -891,7 +888,7 @@ TEST(ExceptionCheckTest, TestLeakyCtor) {
 }
 
 struct Tracked : private exceptions_internal::TrackedObject {
-  Tracked() : TrackedObject(ABSL_INTERNAL_PRETTY_FUNCTION) {}
+  Tracked() : TrackedObject(ABSL_PRETTY_FUNCTION) {}
 };
 
 TEST(ConstructorTrackerTest, CreatedBefore) {
@@ -939,8 +936,8 @@ TEST(ConstructorTrackerTest, ConstructedTwice) {
 
 TEST(ThrowingValueTraitsTest, RelationalOperators) {
   ThrowingValue<> a, b;
-  EXPECT_TRUE((std::is_convertible_v<decltype(a == b), bool>));
-  EXPECT_TRUE((std::is_convertible_v<decltype(a != b), bool>));
+  EXPECT_TRUE((std::is_convertible<decltype(a == b), bool>::value));
+  EXPECT_TRUE((std::is_convertible<decltype(a != b), bool>::value));
   EXPECT_TRUE((std::is_convertible<decltype(a < b), bool>::value));
   EXPECT_TRUE((std::is_convertible<decltype(a <= b), bool>::value));
   EXPECT_TRUE((std::is_convertible<decltype(a > b), bool>::value));
@@ -948,10 +945,10 @@ TEST(ThrowingValueTraitsTest, RelationalOperators) {
 }
 
 TEST(ThrowingAllocatorTraitsTest, Assignablility) {
-  EXPECT_TRUE(std::is_move_assignable_v<ThrowingAllocator<int>>);
-  EXPECT_TRUE(std::is_copy_assignable_v<ThrowingAllocator<int>>);
-  EXPECT_TRUE(std::is_nothrow_move_assignable_v<ThrowingAllocator<int>>);
-  EXPECT_TRUE(std::is_nothrow_copy_assignable_v<ThrowingAllocator<int>>);
+  EXPECT_TRUE(absl::is_move_assignable<ThrowingAllocator<int>>::value);
+  EXPECT_TRUE(absl::is_copy_assignable<ThrowingAllocator<int>>::value);
+  EXPECT_TRUE(std::is_nothrow_move_assignable<ThrowingAllocator<int>>::value);
+  EXPECT_TRUE(std::is_nothrow_copy_assignable<ThrowingAllocator<int>>::value);
 }
 
 }  // namespace

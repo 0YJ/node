@@ -146,8 +146,10 @@ assert.rejects(
   const ac = new AbortController();
   const { signal } = ac;
   setImmediate(() => ac.abort());
-  await assert.rejects(async () => {
+  try {
     // eslint-disable-next-line no-unused-vars, no-empty
     for await (const _ of watch(__filename, { signal })) { }
-  }, { name: 'AbortError' });
+  } catch (err) {
+    assert.strictEqual(err.name, 'AbortError');
+  }
 })().then(common.mustCall());

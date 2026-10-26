@@ -1,5 +1,18 @@
 Tests Debugger.setScriptSource
+TestExpression(2,4) === 6
+Update current script source 'a + b' -> 'a * b'..
 {
-    code : -32000
-    message : setScriptSource functionality no longer available
+    status : Ok
 }
+TestExpression(2,4) === 8
+Update current script source 'a * b' -> 'a # b'..
+{
+    exceptionDetails : {
+        columnNumber : 13
+        exceptionId : <exceptionId>
+        lineNumber : 1
+        text : Uncaught SyntaxError: Invalid or unexpected token
+    }
+    status : CompileError
+}
+TestExpression(2,4) === 8

@@ -1,1 +1,1 @@
-#include "../../../config/openssl_srp.h"
+#include "../../../config/srp.h"

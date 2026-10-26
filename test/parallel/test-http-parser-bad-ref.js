@@ -2,11 +2,11 @@
 // Run this program with valgrind or efence with --expose_gc to expose the
 // problem.
 
-// Flags: --expose_gc --expose-internals --no-warnings
+// Flags: --expose_gc
 
 require('../common');
 const assert = require('assert');
-const { HTTPParser } = require('internal/http/common');
+const { HTTPParser } = require('_http_common');
 
 const kOnHeaders = HTTPParser.kOnHeaders | 0;
 const kOnHeadersComplete = HTTPParser.kOnHeadersComplete | 0;

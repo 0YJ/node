@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,18 +55,17 @@ class LIEF_API QNXStack : public Note {
 
   ~QNXStack() override = default;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const QNXStack& note) {
+  LIEF_API friend
+  std::ostream& operator<<(std::ostream& os, const QNXStack& note) {
     note.dump(os);
     return os;
   }
-
   protected:
   using Note::Note;
 };
 
 
-} // namespace ELF
+} // namepsace ELF
 } // namespace LIEF
 
 #endif

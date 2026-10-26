@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,8 +22,8 @@
 #include <spdlog/fmt/fmt.h>
 #include <spdlog/fmt/ranges.h>
 
-
-namespace LIEF::PE {
+namespace LIEF {
+namespace PE {
 
 void Repro::accept(Visitor& visitor) const {
   visitor.visit(*this);
@@ -40,4 +40,5 @@ std::string Repro::to_string() const {
   return os.str();
 }
 
-} // namespace LIEF::PE
+} // namespace PE
+} // namespace LIEF

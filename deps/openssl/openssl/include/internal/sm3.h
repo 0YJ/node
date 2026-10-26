@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2017 Ribose Inc. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -13,8 +13,6 @@
 #define OSSL_INTERNAL_SM3_H
 #pragma once
 
-#include <stddef.h>
-
 #include <openssl/opensslconf.h>
 
 #ifdef OPENSSL_NO_SM3
@@ -22,7 +20,7 @@
 #endif
 
 #define SM3_DIGEST_LENGTH 32
-typedef unsigned int SM3_WORD;
+#define SM3_WORD unsigned int
 
 #define SM3_CBLOCK 64
 #define SM3_LBLOCK (SM3_CBLOCK / 4)

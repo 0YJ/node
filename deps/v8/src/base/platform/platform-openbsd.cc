@@ -5,28 +5,27 @@
 // Platform-specific code for OpenBSD and NetBSD goes here. For the
 // POSIX-compatible parts, the implementation is in platform-posix.cc.
 
-#include <errno.h>
-#include <fcntl.h>  // open
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
-#include <stdarg.h>
 #include <stdlib.h>
-#include <string.h>
-#include <strings.h>   // index
-#include <sys/mman.h>  // mmap & munmap
 #include <sys/resource.h>
-#include <sys/stat.h>  // open
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <unistd.h>  // sysconf
+
+#include <errno.h>
+#include <fcntl.h>      // open
+#include <stdarg.h>
+#include <strings.h>    // index
+#include <sys/mman.h>   // mmap & munmap
+#include <sys/stat.h>   // open
+#include <unistd.h>     // sysconf
 
 #include <cmath>
 
 #undef MAP_TYPE
 
-#include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/platform/platform-posix-time.h"
 #include "src/base/platform/platform-posix.h"
@@ -111,7 +110,8 @@ void OS::SignalCodeMovingGC() {
   long size = sysconf(_SC_PAGESIZE);  // NOLINT: type more fit than uint64_t
   FILE* f = fopen(OS::GetGCFakeMMapFile(), "w+");
   if (f == nullptr) {
-    FATAL("Failed to open %s: %s", OS::GetGCFakeMMapFile(), strerror(errno));
+    OS::PrintError("Failed to open %s\n", OS::GetGCFakeMMapFile());
+    OS::Abort();
   }
   void* addr =
       mmap(NULL, size, PROT_READ | PROT_EXEC, MAP_PRIVATE, fileno(f), 0);

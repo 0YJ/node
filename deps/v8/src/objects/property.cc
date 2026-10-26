@@ -4,7 +4,6 @@
 
 #include "src/objects/property.h"
 
-#include "src/base/macros.h"
 #include "src/handles/handles-inl.h"
 #include "src/objects/field-type.h"
 #include "src/objects/name-inl.h"
@@ -62,12 +61,11 @@ Descriptor::Descriptor(DirectHandle<Name> key,
                        const MaybeObjectDirectHandle& value, PropertyKind kind,
                        PropertyAttributes attributes, PropertyLocation location,
                        PropertyConstness constness,
-                       Representation representation, int field_offset,
-                       bool in_object)
+                       Representation representation, int field_index)
     : key_(key),
       value_(value),
       details_(kind, attributes, location, constness, representation,
-               field_offset, in_object) {
+               field_index) {
   DCHECK(IsUniqueName(*key));
   DCHECK_IMPLIES(key->IsAnyPrivate(), !details_.IsEnumerable());
 }
@@ -81,34 +79,40 @@ Descriptor::Descriptor(DirectHandle<Name> key,
 }
 
 Descriptor Descriptor::DataField(Isolate* isolate, DirectHandle<Name> key,
-                                 int field_offset,
-                                 PropertyAttributes attributes,
-                                 Representation representation,
-                                 bool in_object) {
-  return DataField(key, field_offset, attributes, PropertyConstness::kMutable,
+                                 int field_index, PropertyAttributes attributes,
+                                 Representation representation) {
+  return DataField(key, field_index, attributes, PropertyConstness::kMutable,
                    representation,
-                   MaybeObjectDirectHandle(FieldType::Any(isolate)), in_object);
+                   MaybeObjectDirectHandle(FieldType::Any(isolate)));
 }
 
 Descriptor Descriptor::DataField(
-    DirectHandle<Name> key, int field_offset, PropertyAttributes attributes,
+    DirectHandle<Name> key, int field_index, PropertyAttributes attributes,
     PropertyConstness constness, Representation representation,
-    const MaybeObjectDirectHandle& wrapped_field_type, bool in_object) {
+    const MaybeObjectDirectHandle& wrapped_field_type) {
   DCHECK(IsSmi(*wrapped_field_type) || IsWeak(*wrapped_field_type));
   PropertyDetails details(PropertyKind::kData, attributes,
                           PropertyLocation::kField, constness, representation,
-                          field_offset, in_object);
+                          field_index);
   return Descriptor(key, wrapped_field_type, details);
 }
 
 Descriptor Descriptor::DataConstant(DirectHandle<Name> key,
                                     DirectHandle<Object> value,
                                     PropertyAttributes attributes) {
-  auto [representation, constness] =
-      Object::OptimalRepresentation(*value, PropertyConstness::kConst);
+  PtrComprCageBase cage_base = GetPtrComprCageBase(*key);
   return Descriptor(key, MaybeObjectDirectHandle(value), PropertyKind::kData,
-                    attributes, PropertyLocation::kDescriptor, constness,
-                    representation, 0, false);
+                    attributes, PropertyLocation::kDescriptor,
+                    PropertyConstness::kConst,
+                    Object::OptimalRepresentation(*value, cage_base), 0);
+}
+
+Descriptor Descriptor::DataConstant(Isolate* isolate, DirectHandle<Name> key,
+                                    int field_index, DirectHandle<Object> value,
+                                    PropertyAttributes attributes) {
+  MaybeObjectDirectHandle any_type(FieldType::Any(), isolate);
+  return DataField(key, field_index, attributes, PropertyConstness::kConst,
+                   Representation::Tagged(), any_type);
 }
 
 Descriptor Descriptor::AccessorConstant(DirectHandle<Name> key,
@@ -117,7 +121,7 @@ Descriptor Descriptor::AccessorConstant(DirectHandle<Name> key,
   return Descriptor(key, MaybeObjectDirectHandle(foreign),
                     PropertyKind::kAccessor, attributes,
                     PropertyLocation::kDescriptor, PropertyConstness::kConst,
-                    Representation::Tagged(), 0, false);
+                    Representation::Tagged(), 0);
 }
 
 // Outputs PropertyDetails as a dictionary details.
@@ -138,13 +142,12 @@ void PropertyDetails::PrintAsFastTo(std::ostream& os, PrintMode mode) {
   os << (kind() == PropertyKind::kData ? "data" : "accessor");
   if (location() == PropertyLocation::kField) {
     os << " field";
-    if (mode & kPrintOffsetInWords) {
-      os << " " << field_offset();
+    if (mode & kPrintFieldIndex) {
+      os << " " << field_index();
     }
     if (mode & kPrintRepresentation) {
       os << ":" << representation().Mnemonic();
     }
-    os << ", " << (is_in_object() ? "in-obj" : "ooo");
   } else {
     os << " descriptor";
   }

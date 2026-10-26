@@ -109,25 +109,19 @@ constexpr void cswap(std::tuple<Tys...> &a, std::tuple<Tys...> &b) {
   cswap(a, b, std::make_index_sequence<sizeof...(Tys)>());
 }
 
-template <typename Iter>
-constexpr void iter_swap(Iter a, Iter b) {
-  cswap(*a, *b);
-}
-
 template <typename Iterator, class Compare>
 constexpr Iterator partition(Iterator left, Iterator right, Compare const &compare) {
   auto pivot = left + (right - left) / 2;
-  iter_swap(right, pivot);
-  pivot = right;
+  auto value = *pivot;
+  cswap(*right, *pivot);
   for (auto it = left; 0 < right - it; ++it) {
-    if (compare(*it, *pivot)) {
-      iter_swap(it, left);
+    if (compare(*it, value)) {
+      cswap(*it, *left);
       left++;
     }
   }
-  iter_swap(pivot, left);
-  pivot = left;
-  return pivot;
+  cswap(*right, *left);
+  return left;
 }
 
 template <typename Iterator, class Compare>
@@ -139,10 +133,10 @@ constexpr void quicksort(Iterator left, Iterator right, Compare const &compare) 
   }
 }
 
-template <typename Container, class Compare>
-constexpr Container quicksort(Container const &array,
+template <typename T, std::size_t N, class Compare>
+constexpr bits::carray<T, N> quicksort(bits::carray<T, N> const &array,
                                      Compare const &compare) {
-  Container res = array;
+  bits::carray<T, N> res = array;
   quicksort(res.begin(), res.end() - 1, compare);
   return res;
 }

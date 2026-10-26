@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --expose-fast-api --no-lazy-feedback-allocation --turbofan
+// Flags: --allow-natives-syntax --expose-fast-api --no-lazy-feedback-allocation
 const Probe =function() {
     function probe() {
         let handler = {

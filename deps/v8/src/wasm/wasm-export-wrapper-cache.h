@@ -29,11 +29,11 @@ class WasmExportWrapperCache : public AllStatic {
  public:
   // DCHECK-fails if a caller attempts to overwrite an existing wrapper.
   static void Put(Isolate* isolate, CanonicalTypeIndex sig_index,
-                  DirectHandle<Code> code);
+                  bool receiver_is_first_param, DirectHandle<Code> code);
 
   // Returns an empty Tagged if no cache entry was found.
-  static Tagged<CodeWrapper> Get(Isolate* isolate,
-                                 CanonicalTypeIndex sig_index);
+  static Tagged<CodeWrapper> Get(Isolate* isolate, CanonicalTypeIndex sig_index,
+                                 bool receiver_is_first_param);
 
 #ifdef VERIFY_HEAP
   static void Verify(Heap* heap);
@@ -51,15 +51,20 @@ class WasmExportWrapperCache : public AllStatic {
   // Key (Smi), value (Weak<CodeWrapper>).
   static constexpr int kSlotsPerEntry = 2;
 
-  static DirectHandle<WeakFixedArray> New(Isolate* isolate, uint32_t capacity);
+  static DirectHandle<WeakFixedArray> New(Isolate* isolate, int capacity);
 
   static uint32_t Capacity(Tagged<WeakFixedArray> cache);
 
-  static uint32_t Hash(CanonicalTypeIndex sig_index) {
+  static uint32_t Hash(CanonicalTypeIndex sig_index,
+                       bool receiver_is_first_param) {
+    // We expect most signatures to get only one wrapper, so putting the
+    // {receiver_is_first_param} bit at the top should give good distribution
+    // of hash values.
     // Note: "hash" is a bit of a misnomer here; we require this value to
     // fully represent the identity of the cached value. See {FirstProbe} for
     // the step where collisions can and do happen.
-    return sig_index.index;
+    static_assert(kMaxCanonicalTypes < (1u << 21));
+    return ((receiver_is_first_param ? 1 : 0) << 21) | sig_index.index;
   }
 
   // Maps the n-th entry to an index in the underlying WeakFixedArray.
@@ -86,7 +91,7 @@ class WasmExportWrapperCache : public AllStatic {
 
   template <bool entry_may_exist>
   static void PutInternal(Tagged<WeakFixedArray> cache, uint32_t hash,
-                          Tagged<MaybeObject> value);
+                          Tagged<MaybeWeak<Object>> value);
 };
 
 }  // namespace v8::internal::wasm

@@ -12,12 +12,12 @@ namespace v8 {
 namespace internal {
 
 // -----------------------------------------------------------------------------
-// https://tc39.es/ecma262/#sec-symbol-objects
+// ES #sec-symbol-objects
 
-// https://tc39.es/ecma262/#sec-symbol-constructor
+// ES #sec-symbol-constructor
 BUILTIN(SymbolConstructor) {
   HandleScope scope(isolate);
-  if (!IsUndefined(*args.new_target())) {  // [[Construct]]
+  if (!IsUndefined(*args.new_target(), isolate)) {  // [[Construct]]
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kNotConstructor,
                               isolate->factory()->Symbol_string()));
@@ -25,7 +25,7 @@ BUILTIN(SymbolConstructor) {
   // [[Call]]
   DirectHandle<Symbol> result = isolate->factory()->NewSymbol();
   Handle<Object> description = args.atOrUndefined(isolate, 1);
-  if (!IsUndefined(*description)) {
+  if (!IsUndefined(*description, isolate)) {
     ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, description,
                                        Object::ToString(isolate, description));
     result->set_description(Cast<String>(*description));
@@ -33,7 +33,7 @@ BUILTIN(SymbolConstructor) {
   return *result;
 }
 
-// https://tc39.es/ecma262/#sec-symbol.for
+// ES6 section 19.4.2.1 Symbol.for.
 BUILTIN(SymbolFor) {
   HandleScope scope(isolate);
   Handle<Object> key_obj = args.atOrUndefined(isolate, 1);
@@ -43,7 +43,7 @@ BUILTIN(SymbolFor) {
   return *isolate->SymbolFor(RootIndex::kPublicSymbolTable, key, false);
 }
 
-// https://tc39.es/ecma262/#sec-symbol.keyfor
+// ES6 section 19.4.2.5 Symbol.keyFor.
 BUILTIN(SymbolKeyFor) {
   HandleScope scope(isolate);
   Handle<Object> obj = args.atOrUndefined(isolate, 1);

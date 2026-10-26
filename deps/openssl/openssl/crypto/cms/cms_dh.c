@@ -29,7 +29,7 @@ static int dh_cms_set_peerkey(EVP_PKEY_CTX *pctx,
     BIGNUM *bnpub = NULL;
     const unsigned char *p;
     unsigned char *buf = NULL;
-    size_t plen;
+    int plen;
 
     X509_ALGOR_get0(&aoid, &atype, &aval, alg);
     if (OBJ_obj2nid(aoid) != NID_dhpublicnumber)
@@ -43,33 +43,29 @@ static int dh_cms_set_peerkey(EVP_PKEY_CTX *pctx,
         goto err;
 
     /* Get public key */
-    plen = ASN1_STRING_get_length(pubkey);
-    if (plen > INT_MAX)
-        goto err;
+    plen = ASN1_STRING_length(pubkey);
     p = ASN1_STRING_get0_data(pubkey);
     if (p == NULL || plen == 0)
         goto err;
 
-    if ((public_key = d2i_ASN1_INTEGER(NULL, &p, (int)plen)) == NULL)
+    if ((public_key = d2i_ASN1_INTEGER(NULL, &p, plen)) == NULL)
         goto err;
     /*
      * Pad to full p parameter size as that is checked by
      * EVP_PKEY_set1_encoded_public_key()
      */
     plen = EVP_PKEY_get_size(pk);
-    if (plen > INT_MAX)
-        goto err;
     if ((bnpub = ASN1_INTEGER_to_BN(public_key, NULL)) == NULL)
         goto err;
     if ((buf = OPENSSL_malloc(plen)) == NULL)
         goto err;
-    if (BN_bn2binpad(bnpub, buf, (int)plen) < 0)
+    if (BN_bn2binpad(bnpub, buf, plen) < 0)
         goto err;
 
     pkpeer = EVP_PKEY_new();
     if (pkpeer == NULL
         || !EVP_PKEY_copy_parameters(pkpeer, pk)
-        || EVP_PKEY_set1_encoded_public_key(pkpeer, buf, (int)plen) <= 0)
+        || EVP_PKEY_set1_encoded_public_key(pkpeer, buf, plen) <= 0)
         goto err;
 
     if (EVP_PKEY_derive_set_peer(pctx, pkpeer) > 0)
@@ -90,8 +86,7 @@ static int dh_cms_set_shared_info(EVP_PKEY_CTX *pctx, CMS_RecipientInfo *ri)
     const unsigned char *p;
     unsigned char *dukm = NULL;
     size_t dukmlen = 0;
-    int keylen;
-    size_t plen;
+    int keylen, plen;
     EVP_CIPHER *kekcipher = NULL;
     EVP_CIPHER_CTX *kekctx;
     const ASN1_OBJECT *aoid;
@@ -121,10 +116,8 @@ static int dh_cms_set_shared_info(EVP_PKEY_CTX *pctx, CMS_RecipientInfo *ri)
         goto err;
 
     p = ASN1_STRING_get0_data(parameter);
-    plen = ASN1_STRING_get_length(parameter);
-    if (plen > INT_MAX)
-        goto err;
-    kekalg = d2i_X509_ALGOR(NULL, &p, (int)plen);
+    plen = ASN1_STRING_length(parameter);
+    kekalg = d2i_X509_ALGOR(NULL, &p, plen);
     if (kekalg == NULL)
         goto err;
     kekctx = CMS_RecipientInfo_kari_get0_ctx(ri);
@@ -153,15 +146,13 @@ static int dh_cms_set_shared_info(EVP_PKEY_CTX *pctx, CMS_RecipientInfo *ri)
         goto err;
 
     if (ukm != NULL) {
-        dukmlen = ASN1_STRING_get_length(ukm);
-        if (dukmlen > INT_MAX)
-            goto err;
-        dukm = OPENSSL_memdup(ASN1_STRING_get0_data(ukm), (int)dukmlen);
+        dukmlen = ASN1_STRING_length(ukm);
+        dukm = OPENSSL_memdup(ASN1_STRING_get0_data(ukm), dukmlen);
         if (dukm == NULL)
             goto err;
     }
 
-    if (EVP_PKEY_CTX_set0_dh_kdf_ukm(pctx, dukm, (int)dukmlen) <= 0)
+    if (EVP_PKEY_CTX_set0_dh_kdf_ukm(pctx, dukm, dukmlen) <= 0)
         goto err;
     dukm = NULL;
 
@@ -249,7 +240,7 @@ static int dh_cms_encrypt(CMS_RecipientInfo *ri)
         if (penclen <= 0)
             goto err;
         ASN1_STRING_set0(pubkey, penc, penclen);
-        ossl_asn1_bit_string_set_unused_bits(pubkey, 0);
+        ossl_asn1_string_set_bits_left(pubkey, 0);
 
         penc = NULL;
         (void)X509_ALGOR_set0(talg, OBJ_nid2obj(NID_dhpublicnumber),
@@ -307,15 +298,13 @@ static int dh_cms_encrypt(CMS_RecipientInfo *ri)
         goto err;
 
     if (ukm != NULL) {
-        dukmlen = ASN1_STRING_get_length(ukm);
-        if (dukmlen > INT_MAX)
-            goto err;
+        dukmlen = ASN1_STRING_length(ukm);
         dukm = OPENSSL_memdup(ASN1_STRING_get0_data(ukm), dukmlen);
         if (dukm == NULL)
             goto err;
     }
 
-    if (EVP_PKEY_CTX_set0_dh_kdf_ukm(pctx, dukm, (int)dukmlen) <= 0)
+    if (EVP_PKEY_CTX_set0_dh_kdf_ukm(pctx, dukm, dukmlen) <= 0)
         goto err;
     dukm = NULL;
 

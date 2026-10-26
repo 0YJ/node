@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning --expose-internals
+// Flags: --experimental-vfs --expose-internals
 'use strict';
 
 // MemoryFileHandle internals: the "stats not available" path when there

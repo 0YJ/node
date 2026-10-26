@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-#include "include/v8config.h"
+#include "src/base/hashing.h"
 
 namespace v8 {
 
@@ -27,7 +27,10 @@ class V8_EXPORT Version {
   static int GetPatch() { return patch_; }
   static const char* GetEmbedder() { return embedder_; }
   static bool IsCandidate() { return candidate_; }
-  static uint32_t Hash();
+  static uint32_t Hash() {
+    return static_cast<uint32_t>(
+        base::hash_combine(major_, minor_, build_, patch_));
+  }
 
   // Calculate the V8 version string.
   static void GetString(base::Vector<char> str);
@@ -52,7 +55,6 @@ class V8_EXPORT Version {
   friend void SetVersion(int major, int minor, int build, int patch,
                          const char* embedder, bool candidate,
                          const char* soname);
-  friend class ScopedVersionEmbedderString;
 };
 
 }  // namespace internal

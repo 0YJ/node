@@ -21,7 +21,8 @@ struct KmacConfig final : public MemoryRetainer {
   ByteSource signature;
   ByteSource customization;
   KmacVariant variant;
-  uint32_t length;  // Output length in bits
+  size_t key_length;  // Key length in bits
+  uint32_t length;    // Output length in bits
 
   KmacConfig() = default;
 
@@ -64,7 +65,7 @@ void Initialize(Environment* env, v8::Local<v8::Object> target);
 void RegisterExternalReferences(ExternalReferenceRegistry* registry);
 }  // namespace Kmac
 
-#elif defined(OPENSSL_IS_BORINGSSL)
+#else
 // If there is no KMAC support, provide empty namespace functions.
 namespace Kmac {
 void Initialize(Environment* env, v8::Local<v8::Object> target) {}

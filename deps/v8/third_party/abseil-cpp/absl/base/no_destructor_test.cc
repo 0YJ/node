@@ -60,20 +60,21 @@ TEST(NoDestructorTest, DestructorNeverCalled) {
 TEST(NoDestructorTest, Noncopyable) {
   using T = absl::NoDestructor<int>;
 
-  EXPECT_FALSE((std::is_constructible_v<T, T>));
-  EXPECT_FALSE((std::is_constructible_v<T, const T>));
-  EXPECT_FALSE((std::is_constructible_v<T, T&>));
-  EXPECT_FALSE((std::is_constructible_v<T, const T&>));
+  EXPECT_FALSE((std::is_constructible<T, T>::value));
+  EXPECT_FALSE((std::is_constructible<T, const T>::value));
+  EXPECT_FALSE((std::is_constructible<T, T&>::value));
+  EXPECT_FALSE((std::is_constructible<T, const T&>::value));
 
-  EXPECT_FALSE((std::is_assignable_v<T&, T>));
-  EXPECT_FALSE((std::is_assignable_v<T&, const T>));
-  EXPECT_FALSE((std::is_assignable_v<T&, T&>));
-  EXPECT_FALSE((std::is_assignable_v<T&, const T&>));
+  EXPECT_FALSE((std::is_assignable<T&, T>::value));
+  EXPECT_FALSE((std::is_assignable<T&, const T>::value));
+  EXPECT_FALSE((std::is_assignable<T&, T&>::value));
+  EXPECT_FALSE((std::is_assignable<T&, const T&>::value));
 }
 
 TEST(NoDestructorTest, Interface) {
-  EXPECT_TRUE(std::is_trivially_destructible_v<absl::NoDestructor<Blob>>);
-  EXPECT_TRUE(std::is_trivially_destructible_v<absl::NoDestructor<const Blob>>);
+  EXPECT_TRUE(std::is_trivially_destructible<absl::NoDestructor<Blob>>::value);
+  EXPECT_TRUE(
+      std::is_trivially_destructible<absl::NoDestructor<const Blob>>::value);
   {
     absl::NoDestructor<Blob> b;  // default c-tor
     // access: *, ->, get()
@@ -172,10 +173,12 @@ const int& Int() {
 
 TEST(NoDestructorTest, StaticPattern) {
   EXPECT_TRUE(
-      std::is_trivially_destructible_v<absl::NoDestructor<std::string>>);
-  EXPECT_TRUE(std::is_trivially_destructible_v<absl::NoDestructor<MyArray>>);
-  EXPECT_TRUE(std::is_trivially_destructible_v<absl::NoDestructor<MyVector>>);
-  EXPECT_TRUE(std::is_trivially_destructible_v<absl::NoDestructor<int>>);
+      std::is_trivially_destructible<absl::NoDestructor<std::string>>::value);
+  EXPECT_TRUE(
+      std::is_trivially_destructible<absl::NoDestructor<MyArray>>::value);
+  EXPECT_TRUE(
+      std::is_trivially_destructible<absl::NoDestructor<MyVector>>::value);
+  EXPECT_TRUE(std::is_trivially_destructible<absl::NoDestructor<int>>::value);
 
   EXPECT_EQ(*Str0(), "");
   Str0()->append("foo");
@@ -195,7 +198,7 @@ TEST(NoDestructorTest, StaticPattern) {
 
 TEST(NoDestructorTest, ClassTemplateArgumentDeduction) {
   absl::NoDestructor i(1);
-  static_assert(std::is_same_v<decltype(i), absl::NoDestructor<int>>,
+  static_assert(std::is_same<decltype(i), absl::NoDestructor<int>>::value,
                 "Expected deduced type to be int.");
 }
 

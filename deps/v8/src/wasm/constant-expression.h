@@ -134,7 +134,8 @@ V8_INLINE WasmValue to_value(ValueOrError result) {
 ValueOrError EvaluateConstantExpression(
     Zone* zone, ConstantExpression expr, ValueType expected,
     const WasmModule* module, Isolate* isolate,
-    DirectHandle<WasmTrustedInstanceData> trusted_instance_data);
+    DirectHandle<WasmTrustedInstanceData> trusted_instance_data,
+    DirectHandle<WasmTrustedInstanceData> shared_trusted_instance_data);
 
 }  // namespace wasm
 }  // namespace internal

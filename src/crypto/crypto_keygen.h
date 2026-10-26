@@ -352,29 +352,29 @@ struct KeyPairGenConfig final : public MemoryRetainer {
   SET_SELF_SIZE(KeyPairGenConfig)
 };
 
-struct NamedKeyPairParams final : public MemoryRetainer {
-  const ncrypto::KeyAlgorithm* algorithm = nullptr;
+struct NidKeyPairParams final : public MemoryRetainer {
+  int id;
   SET_NO_MEMORY_INFO()
-  SET_MEMORY_INFO_NAME(NamedKeyPairParams)
-  SET_SELF_SIZE(NamedKeyPairParams)
+  SET_MEMORY_INFO_NAME(NidKeyPairParams)
+  SET_SELF_SIZE(NidKeyPairParams)
 };
 
-using NamedKeyPairGenConfig = KeyPairGenConfig<NamedKeyPairParams>;
+using NidKeyPairGenConfig = KeyPairGenConfig<NidKeyPairParams>;
 
-struct NamedKeyPairGenTraits final {
-  using AdditionalParameters = NamedKeyPairGenConfig;
-  static constexpr const char* JobName = "NamedKeyPairGenJob";
+struct NidKeyPairGenTraits final {
+  using AdditionalParameters = NidKeyPairGenConfig;
+  static constexpr const char* JobName = "NidKeyPairGenJob";
 
-  static ncrypto::EVPKeyCtxPointer Setup(NamedKeyPairGenConfig* params);
+  static ncrypto::EVPKeyCtxPointer Setup(NidKeyPairGenConfig* params);
 
   static v8::Maybe<void> AdditionalConfig(
       CryptoJobMode mode,
       const v8::FunctionCallbackInfo<v8::Value>& args,
       unsigned int* offset,
-      NamedKeyPairGenConfig* params);
+      NidKeyPairGenConfig* params);
 };
 
-using NamedKeyPairGenJob = KeyGenJob<KeyPairGenTraits<NamedKeyPairGenTraits>>;
+using NidKeyPairGenJob = KeyGenJob<KeyPairGenTraits<NidKeyPairGenTraits>>;
 using SecretKeyGenJob = KeyGenJob<SecretKeyGenTraits>;
 }  // namespace node::crypto
 

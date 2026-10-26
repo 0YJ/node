@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.readFile, fs.readdir, fs.realpath, fs.access, and fs.exists callbacks

@@ -53,7 +53,6 @@ function runBenchmark(binary, file, options) {
   const args = [
     ...options.nodeArgs,
     '--no-warnings',
-    '--experimental-bench',
     '--bench',
     '--bench-reporter=json',
     '--bench-samples=1',

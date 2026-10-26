@@ -2,7 +2,6 @@
 // source code is governed by a BSD-style license that can be found in the
 // LICENSE file.
 
-#include "src/api/api.h"
 #include "src/base/memory.h"
 #include "src/codegen/external-reference.h"
 #include "test/cctest/cctest.h"
@@ -298,7 +297,6 @@ TEST(RunCallFloat64ToUint64) {
       ref, wasm::float64_to_uint64_wrapper, ValueHelper::float64_vector());
 }
 
-#if V8_TARGET_ARCH_32_BIT
 TEST(RunCallInt64Div) {
   ExternalReference ref = ExternalReference::wasm_int64_div();
   TestExternalReference_BinOpWithReturn<int64_t>(ref, wasm::int64_div_wrapper,
@@ -322,7 +320,6 @@ TEST(RunCallUint64Mod) {
   TestExternalReference_BinOpWithReturn<uint64_t>(ref, wasm::uint64_mod_wrapper,
                                                   ValueHelper::uint64_vector());
 }
-#endif  // V8_TARGET_ARCH_32_BIT
 
 TEST(RunCallWord32Ctz) {
   ExternalReference ref = ExternalReference::wasm_word32_ctz();
@@ -866,12 +863,6 @@ SIGNATURE_TEST(RunCallWithSignatureOnlyDouble20, SIGNATURE_ONLY_DOUBLE_20,
                func_only_double_20)
 
 #endif  // V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
-
-#undef CHECK_ARG_I
-#undef ReturnType
-#undef CHECK_RESULT
-#undef IF_SIMULATOR_ADD_SIGNATURE
-#undef SIGNATURE_TEST
 
 }  // namespace compiler
 }  // namespace internal

@@ -19,27 +19,12 @@
 
 static void evp_kem_free(void *data)
 {
-    EVP_KEM *kem = (EVP_KEM *)data;
-    int i;
-
-    if (kem == NULL)
-        return;
-
-    CRYPTO_DOWN_REF(&kem->refcnt, &i);
-    if (i > 0)
-        return;
-    OPENSSL_free(kem->type_name);
-    ossl_provider_free(kem->prov);
-    CRYPTO_FREE_REF(&kem->refcnt);
-    OPENSSL_free(kem);
+    EVP_KEM_free(data);
 }
 
 static int evp_kem_up_ref(void *data)
 {
-    EVP_KEM *kem = (EVP_KEM *)data;
-    int ref = 0;
-
-    return CRYPTO_UP_REF(&kem->refcnt, &ref);
+    return EVP_KEM_up_ref(data);
 }
 
 static int evp_kem_init(EVP_PKEY_CTX *ctx, int operation,
@@ -316,7 +301,7 @@ static EVP_KEM *evp_kem_new(OSSL_PROVIDER *prov)
 }
 
 static void *evp_kem_from_algorithm(int name_id, const OSSL_ALGORITHM *algodef,
-    OSSL_PROVIDER *prov, int no_store)
+    OSSL_PROVIDER *prov)
 {
     const OSSL_DISPATCH *fns = algodef->implementation;
     EVP_KEM *kem = NULL;
@@ -329,8 +314,6 @@ static void *evp_kem_from_algorithm(int name_id, const OSSL_ALGORITHM *algodef,
     }
 
     kem->name_id = name_id;
-    kem->no_store = no_store;
-
     if ((kem->type_name = ossl_algorithm_get1_first_name(algodef)) == NULL)
         goto err;
     kem->description = algodef->algorithm_description;
@@ -443,29 +426,32 @@ static void *evp_kem_from_algorithm(int name_id, const OSSL_ALGORITHM *algodef,
 
     return kem;
 err:
-    evp_kem_free(kem);
+    EVP_KEM_free(kem);
     return NULL;
 }
 
 void EVP_KEM_free(EVP_KEM *kem)
 {
-#ifdef OPENSSL_NO_CACHED_FETCH
-    evp_kem_free(kem);
-#else
-    if (kem != NULL && (kem->no_store != 0))
-        evp_kem_free(kem);
-#endif
+    int i;
+
+    if (kem == NULL)
+        return;
+
+    CRYPTO_DOWN_REF(&kem->refcnt, &i);
+    if (i > 0)
+        return;
+    OPENSSL_free(kem->type_name);
+    ossl_provider_free(kem->prov);
+    CRYPTO_FREE_REF(&kem->refcnt);
+    OPENSSL_free(kem);
 }
 
 int EVP_KEM_up_ref(EVP_KEM *kem)
 {
-#ifdef OPENSSL_NO_CACHED_FETCH
-    return evp_kem_up_ref(kem);
-#else
-    if (kem->no_store != 0)
-        return evp_kem_up_ref(kem);
+    int ref = 0;
+
+    CRYPTO_UP_REF(&kem->refcnt, &ref);
     return 1;
-#endif
 }
 
 OSSL_PROVIDER *EVP_KEM_get0_provider(const EVP_KEM *kem)
@@ -515,11 +501,7 @@ void EVP_KEM_do_all_provided(OSSL_LIB_CTX *libctx,
     void (*fn)(EVP_KEM *kem, void *arg),
     void *arg)
 {
-    struct EVP_KEM_do_all_provided_thunk t;
-
-    t.fn = fn;
-    t.arg = arg;
-    evp_generic_do_all(libctx, OSSL_OP_KEM, EVP_KEM_do_all_provided_thunk, &t,
+    evp_generic_do_all(libctx, OSSL_OP_KEM, (void (*)(void *, void *))fn, arg,
         evp_kem_from_algorithm,
         evp_kem_up_ref,
         evp_kem_free);

@@ -7,7 +7,6 @@ const checks = require('npm-install-checks')
 const reifyFinish = require('../utils/reify-finish.js')
 const resolveAllowScripts = require('../utils/resolve-allow-scripts.js')
 const strictAllowScriptsPreflight = require('../utils/strict-allow-scripts-preflight.js')
-const { patchRelaxOpts } = require('../utils/cli-only-flag.js')
 const ArboristWorkspaceCmd = require('../arborist-cmd.js')
 
 class Install extends ArboristWorkspaceCmd {
@@ -153,30 +152,14 @@ class Install extends ArboristWorkspaceCmd {
       add: args,
       workspaces: this.workspaceNames,
       allowScripts: allowScriptsPolicy,
-      // patch relax flags are honored only when passed on the command line
-      ...patchRelaxOpts(this.npm.config),
     }
-
-    // Root lifecycle scripts only run for a bare `npm install` in a local project. `preinstall` runs *before* Arborist touches the filesystem so that scripts can bootstrap the environment (e.g. set up private-registry auth, generate files consumed during resolution) before dependencies are fetched or unpacked. The remaining scripts run after reify as they did before.
-    const runRootLifecycle = !args.length && !isGlobalInstall && !ignoreScripts
-    const runRootScript = (event) => runScript({
-      path: where,
-      args: [],
-      scriptShell,
-      stdio: 'inherit',
-      event,
-    })
-
-    if (runRootLifecycle) {
-      await runRootScript('preinstall')
-    }
-
     const arb = new Arborist(opts)
     await strictAllowScriptsPreflight({ arb, npm: this.npm, idealTreeOpts: opts })
     await arb.reify(opts)
 
-    if (runRootLifecycle) {
-      const postReifyScripts = [
+    if (!args.length && !isGlobalInstall && !ignoreScripts) {
+      const scripts = [
+        'preinstall',
         'install',
         'postinstall',
         'prepublish', // XXX(npm9) should we remove this finally??
@@ -184,8 +167,14 @@ class Install extends ArboristWorkspaceCmd {
         'prepare',
         'postprepare',
       ]
-      for (const event of postReifyScripts) {
-        await runRootScript(event)
+      for (const event of scripts) {
+        await runScript({
+          path: where,
+          args: [],
+          scriptShell,
+          stdio: 'inherit',
+          event,
+        })
       }
     }
     await reifyFinish(this.npm, arb)

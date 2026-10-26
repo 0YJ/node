@@ -32,7 +32,7 @@ struct RefType {
   // references a type from an earlier recgroup (i.e. if `index_in_recgroup` is
   // not set).
   uint32_t index;
-  SharedFlag shared;
+  bool shared;
   Nullability nullable;
 
   // `ref_type_kind` and `index_in_recgroup` will be set by `FixupRefType`.
@@ -40,7 +40,7 @@ struct RefType {
   std::optional<uint32_t> index_in_recgroup;
 
   // Construction only passes the first three fields.
-  RefType(uint32_t index, SharedFlag shared, Nullability nullable)
+  RefType(uint32_t index, bool shared, Nullability nullable)
       : index(index), shared(shared), nullable(nullable) {}
 
   void FixupRefType(const std::vector<RefTypeKind>& available_ref_types,
@@ -174,10 +174,10 @@ struct StructType {
       mutabilities[i] = field_types[i].mutability;
     }
     bool is_descriptor = false;  // TODO(403372470): Add support.
-    // TODO(42204563): Add support for SharedFlag{true}.
+    bool is_shared = false;      // TODO(42204563): Add support.
     builder->AddStructType(
         zone->New<wasm::StructType>(field_count, kNoOffsets, reps, mutabilities,
-                                    is_descriptor, SharedFlag{false}),
+                                    is_descriptor, is_shared),
         kNotFinal, kNoSupertype);
   }
 
@@ -378,8 +378,7 @@ static fuzztest::Domain<test::Module> ArbitraryModule() {
       /* index */ fuzztest::NonNegative<int>(),
       // TODO(clemensb): Support shared types; the bit currently gets lost in
       // the module builder.
-      /* shared */
-      fuzztest::Just(SharedFlag{false}),  // fuzztest::Arbitrary<bool>(),
+      /* shared */ fuzztest::Just(false),  // fuzztest::Arbitrary<bool>(),
       /* nullability */
       fuzztest::ElementOf({Nullability::kNullable, Nullability::kNonNullable}));
 
@@ -480,7 +479,7 @@ void TypeCanonicalizerTest::TestCanonicalization(
     bool kValidateModule = true;
     ModuleResult result =
         DecodeWasmModule(enabled_features_, base::VectorOf(buffer),
-                         kValidateModule, &detected_features);
+                         kValidateModule, kWasmOrigin, &detected_features);
 
     // If this fails due to too many types, we need to constrain vector sizes in
     // the fuzzer domains.

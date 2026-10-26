@@ -13,9 +13,6 @@ import { promisify } from 'node:util';
 import { randomBytes, sign, verify } from 'node:crypto';
 import fixtures from '../common/fixtures.js';
 
-const pSign = promisify(sign);
-const pVerify = promisify(verify);
-
 function getKeyFileName(type, suffix) {
   return `${type.replaceAll('-', '_')}_${suffix}.pem`;
 }
@@ -40,8 +37,6 @@ for (const [asymmetricKeyType, sigLen] of [
   };
 
   const data = randomBytes(32);
-  // Start the async signature before the sync work to overlap the two.
-  const signaturePromise = pSign(undefined, data, keys.private);
 
   // sync
   {
@@ -53,7 +48,9 @@ for (const [asymmetricKeyType, sigLen] of [
 
   // async
   {
-    const signature = await signaturePromise;
+    const pSign = promisify(sign);
+    const pVerify = promisify(verify);
+    const signature = await pSign(undefined, data, keys.private);
     assert.strictEqual(signature.byteLength, sigLen);
     assert.strictEqual(await pVerify(undefined, randomBytes(32), keys.public, signature), false);
     assert.strictEqual(await pVerify(undefined, data, keys.public, signature), true);
