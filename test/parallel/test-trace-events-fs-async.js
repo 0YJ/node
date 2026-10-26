@@ -5,6 +5,8 @@ const cp = require('child_process');
 const fs = require('fs');
 const util = require('util');
 
+common.skipIfPerfettoEnabled();
+
 const tests = { __proto__: null };
 
 let gid = 1;
@@ -45,8 +47,10 @@ function chown({ uid, gid }) {
 
 function close() {
   const fs = require('fs');
-  fs.writeFile('fs3.txt', '123', 'utf8', () => {
-    fs.unlinkSync('fs3.txt');
+  fs.open('fs3.txt', 'w', (err, fd) => {
+    fs.close(fd, () => {
+      fs.unlinkSync('fs3.txt');
+    });
   });
 }
 
@@ -89,7 +93,9 @@ function fdatasync() {
 function fstat() {
   const fs = require('fs');
   fs.writeFileSync('fs8.txt', '123', 'utf8');
-  fs.readFile('fs8.txt', () => {
+  const fd = fs.openSync('fs8.txt', 'r');
+  fs.fstat(fd, () => {
+    fs.closeSync(fd);
     fs.unlinkSync('fs8.txt');
   });
 }
@@ -169,7 +175,8 @@ function mktmp() {
 
 function open() {
   const fs = require('fs');
-  fs.writeFile('fs16.txt', '123', 'utf8', () => {
+  fs.open('fs16.txt', 'w', (err, fd) => {
+    fs.closeSync(fd);
     fs.unlinkSync('fs16.txt');
   });
 }

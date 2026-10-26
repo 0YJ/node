@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <optional>
+
 #include "include/v8-function-callback.h"
 #include "include/v8-function.h"
-#include "src/base/optional.h"
 #include "src/base/strings.h"
 #include "test/cctest/cctest.h"
 
@@ -33,6 +34,9 @@ struct IncumbentTestExpectations {
   Local<Context> function_context;
   int call_count = 0;
 };
+// This tag value has been picked arbitrarily between 0 and
+// V8_EXTERNAL_POINTER_TAG_COUNT.
+constexpr v8::ExternalPointerTypeTag kIncumbentTestExpectationsTag = 13;
 
 // This callback checks that the incumbent context equals to the expected one
 // and returns the function's context ID (i.e. "globalThis.id").
@@ -43,7 +47,7 @@ void FunctionWithIncumbentCheck(
 
   IncumbentTestExpectations* expected =
       reinterpret_cast<IncumbentTestExpectations*>(
-          info.Data().As<External>()->Value());
+          info.Data().As<External>()->Value(kIncumbentTestExpectationsTag));
 
   expected->call_count++;
 
@@ -109,7 +113,7 @@ v8::LocalVector<Context> SetupCrossContextTest(
   }
 
   Local<External> expected_incumbent_context_ptr =
-      External::New(isolate, expected);
+      External::New(isolate, expected, kIncumbentTestExpectationsTag);
 
   // Create cross-realm references in every realm's global object and
   // a constructor function that also checks the incumbent context.
@@ -238,7 +242,7 @@ void IncumbentContextTest_Api(bool with_api_incumbent) {
     Local<Context> context0 = contexts[0];
     Local<Context> context2 = contexts[2];
 
-    v8::base::Optional<Context::BackupIncumbentScope> incumbent_scope;
+    std::optional<Context::BackupIncumbentScope> incumbent_scope;
 
     if (with_api_incumbent) {
       // context -> set incumbent (context2) -> context0.

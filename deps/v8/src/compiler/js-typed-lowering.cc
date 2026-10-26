@@ -4,11 +4,18 @@
 
 #include "src/compiler/js-typed-lowering.h"
 
+#include <optional>
+
 #include "src/ast/modules.h"
+#include "src/base/logging.h"
+#include "src/builtins/builtins-inl.h"
 #include "src/builtins/builtins-utils.h"
 #include "src/codegen/code-factory.h"
 #include "src/codegen/interface-descriptors-inl.h"
+#include "src/common/globals.h"
 #include "src/compiler/access-builder.h"
+#include "src/compiler/allocation-builder-inl.h"
+#include "src/compiler/allocation-builder.h"
 #include "src/compiler/common-operator.h"
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/graph-assembler.h"
@@ -17,13 +24,24 @@
 #include "src/compiler/linkage.h"
 #include "src/compiler/node-matchers.h"
 #include "src/compiler/node-properties.h"
+#include "src/compiler/node.h"
+#include "src/compiler/opcodes.h"
 #include "src/compiler/operator-properties.h"
+#include "src/compiler/simplified-operator.h"
+#include "src/compiler/turbofan-types.h"
 #include "src/compiler/type-cache.h"
-#include "src/compiler/types.h"
+#include "src/deoptimizer/deoptimize-reason.h"
 #include "src/execution/protectors.h"
+#include "src/flags/flags.h"
+#include "src/objects/casting.h"
+#include "src/objects/contexts.h"
+#include "src/objects/heap-number.h"
+#include "src/objects/heap-object.h"
 #include "src/objects/js-generator.h"
 #include "src/objects/module-inl.h"
 #include "src/objects/objects-inl.h"
+#include "src/objects/objects.h"
+#include "src/objects/property-cell.h"
 
 namespace v8 {
 namespace internal {
@@ -61,6 +79,7 @@ class JSBinopReduction final {
       case CompareOperationHint::kBigInt64:
       case CompareOperationHint::kReceiver:
       case CompareOperationHint::kReceiverOrNullOrUndefined:
+      case CompareOperationHint::kStringOrOddball:
       case CompareOperationHint::kInternalizedString:
         break;
     }
@@ -80,6 +99,7 @@ class JSBinopReduction final {
       case CompareOperationHint::kSymbol:
       case CompareOperationHint::kReceiver:
       case CompareOperationHint::kReceiverOrNullOrUndefined:
+      case CompareOperationHint::kStringOrOddball:
       case CompareOperationHint::kInternalizedString:
         return false;
       case CompareOperationHint::kBigInt:
@@ -119,6 +139,13 @@ class JSBinopReduction final {
            BothInputsMaybe(Type::String());
   }
 
+  bool IsStringOrOddballCompareOperation() {
+    DCHECK_EQ(1, node_->op()->EffectOutputCount());
+    return (GetCompareOperationHint(node_) ==
+            CompareOperationHint::kStringOrOddball) &&
+           BothInputsMaybe(Type::StringOrOddball());
+  }
+
   bool IsSymbolCompareOperation() {
     DCHECK_EQ(1, node_->op()->EffectOutputCount());
     return (GetCompareOperationHint(node_) == CompareOperationHint::kSymbol) &&
@@ -130,14 +157,30 @@ class JSBinopReduction final {
   // minimum length.
   bool ShouldCreateConsString() {
     DCHECK_EQ(IrOpcode::kJSAdd, node_->opcode());
-    DCHECK(OneInputIs(Type::String()));
-    if (BothInputsAre(Type::String()) ||
+    DCHECK(OneInputIs(Type::StringOrStringWrapper()));
+    if (node_->InputAt(1)->opcode() == IrOpcode::kNewConsString) {
+      // If the right hand side is a ConsString, then we can create a
+      // ConsString. This doesn't work with the left hand side, since the right
+      // hand side of a ConsString cannot be the empty string except when the
+      // left hand side is a SeqString or External string, but we don't know
+      // that here.
+      return true;
+    }
+    // We don't look inside JSStringWrappers, but if the other side is a long
+    // enough string, that's enough to trigger cons string creation.
+    if (BothInputsAre(Type::StringOrStringWrapper()) ||
         GetBinaryOperationHint(node_) == BinaryOperationHint::kString) {
       HeapObjectBinopMatcher m(node_);
       JSHeapBroker* broker = lowering_->broker();
       if (m.right().HasResolvedValue() && m.right().Ref(broker).IsString()) {
         StringRef right_string = m.right().Ref(broker).AsString();
         if (right_string.length() >= ConsString::kMinLength) return true;
+        if (right_string.length() > 0 &&
+            m.left().opcode() == IrOpcode::kNewConsString) {
+          // Left is a ConsString and right is not the empty string, so we can
+          // create a ConsString.
+          return true;
+        }
       }
       if (m.left().HasResolvedValue() && m.left().Ref(broker).IsString()) {
         StringRef left_string = m.left().Ref(broker).AsString();
@@ -240,6 +283,43 @@ class JSBinopReduction final {
       Node* right_input =
           graph()->NewNode(simplified()->CheckString(FeedbackSource()), right(),
                            effect(), control());
+      node_->ReplaceInput(1, right_input);
+      update_effect(right_input);
+    }
+  }
+
+  void CheckInputsToStringOrOddball() {
+    if (!left_type().Is(Type::StringOrOddball())) {
+      Node* left_input =
+          graph()->NewNode(simplified()->CheckStringOrOddball(FeedbackSource()),
+                           left(), effect(), control());
+      node_->ReplaceInput(0, left_input);
+      update_effect(left_input);
+    }
+    if (!right_type().Is(Type::StringOrOddball())) {
+      Node* right_input =
+          graph()->NewNode(simplified()->CheckStringOrOddball(FeedbackSource()),
+                           right(), effect(), control());
+      node_->ReplaceInput(1, right_input);
+      update_effect(right_input);
+    }
+  }
+
+  // Checks that both inputs are String or string wrapper, and if we don't know
+  // statically that one side is already a String or a string wrapper, insert a
+  // CheckStringOrStringWrapper node.
+  void CheckInputsToStringOrStringWrapper() {
+    if (!left_type().Is(Type::StringOrStringWrapper())) {
+      Node* left_input = graph()->NewNode(
+          simplified()->CheckStringOrStringWrapper(FeedbackSource()), left(),
+          effect(), control());
+      node_->ReplaceInput(0, left_input);
+      update_effect(left_input);
+    }
+    if (!right_type().Is(Type::StringOrStringWrapper())) {
+      Node* right_input = graph()->NewNode(
+          simplified()->CheckStringOrStringWrapper(FeedbackSource()), right(),
+          effect(), control());
       node_->ReplaceInput(1, right_input);
       update_effect(right_input);
     }
@@ -418,7 +498,7 @@ class JSBinopReduction final {
   Type type() { return NodeProperties::GetType(node_); }
 
   SimplifiedOperatorBuilder* simplified() { return lowering_->simplified(); }
-  Graph* graph() const { return lowering_->graph(); }
+  TFGraph* graph() const { return lowering_->graph(); }
   JSGraph* jsgraph() { return lowering_->jsgraph(); }
   Isolate* isolate() { return jsgraph()->isolate(); }
   JSOperatorBuilder* javascript() { return lowering_->javascript(); }
@@ -457,8 +537,13 @@ class JSBinopReduction final {
   }
 
   CompareOperationHint GetCompareOperationHint(Node* node) const {
-    const FeedbackParameter& p = FeedbackParameterOf(node->op());
-    return lowering_->broker()->GetFeedbackForCompareOperation(p.feedback());
+    if (JSOperator::IsBinaryWithEmbeddedFeedback(node->opcode())) {
+      const EmbeddedHintParameter& p = EmbeddedHintParameterOf(node->op());
+      return std::get<CompareOperationHint>(p.hint());
+    } else {
+      const FeedbackParameter& p = FeedbackParameterOf(node->op());
+      return lowering_->broker()->GetFeedbackForCompareOperation(p.feedback());
+    }
   }
 
   void update_effect(Node* effect) {
@@ -549,6 +634,108 @@ Reduction JSTypedLowering::ReduceJSNegate(Node* node) {
   return NoChange();
 }
 
+Reduction JSTypedLowering::GenerateStringAddition(
+    Node* node, Node* left, Node* right, Node* context, Node* frame_state,
+    Node** effect, Node** control, bool should_create_cons_string) {
+  // Compute the resulting length.
+  Node* left_length = graph()->NewNode(simplified()->StringLength(), left);
+  Node* right_length = graph()->NewNode(simplified()->StringLength(), right);
+  Node* length =
+      graph()->NewNode(simplified()->NumberAdd(), left_length, right_length);
+
+  PropertyCellRef string_length_protector =
+      MakeRef(broker(), factory()->string_length_protector());
+  string_length_protector.CacheAsProtector(broker());
+
+  if (string_length_protector.value(broker()).AsSmi() ==
+      Protectors::kProtectorValid) {
+    // We can just deoptimize if the {length} is out-of-bounds. Besides
+    // generating a shorter code sequence than the version below, this
+    // has the additional benefit of not holding on to the lazy {frame_state}
+    // and thus potentially reduces the number of live ranges and allows for
+    // more truncations.
+    length = *effect = graph()->NewNode(
+        simplified()->CheckBounds(FeedbackSource()), length,
+        jsgraph()->ConstantNoHole(String::kMaxLength + 1), *effect, *control);
+  } else {
+    // Check if we would overflow the allowed maximum string length.
+    Node* check =
+        graph()->NewNode(simplified()->NumberLessThanOrEqual(), length,
+                         jsgraph()->ConstantNoHole(String::kMaxLength));
+    Node* branch =
+        graph()->NewNode(common()->Branch(BranchHint::kTrue), check, *control);
+    Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+    Node* efalse = *effect;
+    {
+      // Throw a RangeError in case of overflow.
+      Node* vfalse = efalse = if_false = graph()->NewNode(
+          javascript()->CallRuntime(Runtime::kThrowInvalidStringLength),
+          context, frame_state, efalse, if_false);
+
+      // Update potential {IfException} uses of {node} to point to the
+      // %ThrowInvalidStringLength runtime call node instead.
+      Node* on_exception = nullptr;
+      if (NodeProperties::IsExceptionalCall(node, &on_exception)) {
+        NodeProperties::ReplaceControlInput(on_exception, vfalse);
+        NodeProperties::ReplaceEffectInput(on_exception, efalse);
+        if_false = graph()->NewNode(common()->IfSuccess(), vfalse);
+        Revisit(on_exception);
+      }
+
+      // The above %ThrowInvalidStringLength runtime call is an unconditional
+      // throw, making it impossible to return a successful completion in this
+      // case. We simply connect the successful completion to the graph end.
+      if_false = graph()->NewNode(common()->Throw(), efalse, if_false);
+      MergeControlToEnd(graph(), common(), if_false);
+    }
+    *control = graph()->NewNode(common()->IfTrue(), branch);
+    length = *effect =
+        graph()->NewNode(common()->TypeGuard(type_cache_->kStringLengthType),
+                         length, *effect, *control);
+  }
+  // TODO(bmeurer): Ideally this should always use StringConcat and decide to
+  // optimize to NewConsString later during SimplifiedLowering, but for that
+  // to work we need to know that it's safe to create a ConsString.
+  Operator const* const op = should_create_cons_string
+                                 ? simplified()->NewConsString()
+                                 : simplified()->StringConcat();
+  Node* value = graph()->NewNode(op, length, left, right);
+  ReplaceWithValue(node, value, *effect, *control);
+  return Replace(value);
+}
+
+Node* JSTypedLowering::UnwrapStringWrapper(Node* string_or_wrapper,
+                                           Node** effect, Node** control) {
+  Node* check =
+      graph()->NewNode(simplified()->ObjectIsString(), string_or_wrapper);
+  Node* branch = graph()->NewNode(common()->Branch(), check, *control);
+
+  Node* if_true = graph()->NewNode(common()->IfTrue(), branch);
+  Node* etrue = *effect;
+  Node* vtrue = string_or_wrapper;
+
+  // We just checked that the value is a string.
+  vtrue = etrue = graph()->NewNode(common()->TypeGuard(Type::String()), vtrue,
+                                   etrue, if_true);
+
+  Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
+  Node* efalse = *effect;
+
+  Node* vfalse = efalse = graph()->NewNode(
+      simplified()->LoadField(AccessBuilder::ForJSPrimitiveWrapperValue()),
+      string_or_wrapper, *effect, if_false);
+
+  // The value read from a string wrapper is a string.
+  vfalse = efalse = graph()->NewNode(common()->TypeGuard(Type::String()),
+                                     vfalse, efalse, if_false);
+
+  *control = graph()->NewNode(common()->Merge(2), if_true, if_false);
+  *effect = graph()->NewNode(common()->EffectPhi(2), etrue, efalse, *control);
+
+  return graph()->NewNode(common()->Phi(MachineRepresentation::kTagged, 2),
+                          vtrue, vfalse, *control);
+}
+
 Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
   JSBinopReduction r(this, node);
   if (r.BothInputsAre(Type::Number())) {
@@ -577,9 +764,21 @@ Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
     }
   }
 
+  PropertyCellRef to_primitive_protector =
+      MakeRef(broker(), factory()->string_wrapper_to_primitive_protector());
+  to_primitive_protector.CacheAsProtector(broker());
+  bool can_inline_string_wrapper_add = false;
+
   // Always bake in String feedback into the graph.
   if (r.GetBinaryOperationHint(node) == BinaryOperationHint::kString) {
     r.CheckInputsToString();
+  } else if (r.GetBinaryOperationHint(node) ==
+             BinaryOperationHint::kStringOrStringWrapper) {
+    can_inline_string_wrapper_add =
+        dependencies()->DependOnProtector(to_primitive_protector);
+    if (can_inline_string_wrapper_add) {
+      r.CheckInputsToStringOrStringWrapper();
+    }
   }
 
   // Strength-reduce concatenation of empty strings if both sides are
@@ -603,81 +802,28 @@ Reduction JSTypedLowering::ReduceJSAdd(Node* node) {
     }
   }
 
+  Node* context = NodeProperties::GetContextInput(node);
+  Node* frame_state = NodeProperties::GetFrameStateInput(node);
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+
   // Lower to string addition if both inputs are known to be strings.
   if (r.BothInputsAre(Type::String())) {
-    Node* context = NodeProperties::GetContextInput(node);
-    Node* frame_state = NodeProperties::GetFrameStateInput(node);
-    Node* effect = NodeProperties::GetEffectInput(node);
-    Node* control = NodeProperties::GetControlInput(node);
+    return GenerateStringAddition(node, r.left(), r.right(), context,
+                                  frame_state, &effect, &control,
+                                  r.ShouldCreateConsString());
+  } else if (r.BothInputsAre(Type::StringOrStringWrapper()) &&
+             can_inline_string_wrapper_add) {
+    // If the left hand side is a string wrapper, unwrap it.
+    Node* left_string = UnwrapStringWrapper(r.left(), &effect, &control);
 
-    // Compute the resulting length.
-    Node* left_length =
-        graph()->NewNode(simplified()->StringLength(), r.left());
-    Node* right_length =
-        graph()->NewNode(simplified()->StringLength(), r.right());
-    Node* length =
-        graph()->NewNode(simplified()->NumberAdd(), left_length, right_length);
+    // If the right hand side is a string wrapper, unwrap it.
+    Node* right_string = UnwrapStringWrapper(r.right(), &effect, &control);
 
-    PropertyCellRef string_length_protector =
-        MakeRef(broker(), factory()->string_length_protector());
-    string_length_protector.CacheAsProtector(broker());
-
-    if (string_length_protector.value(broker()).AsSmi() ==
-        Protectors::kProtectorValid) {
-      // We can just deoptimize if the {length} is out-of-bounds. Besides
-      // generating a shorter code sequence than the version below, this
-      // has the additional benefit of not holding on to the lazy {frame_state}
-      // and thus potentially reduces the number of live ranges and allows for
-      // more truncations.
-      length = effect = graph()->NewNode(
-          simplified()->CheckBounds(FeedbackSource()), length,
-          jsgraph()->ConstantNoHole(String::kMaxLength + 1), effect, control);
-    } else {
-      // Check if we would overflow the allowed maximum string length.
-      Node* check =
-          graph()->NewNode(simplified()->NumberLessThanOrEqual(), length,
-                           jsgraph()->ConstantNoHole(String::kMaxLength));
-      Node* branch =
-          graph()->NewNode(common()->Branch(BranchHint::kTrue), check, control);
-      Node* if_false = graph()->NewNode(common()->IfFalse(), branch);
-      Node* efalse = effect;
-      {
-        // Throw a RangeError in case of overflow.
-        Node* vfalse = efalse = if_false = graph()->NewNode(
-            javascript()->CallRuntime(Runtime::kThrowInvalidStringLength),
-            context, frame_state, efalse, if_false);
-
-        // Update potential {IfException} uses of {node} to point to the
-        // %ThrowInvalidStringLength runtime call node instead.
-        Node* on_exception = nullptr;
-        if (NodeProperties::IsExceptionalCall(node, &on_exception)) {
-          NodeProperties::ReplaceControlInput(on_exception, vfalse);
-          NodeProperties::ReplaceEffectInput(on_exception, efalse);
-          if_false = graph()->NewNode(common()->IfSuccess(), vfalse);
-          Revisit(on_exception);
-        }
-
-        // The above %ThrowInvalidStringLength runtime call is an unconditional
-        // throw, making it impossible to return a successful completion in this
-        // case. We simply connect the successful completion to the graph end.
-        if_false = graph()->NewNode(common()->Throw(), efalse, if_false);
-        MergeControlToEnd(graph(), common(), if_false);
-      }
-      control = graph()->NewNode(common()->IfTrue(), branch);
-      length = effect =
-          graph()->NewNode(common()->TypeGuard(type_cache_->kStringLengthType),
-                           length, effect, control);
-    }
-
-    // TODO(bmeurer): Ideally this should always use StringConcat and decide to
-    // optimize to NewConsString later during SimplifiedLowering, but for that
-    // to work we need to know that it's safe to create a ConsString.
-    Operator const* const op = r.ShouldCreateConsString()
-                                   ? simplified()->NewConsString()
-                                   : simplified()->StringConcat();
-    Node* value = graph()->NewNode(op, length, r.left(), r.right());
-    ReplaceWithValue(node, value, effect, control);
-    return Replace(value);
+    // Generate the string addition.
+    return GenerateStringAddition(node, left_string, right_string, context,
+                                  frame_state, &effect, &control,
+                                  r.ShouldCreateConsString());
   }
 
   // We never get here when we had String feedback.
@@ -935,7 +1081,10 @@ Reduction JSTypedLowering::ReduceJSStrictEqual(Node* node) {
   if (r.BothInputsAre(Type::String())) {
     return r.ChangeToPureOperator(simplified()->StringEqual());
   }
-
+  if (r.IsStringOrOddballCompareOperation()) {
+    r.CheckInputsToStringOrOddball();
+    return r.ChangeToPureOperator(simplified()->StringOrOddballStrictEqual());
+  }
   NumberOperationHint hint;
   BigIntOperationHint hint_bigint;
   if (r.BothInputsAre(Type::Signed32()) ||
@@ -1028,7 +1177,7 @@ Reduction JSTypedLowering::ReduceJSToNumberInput(Node* input) {
     HeapObjectMatcher m(input);
     if (m.HasResolvedValue() && m.Ref(broker()).IsString()) {
       StringRef input_value = m.Ref(broker()).AsString();
-      base::Optional<double> number = input_value.ToNumber(broker());
+      std::optional<double> number = input_value.ToNumber(broker());
       if (!number.has_value()) return NoChange();
       return Replace(jsgraph()->ConstantNoHole(number.value()));
     }
@@ -1201,10 +1350,15 @@ Reduction JSTypedLowering::ReduceJSToObject(Node* node) {
         graph()->zone(), callable.descriptor(),
         callable.descriptor().GetStackParameterCount(),
         CallDescriptor::kNeedsFrameState, node->op()->properties());
-    rfalse = efalse = if_false =
+    Node* call = rfalse = efalse = if_false =
         graph()->NewNode(common()->Call(call_descriptor),
                          jsgraph()->HeapConstantNoHole(callable.code()),
                          receiver, context, frame_state, efalse, if_false);
+
+    // We preserve the type of {node}. This is generally useful (to  enable
+    // type-based optimizations), and is also required in order to help
+    // verification of TypeGuards.
+    NodeProperties::SetType(call, NodeProperties::GetType(node));
   }
 
   // Update potential {IfException} uses of {node} to point to the above
@@ -1422,34 +1576,40 @@ Reduction JSTypedLowering::ReduceJSHasContextExtension(Node* node) {
   DCHECK_EQ(IrOpcode::kJSHasContextExtension, node->opcode());
   size_t depth = OpParameter<size_t>(node->op());
   Node* effect = NodeProperties::GetEffectInput(node);
-  Node* context = NodeProperties::GetContextInput(node);
+  TNode<Context> context =
+      TNode<Context>::UncheckedCast(NodeProperties::GetContextInput(node));
   Node* control = graph()->start();
+
+  JSGraphAssembler gasm(broker(), jsgraph_, jsgraph_->zone(),
+                        BranchSemantics::kJS);
+  gasm.InitializeEffectControl(effect, control);
+
   for (size_t i = 0; i < depth; ++i) {
-    context = effect = graph()->NewNode(
-        simplified()->LoadField(
-            AccessBuilder::ForContextSlotKnownPointer(Context::PREVIOUS_INDEX)),
-        context, effect, control);
+    context = gasm.LoadField<Context>(
+        AccessBuilder::ForContextSlotKnownPointer(Context::PREVIOUS_INDEX),
+        context);
   }
-  Node* const scope_info = effect = graph()->NewNode(
-      simplified()->LoadField(
-          AccessBuilder::ForContextSlot(Context::SCOPE_INFO_INDEX)),
-      context, effect, control);
-  Node* scope_info_flags = effect = graph()->NewNode(
-      simplified()->LoadField(AccessBuilder::ForScopeInfoFlags()), scope_info,
-      effect, control);
-  Node* flags_masked = graph()->NewNode(
-      simplified()->NumberBitwiseAnd(), scope_info_flags,
-      jsgraph()->SmiConstant(ScopeInfo::HasContextExtensionSlotBit::kMask));
-  Node* no_extension = graph()->NewNode(
-      simplified()->NumberEqual(), flags_masked, jsgraph()->SmiConstant(0));
-  Node* has_extension =
-      graph()->NewNode(simplified()->BooleanNot(), no_extension);
-  ReplaceWithValue(node, has_extension, effect, control);
+  TNode<ScopeInfo> scope_info = gasm.LoadField<ScopeInfo>(
+      AccessBuilder::ForContextSlot(Context::SCOPE_INFO_INDEX), context);
+  TNode<Word32T> scope_info_flags = gasm.EnterMachineGraph<Word32T>(
+      gasm.LoadField<Word32T>(AccessBuilder::ForScopeInfoFlags(), scope_info),
+      UseInfo::TruncatingWord32());
+  TNode<Word32T> flags_masked = gasm.Word32And(
+      scope_info_flags,
+      gasm.Uint32Constant(ScopeInfo::HasContextExtensionSlotBit::kMask));
+  TNode<Word32T> no_extension =
+      gasm.Word32Equal(flags_masked, gasm.Uint32Constant(0));
+  TNode<Word32T> has_extension =
+      gasm.Word32Equal(no_extension, gasm.Uint32Constant(0));
+  TNode<Boolean> has_extension_boolean = gasm.ExitMachineGraph<Boolean>(
+      has_extension, MachineRepresentation::kBit, Type::Boolean());
+
+  ReplaceWithValue(node, has_extension_boolean, gasm.effect(), gasm.control());
   return Changed(node);
 }
 
-Reduction JSTypedLowering::ReduceJSLoadContext(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSLoadContext, node->opcode());
+Reduction JSTypedLowering::ReduceJSLoadContextNoCell(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSLoadContextNoCell, node->opcode());
   ContextAccess const& access = ContextAccessOf(node->op());
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* context = NodeProperties::GetContextInput(node);
@@ -1469,8 +1629,77 @@ Reduction JSTypedLowering::ReduceJSLoadContext(Node* node) {
   return Changed(node);
 }
 
-Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSStoreContext, node->opcode());
+Reduction JSTypedLowering::ReduceJSLoadContext(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSLoadContext, node->opcode());
+  ContextAccess const& access = ContextAccessOf(node->op());
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  JSGraphAssembler gasm(broker(), jsgraph(), jsgraph()->zone(),
+                        BranchSemantics::kJS);
+  gasm.InitializeEffectControl(effect, control);
+
+  TNode<Context> context =
+      TNode<Context>::UncheckedCast(NodeProperties::GetContextInput(node));
+  for (size_t i = 0; i < access.depth(); ++i) {
+    context = gasm.LoadField<Context>(
+        AccessBuilder::ForContextSlotKnownPointer(Context::PREVIOUS_INDEX),
+        context);
+  }
+
+  TNode<Object> value = gasm.LoadField<Object>(
+      AccessBuilder::ForContextSlot(access.index()), context);
+  TNode<Object> result =
+      gasm.SelectIf<Object>(gasm.ObjectIsSmi(value))
+          .Then([&] { return value; })
+          .Else([&] {
+            TNode<Map> value_map =
+                gasm.LoadMap(TNode<HeapObject>::UncheckedCast(value));
+            return gasm.SelectIf<Object>(gasm.IsContextCellMap(value_map))
+                .Then([&] {
+                  TNode<HeapObject> heap_value =
+                      TNode<HeapObject>::UncheckedCast(value);
+                  TNode<Int32T> state = gasm.LoadField<Int32T>(
+                      AccessBuilder::ForContextCellState(), heap_value);
+                  static_assert(ContextCell::State::kConst == 0);
+                  static_assert(ContextCell::State::kSmi == 1);
+                  return gasm
+                      .MachineSelectIf<Object>(gasm.Int32LessThanOrEqual(
+                          state, gasm.Int32Constant(ContextCell::kSmi)))
+                      .Then([&] {
+                        return gasm.LoadField<Object>(
+                            AccessBuilder::ForContextCellTaggedValue(),
+                            heap_value);
+                      })
+                      .Else([&] {
+                        return gasm
+                            .MachineSelectIf<Object>(gasm.Word32Equal(
+                                state, gasm.Int32Constant(ContextCell::kInt32)))
+                            .Then([&] {
+                              return gasm.LoadField<Number>(
+                                  AccessBuilder::ForContextCellInt32Value(),
+                                  heap_value);
+                            })
+                            .Else([&] {
+                              return gasm.LoadField<Number>(
+                                  AccessBuilder::ForContextCellFloat64Value(),
+                                  heap_value);
+                            })
+                            .Value();
+                      })
+                      .Value();
+                })
+                .Else([&] { return value; })
+                .ExpectFalse()
+                .Value();
+          })
+          .Value();
+
+  ReplaceWithValue(node, result, gasm.effect(), gasm.control());
+  return Changed(node);
+}
+
+Reduction JSTypedLowering::ReduceJSStoreContextNoCell(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSStoreContextNoCell, node->opcode());
   ContextAccess const& access = ContextAccessOf(node->op());
   Node* effect = NodeProperties::GetEffectInput(node);
   Node* context = NodeProperties::GetContextInput(node);
@@ -1488,6 +1717,54 @@ Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
   NodeProperties::ChangeOp(
       node,
       simplified()->StoreField(AccessBuilder::ForContextSlot(access.index())));
+  return Changed(node);
+}
+
+Reduction JSTypedLowering::ReduceJSStoreContext(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSStoreContext, node->opcode());
+  ContextAccess const& access = ContextAccessOf(node->op());
+  Node* effect = NodeProperties::GetEffectInput(node);
+  Node* control = NodeProperties::GetControlInput(node);
+  FrameState frame_state{NodeProperties::GetFrameStateInput(node)};
+  JSGraphAssembler gasm(broker(), jsgraph(), jsgraph()->zone(),
+                        BranchSemantics::kJS);
+  gasm.InitializeEffectControl(effect, control);
+
+  TNode<Context> context =
+      TNode<Context>::UncheckedCast(NodeProperties::GetContextInput(node));
+  for (size_t i = 0; i < access.depth(); ++i) {
+    context = gasm.LoadField<Context>(
+        AccessBuilder::ForContextSlotKnownPointer(Context::PREVIOUS_INDEX),
+        context);
+  }
+
+  TNode<Object> old_value = gasm.LoadField<Object>(
+      AccessBuilder::ForContextSlot(access.index()), context);
+  TNode<Object> new_value =
+      TNode<Object>::UncheckedCast(NodeProperties::GetValueInput(node, 0));
+
+  gasm.If(gasm.ObjectIsSmi(old_value))
+      .Then([&] {
+        gasm.StoreField(AccessBuilder::ForContextSlot(access.index()), context,
+                        new_value);
+      })
+      .Else([&] {
+        TNode<Map> old_value_map =
+            gasm.LoadMap(TNode<HeapObject>::UncheckedCast(old_value));
+        gasm.If(gasm.IsContextCellMap(old_value_map))
+            .Then([&] {
+              gasm.DetachContextCell(context, new_value,
+                                     static_cast<int>(access.index()),
+                                     frame_state);
+            })
+            .Else([&] {
+              gasm.StoreField(AccessBuilder::ForContextSlot(access.index()),
+                              context, new_value);
+            })
+            .ExpectFalse();
+      });
+
+  ReplaceWithValue(node, gasm.effect(), gasm.effect(), gasm.control());
   return Changed(node);
 }
 
@@ -1582,6 +1859,13 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
   // -- 6 + n + 1: argc (Int32)
   // -----------------------------------
 
+  // These SBXCHECKs are a defense-in-depth measure to ensure that we always
+  // generate valid calls here (with matching signatures).
+  SBXCHECK(Builtins::IsCpp(builtin) &&
+           Builtins::IsEnabledAndNotJSTrampoline(builtin));
+  SBXCHECK_GE(arity + kJSArgcReceiverSlots,
+              Builtins::GetFormalParameterCount(builtin));
+
   // The logic contained here is mirrored in Builtins::Generate_Adaptor.
   // Keep these in sync.
 
@@ -1606,7 +1890,6 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
 
   // CPP builtins are implemented in C++, and we can inline it.
   // CPP builtins create a builtin exit frame.
-  DCHECK(Builtins::IsCpp(builtin));
   const bool has_builtin_exit_frame = true;
 
   Node* stub =
@@ -1616,12 +1899,29 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
   const int argc = arity + BuiltinArguments::kNumExtraArgsWithReceiver;
   Node* argc_node = jsgraph->ConstantNoHole(argc);
 
-  static const int kStubAndReceiver = 2;
+  static const int kStub = 1;
+  static_assert(BuiltinArguments::kNewTargetIndex == 0);
+  static_assert(BuiltinArguments::kTargetIndex == 1);
+  static_assert(BuiltinArguments::kArgcIndex == 2);
+
   node->InsertInput(zone, 1, new_target);
   node->InsertInput(zone, 2, target);
   node->InsertInput(zone, 3, argc_node);
-  node->InsertInput(zone, 4, jsgraph->PaddingConstant());
-  int cursor = arity + kStubAndReceiver + BuiltinArguments::kNumExtraArgs;
+
+#if V8_TARGET_ARCH_ARM64
+  // Make sure we insert required stack-alignment padding between extra
+  // arguments and JS arguments.
+  static_assert(BuiltinArguments::kOptionalPaddingIndex == 3);
+  static_assert(BuiltinArguments::kNumExtraArgs == 4);
+  // Just use an existing value as padding in order to avoid generation
+  // of unnecessary instructions.
+  node->InsertInput(zone, 4, argc_node);
+#else
+  // No padding required.
+  static_assert(BuiltinArguments::kNumExtraArgs == 3);
+#endif  // V8_TARGET_ARCH_ARM64
+
+  int cursor = arity + kStub + BuiltinArguments::kNumExtraArgsWithReceiver;
 
   Address entry = Builtins::CppEntryOf(builtin);
   ExternalReference entry_ref = ExternalReference::Create(entry);
@@ -1630,12 +1930,10 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
   node->InsertInput(zone, cursor++, entry_node);
   node->InsertInput(zone, cursor++, argc_node);
 
-  static const int kReturnCount = 1;
   const char* debug_name = Builtins::name(builtin);
   Operator::Properties properties = node->op()->properties();
-  auto call_descriptor = Linkage::GetCEntryStubCallDescriptor(
-      zone, kReturnCount, argc, debug_name, properties, flags,
-      StackArgumentOrder::kJS);
+  auto call_descriptor = Linkage::GetCPPBuiltinCallDescriptor(
+      zone, argc, debug_name, properties, flags);
 
   NodeProperties::ChangeOp(node, jsgraph->common()->Call(call_descriptor));
 }
@@ -1812,10 +2110,16 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
     }
 
     // Load the context from the {target}.
-    Node* context = effect = graph()->NewNode(
-        simplified()->LoadField(AccessBuilder::ForJSFunctionContext()), target,
-        effect, control);
-    NodeProperties::ReplaceContextInput(node, context);
+    if (function) {
+      NodeProperties::ReplaceContextInput(
+          node,
+          jsgraph()->ConstantNoHole(function->context(broker()), broker()));
+    } else {
+      Node* context = effect = graph()->NewNode(
+          simplified()->LoadField(AccessBuilder::ForJSFunctionContext()),
+          target, effect, control);
+      NodeProperties::ReplaceContextInput(node, context);
+    }
 
     // Update the effect dependency for the {node}.
     NodeProperties::ReplaceEffectInput(node, effect);
@@ -1824,8 +2128,9 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
     CallDescriptor::Flags flags = CallDescriptor::kNeedsFrameState;
     Node* new_target = jsgraph()->UndefinedConstant();
 
+    // TODO(412398354): use the dispatch handle here to avoid a runtime check.
     int formal_count =
-        shared->internal_formal_parameter_count_without_receiver();
+        shared->internal_formal_parameter_count_without_receiver_deprecated();
     if (formal_count > arity) {
       node->RemoveInput(n.FeedbackVectorIndex());
       // Underapplication. Massage the arguments to match the expected number of
@@ -1839,6 +2144,11 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
       node->InsertInput(graph()->zone(), formal_count + 2, new_target);
       node->InsertInput(graph()->zone(), formal_count + 3,
                         jsgraph()->ConstantNoHole(JSParameterCount(arity)));
+#ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
+      node->InsertInput(
+          graph()->zone(), formal_count + 4,
+          jsgraph()->ConstantNoHole(kPlaceholderDispatchHandle.value()));
+#endif
       NodeProperties::ChangeOp(node,
                                common()->Call(Linkage::GetJSCallDescriptor(
                                    graph()->zone(), false, 1 + formal_count,
@@ -1848,10 +2158,16 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
       // Patch {node} to a direct CEntry call.
       ReduceBuiltin(jsgraph(), node, shared->builtin_id(), arity, flags);
     } else if (shared->HasBuiltinId()) {
-      DCHECK(Builtins::HasJSLinkage(shared->builtin_id()));
+      Builtin builtin = shared->builtin_id();
+      DCHECK(Builtins::HasJSLinkage(builtin));
+
+      // This SBXCHECK is a defense-in-depth measure to ensure that we always
+      // generate valid calls here (with matching signatures).
+      SBXCHECK_GE(arity + kJSArgcReceiverSlots,
+                  Builtins::GetFormalParameterCount(builtin));
+
       // Patch {node} to a direct code object call.
-      Callable callable =
-          Builtins::CallableFor(isolate(), shared->builtin_id());
+      Callable callable = Builtins::CallableFor(isolate(), builtin);
 
       const CallInterfaceDescriptor& descriptor = callable.descriptor();
       auto call_descriptor = Linkage::GetStubCallDescriptor(
@@ -1862,6 +2178,11 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
       node->InsertInput(graph()->zone(), 2, new_target);
       node->InsertInput(graph()->zone(), 3,
                         jsgraph()->ConstantNoHole(JSParameterCount(arity)));
+#ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
+      node->InsertInput(
+          graph()->zone(), 4,
+          jsgraph()->ConstantNoHole(kPlaceholderDispatchHandle.value()));
+#endif
       NodeProperties::ChangeOp(node, common()->Call(call_descriptor));
     } else {
       // Patch {node} to a direct call.
@@ -1869,6 +2190,11 @@ Reduction JSTypedLowering::ReduceJSCall(Node* node) {
       node->InsertInput(graph()->zone(), arity + 2, new_target);
       node->InsertInput(graph()->zone(), arity + 3,
                         jsgraph()->ConstantNoHole(JSParameterCount(arity)));
+#ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
+      node->InsertInput(
+          graph()->zone(), arity + 4,
+          jsgraph()->ConstantNoHole(kPlaceholderDispatchHandle.value()));
+#endif
       NodeProperties::ChangeOp(node,
                                common()->Call(Linkage::GetJSCallDescriptor(
                                    graph()->zone(), false, 1 + arity,
@@ -2242,8 +2568,8 @@ Reduction JSTypedLowering::ReduceJSGeneratorRestoreContinuation(Node* node) {
   return Changed(continuation);
 }
 
-Reduction JSTypedLowering::ReduceJSGeneratorRestoreContext(Node* node) {
-  DCHECK_EQ(IrOpcode::kJSGeneratorRestoreContext, node->opcode());
+Reduction JSTypedLowering::ReduceJSGeneratorRestoreContextNoCell(Node* node) {
+  DCHECK_EQ(IrOpcode::kJSGeneratorRestoreContextNoCell, node->opcode());
 
   const Operator* new_op =
       simplified()->LoadField(AccessBuilder::ForJSGeneratorObjectContext());
@@ -2493,8 +2819,12 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSToObject(node);
     case IrOpcode::kJSLoadNamed:
       return ReduceJSLoadNamed(node);
+    case IrOpcode::kJSLoadContextNoCell:
+      return ReduceJSLoadContextNoCell(node);
     case IrOpcode::kJSLoadContext:
       return ReduceJSLoadContext(node);
+    case IrOpcode::kJSStoreContextNoCell:
+      return ReduceJSStoreContextNoCell(node);
     case IrOpcode::kJSStoreContext:
       return ReduceJSStoreContext(node);
     case IrOpcode::kJSLoadModule:
@@ -2523,8 +2853,8 @@ Reduction JSTypedLowering::Reduce(Node* node) {
       return ReduceJSGeneratorStore(node);
     case IrOpcode::kJSGeneratorRestoreContinuation:
       return ReduceJSGeneratorRestoreContinuation(node);
-    case IrOpcode::kJSGeneratorRestoreContext:
-      return ReduceJSGeneratorRestoreContext(node);
+    case IrOpcode::kJSGeneratorRestoreContextNoCell:
+      return ReduceJSGeneratorRestoreContextNoCell(node);
     case IrOpcode::kJSGeneratorRestoreRegister:
       return ReduceJSGeneratorRestoreRegister(node);
     case IrOpcode::kJSGeneratorRestoreInputOrDebugPos:
@@ -2543,7 +2873,7 @@ Reduction JSTypedLowering::Reduce(Node* node) {
 
 Factory* JSTypedLowering::factory() const { return jsgraph()->factory(); }
 
-Graph* JSTypedLowering::graph() const { return jsgraph()->graph(); }
+TFGraph* JSTypedLowering::graph() const { return jsgraph()->graph(); }
 
 CompilationDependencies* JSTypedLowering::dependencies() const {
   return broker()->dependencies();

@@ -165,10 +165,13 @@ function removeAsync(dir) {
   // Should delete an invalid symlink
   const invalidLink = tmpdir.resolve('invalid-link-async');
   fs.symlinkSync('definitely-does-not-exist-async', invalidLink);
+  assert.ok(fs.lstatSync(invalidLink).isSymbolicLink());
+  // `existsSync()` follows symlinks, so this confirms the target does not exist.
+  assert.strictEqual(fs.existsSync(invalidLink), false);
   fs.rm(invalidLink, common.mustNotMutateObjectDeep({ recursive: true }), common.mustCall((err) => {
     try {
       assert.strictEqual(err, null);
-      assert.strictEqual(fs.existsSync(invalidLink), false);
+      assert.throws(() => fs.lstatSync(invalidLink), { code: 'ENOENT' });
     } finally {
       fs.rmSync(invalidLink, common.mustNotMutateObjectDeep({ force: true }));
     }
@@ -247,11 +250,14 @@ if (isGitPresent) {
   }
 
   // Should delete an invalid symlink
+  // Refs: https://github.com/nodejs/node/issues/61020
   const invalidLink = tmpdir.resolve('invalid-link');
   fs.symlinkSync('definitely-does-not-exist', invalidLink);
+  assert.ok(fs.lstatSync(invalidLink).isSymbolicLink());
+  assert.strictEqual(fs.existsSync(invalidLink), false);
   try {
     fs.rmSync(invalidLink);
-    assert.strictEqual(fs.existsSync(invalidLink), false);
+    assert.throws(() => fs.lstatSync(invalidLink), { code: 'ENOENT' });
   } finally {
     fs.rmSync(invalidLink, common.mustNotMutateObjectDeep({ force: true }));
   }
@@ -355,9 +361,11 @@ if (isGitPresent) {
   // Should delete an invalid symlink
   const invalidLink = tmpdir.resolve('invalid-link-prom');
   fs.symlinkSync('definitely-does-not-exist-prom', invalidLink);
+  assert.ok(fs.lstatSync(invalidLink).isSymbolicLink());
+  assert.strictEqual(fs.existsSync(invalidLink), false);
   try {
     await fs.promises.rm(invalidLink);
-    assert.strictEqual(fs.existsSync(invalidLink), false);
+    assert.throws(() => fs.lstatSync(invalidLink), { code: 'ENOENT' });
   } finally {
     fs.rmSync(invalidLink, common.mustNotMutateObjectDeep({ force: true }));
   }
@@ -481,12 +489,20 @@ if (isGitPresent) {
   // IBMi has a different access permission mechanism
   // This test should not be run as `root`
   if (!common.isIBMi && (common.isWindows || process.getuid() !== 0)) {
-    function makeDirectoryReadOnly(dir, mode) {
+    function makeDirectoryReadOnly(dir, allowExecute) {
       let accessErrorCode = 'EACCES';
+      if (common.isMacOS && allowExecute) {
+        accessErrorCode = 'ENOTEMPTY';
+      }
       if (common.isWindows) {
         accessErrorCode = 'EPERM';
-        execSync(`icacls ${dir} /deny "everyone:(OI)(CI)(DE,DC)"`);
+        const permissions = ['DE', 'DC'];
+        if (!allowExecute) {
+          permissions.push('X');
+        }
+        execSync(`icacls ${dir} /deny "everyone:(OI)(CI)(${permissions.join(',')})"`);
       } else {
+        const mode = allowExecute ? 0o555 : 0o444;
         fs.chmodSync(dir, mode);
       }
       return accessErrorCode;
@@ -510,7 +526,7 @@ if (isGitPresent) {
       try {
         fs.mkdirSync(dirname, common.mustNotMutateObjectDeep({ recursive: true }));
         fs.writeFileSync(filePath, 'hello');
-        const code = makeDirectoryReadOnly(dirname, 0o444);
+        const code = makeDirectoryReadOnly(dirname, false);
         assert.throws(() => {
           fs.rmSync(filePath, common.mustNotMutateObjectDeep({ force: true }));
         }, {
@@ -532,7 +548,7 @@ if (isGitPresent) {
       fs.mkdirSync(middle);
       fs.mkdirSync(path.join(middle, 'leaf')); // Make `middle` non-empty
       try {
-        const code = makeDirectoryReadOnly(middle, 0o555);
+        const code = makeDirectoryReadOnly(middle, true);
         try {
           assert.throws(() => {
             fs.rmSync(root, common.mustNotMutateObjectDeep({ recursive: true }));
@@ -550,6 +566,68 @@ if (isGitPresent) {
       } finally {
         makeDirectoryWritable(middle);
       }
+    }
+
+    if (common.isWindows) {
+      // On Windows, EPERM from rmdir on a directory that cannot be deleted
+      // due to permissions must not be treated as ENOTEMPTY (which would
+      // cause rimraf to recurse into and delete the directory's children).
+      const dirname = nextDirPath();
+      const parent = path.join(dirname, 'parent');
+      const child = path.join(parent, 'child');
+      const childFile = path.join(child, 'childFile.txt');
+      fs.mkdirSync(child, common.mustNotMutateObjectDeep({ recursive: true }));
+      fs.writeFileSync(childFile, 'hello');
+
+      // (DC) denies deleting children; (DE) denies deleting the directory
+      // itself. Combined denies on each layer guarantee rmdir returns EPERM.
+      execSync(`icacls "${dirname}" /deny "everyone:(DC)"`);
+      execSync(`icacls "${parent}" /deny "everyone:(DE,DC)"`);
+      execSync(`icacls "${child}" /deny "everyone:(DE)"`);
+
+      const cleanup = () => {
+        try {
+          execSync(`icacls "${child}" /remove:d "everyone"`);
+        } catch {
+          // Best-effort cleanup; ignore failures (e.g. already cleared).
+        }
+        try {
+          execSync(`icacls "${parent}" /remove:d "everyone"`);
+        } catch {
+          // Best-effort cleanup; ignore failures.
+        }
+        try {
+          execSync(`icacls "${dirname}" /remove:d "everyone"`);
+        } catch {
+          // Best-effort cleanup; ignore failures.
+        }
+        try {
+          fs.rmSync(dirname, common.mustNotMutateObjectDeep({
+            recursive: true,
+            force: true,
+          }));
+        } catch {
+          // Best-effort cleanup; ignore failures.
+        }
+      };
+      process.on('exit', cleanup);
+
+      fs.rm(dirname, common.mustNotMutateObjectDeep({ recursive: true }),
+            common.mustCall((err) => {
+              try {
+                assert.ok(err, 'expected EPERM error');
+                assert.strictEqual(err.code, 'EPERM');
+                assert.strictEqual(err.syscall, 'rmdir');
+                assert.ok(err.path.endsWith('\\parent'));
+                assert.ok(
+                  fs.existsSync(child),
+                  'EPERM from rmdir must propagate without recursing into children',
+                );
+              } finally {
+                process.removeListener('exit', cleanup);
+                cleanup();
+              }
+            }));
     }
   }
 }

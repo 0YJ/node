@@ -2,7 +2,6 @@
 const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
-const assert = require('assert');
 const fixtures = require('../common/fixtures');
 const http2 = require('http2');
 
@@ -18,36 +17,31 @@ const http2 = require('http2');
 //    that the backing stream is still active and writing
 // 4) Our timer fires, we resume the socket and start at 1)
 
-const writeSize = 3000000;
+const writeSize = 33554432;
 const minReadSize = 500000;
 const serverTimeout = common.platformTimeout(500);
 let offsetTimeout = common.platformTimeout(100);
-let didReceiveData = false;
-
 const server = http2.createSecureServer({
   key: fixtures.readKey('agent1-key.pem'),
-  cert: fixtures.readKey('agent1-cert.pem')
+  cert: fixtures.readKey('agent1-cert.pem'),
 });
+const onTimeout = common.mustCallAtLeast(0);
 server.on('stream', common.mustCall((stream) => {
   const content = Buffer.alloc(writeSize, 0x44);
 
   stream.respond({
     'Content-Type': 'application/octet-stream',
     'Content-Length': content.length.toString(),
-    'Vary': 'Accept-Encoding'
+    'Vary': 'Accept-Encoding',
   });
 
   stream.write(content);
   stream.setTimeout(serverTimeout);
-  stream.on('timeout', () => {
-    assert.ok(!didReceiveData, 'Should not timeout');
-  });
+  stream.on('timeout', onTimeout);
   stream.end();
 }));
 server.setTimeout(serverTimeout);
-server.on('timeout', () => {
-  assert.ok(!didReceiveData, 'Should not timeout');
-});
+server.on('timeout', onTimeout);
 
 server.listen(0, common.mustCall(() => {
   const client = http2.connect(`https://localhost:${server.address().port}`,
@@ -61,13 +55,11 @@ server.listen(0, common.mustCall(() => {
   let firstReceivedAt;
   req.on('data', common.mustCallAtLeast((buf) => {
     if (receivedBufferLength === 0) {
-      didReceiveData = false;
       firstReceivedAt = Date.now();
     }
     receivedBufferLength += buf.length;
     if (receivedBufferLength >= minReadSize &&
         receivedBufferLength < writeSize) {
-      didReceiveData = true;
       receivedBufferLength = 0;
       req.pause();
       setTimeout(

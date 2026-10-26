@@ -13,14 +13,25 @@
 #if !defined(CMAKE_STANDALONE_UNITTESTS)
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/path_service.h"
 
 #include "third_party/zlib/contrib/minizip/unzip.h"
 #include "third_party/zlib/contrib/minizip/zip.h"
 #endif
 
+#include "compare256.h"
 #include "zlib.h"
 
-void TestPayloads(size_t input_size, zlib_internal::WrapperType type) {
+// Some tests are for little endian optimizations and should be skipped if
+// running on big endian.
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define ZLIB_TEST_LITTLE_ENDIAN 1
+#else
+#define ZLIB_TEST_LITTLE_ENDIAN 0
+#endif
+
+void TestPayloads(size_t input_size, zlib_internal::WrapperType type,
+                  const int compression_level = Z_DEFAULT_COMPRESSION) {
   std::vector<unsigned char> input;
   input.reserve(input_size);
   for (size_t i = 1; i <= input_size; ++i)
@@ -36,7 +47,7 @@ void TestPayloads(size_t input_size, zlib_internal::WrapperType type) {
   unsigned long compressed_size = static_cast<unsigned long>(compressed.size());
   int result = zlib_internal::CompressHelper(
       type, compressed.data(), &compressed_size, input.data(), input.size(),
-      Z_DEFAULT_COMPRESSION, nullptr, nullptr);
+      compression_level, nullptr, nullptr);
   ASSERT_EQ(result, Z_OK);
 
   unsigned long decompressed_size =
@@ -65,6 +76,25 @@ TEST(ZlibTest, RawWrapper) {
   // should be payload_size + 2 for short payloads.
   for (size_t i = 1; i < 1024; ++i)
     TestPayloads(i, zlib_internal::WrapperType::ZRAW);
+}
+
+TEST(ZlibTest, LargePayloads) {
+  static const size_t lengths[] = { 6000, 8000, 10'000, 15'000, 20'000, 30'000,
+                                    50'000, 100'000, 150'000, 2'500'000,
+                                    5'000'000, 10'000'000, 20'000'000 };
+
+  for (size_t length: lengths) {
+    TestPayloads(length, zlib_internal::WrapperType::ZLIB);
+    TestPayloads(length, zlib_internal::WrapperType::GZIP);
+  }
+}
+
+TEST(ZlibTest, CompressionLevels) {
+  static const int levels[] = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
+  for (int level: levels) {
+    TestPayloads(5'000'000, zlib_internal::WrapperType::ZLIB, level);
+    TestPayloads(5'000'000, zlib_internal::WrapperType::GZIP, level);
+  }
 }
 
 TEST(ZlibTest, InflateCover) {
@@ -1145,6 +1175,79 @@ TEST(ZlibTest, DeflateBound) {
   deflateEnd(&stream);
 }
 
+TEST(ZlibTest, InflateCopySIGILLReproduction) {
+  z_stream c_stream;
+  c_stream.zalloc = Z_NULL;
+  c_stream.zfree = Z_NULL;
+  c_stream.opaque = Z_NULL;
+
+  // 1. Start with Z_FIXED to set distcode to distfix.
+  EXPECT_EQ(Z_OK, deflateInit2(&c_stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, 15,
+                               8, Z_FIXED));
+
+  std::string data1 =
+      "Some data for a fixed block. This ensures distcode "
+      "points to distfix.";
+  c_stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(data1.data()));
+  c_stream.avail_in = data1.size();
+
+  std::vector<Bytef> compressed(4096);
+  c_stream.next_out = compressed.data();
+  c_stream.avail_out = compressed.size();
+
+  EXPECT_EQ(Z_OK, deflate(&c_stream, Z_SYNC_FLUSH));
+
+  // 2. Switch to Z_DEFAULT_STRATEGY to trigger dynamic trees in the next block.
+  EXPECT_EQ(Z_OK, deflateParams(&c_stream, Z_DEFAULT_COMPRESSION,
+                                Z_DEFAULT_STRATEGY));
+
+  // Feed enough data to ensure a dynamic block is created.
+  std::string data2;
+  for (int j = 0; j < 100; ++j) {
+    data2 += "Much more data that should definitely trigger a dynamic block. " +
+             std::to_string(j) + " ";
+    data2 += "Repeated data: abcdefghijklmnopqrstuvwxyz 0123456789. ";
+  }
+  c_stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(data2.data()));
+  c_stream.avail_in = data2.size();
+
+  EXPECT_EQ(Z_STREAM_END, deflate(&c_stream, Z_FINISH));
+  compressed.resize(c_stream.total_out);
+  EXPECT_EQ(Z_OK, deflateEnd(&c_stream));
+
+  // 3. Decompress and call inflateCopy at every byte boundary.
+  for (size_t i = 1; i <= compressed.size(); ++i) {
+    z_stream d_stream;
+    d_stream.zalloc = Z_NULL;
+    d_stream.zfree = Z_NULL;
+    d_stream.opaque = Z_NULL;
+    d_stream.next_in = compressed.data();
+    d_stream.avail_in = i;
+
+    EXPECT_EQ(Z_OK, inflateInit(&d_stream));
+
+    std::vector<Bytef> out(1024 * 1024);
+    d_stream.next_out = out.data();
+    d_stream.avail_out = out.size();
+
+    int ret = inflate(&d_stream, Z_NO_FLUSH);
+    EXPECT_TRUE(ret == Z_OK || ret == Z_STREAM_END || ret == Z_BUF_ERROR);
+
+    z_stream copy_stream;
+    copy_stream.zalloc = Z_NULL;
+    copy_stream.zfree = Z_NULL;
+    copy_stream.opaque = Z_NULL;
+
+    // This is where the SIGILL crash should happen.
+    int copy_ret = inflateCopy(&copy_stream, &d_stream);
+    if (copy_ret == Z_OK) {
+      inflateEnd(&copy_stream);
+    }
+
+    inflateEnd(&d_stream);
+  }
+}
+
 // TODO(gustavoa): make these tests run standalone.
 #ifndef CMAKE_STANDALONE_UNITTESTS
 
@@ -1265,6 +1368,148 @@ TEST(ZlibTest, ZipExtraFieldSize) {
 
   EXPECT_EQ(unzGoToNextFile(uzf), UNZ_END_OF_LIST_OF_FILE);
   EXPECT_EQ(unzClose(uzf), UNZ_OK);
+}
+
+static base::FilePath TestDataDir() {
+  base::FilePath path;
+  bool success = base::PathService::Get(base::DIR_SRC_TEST_DATA_ROOT, &path);
+  EXPECT_TRUE(success);
+  return path
+      .AppendASCII("third_party")
+      .AppendASCII("zlib")
+      .AppendASCII("google")
+      .AppendASCII("test")
+      .AppendASCII("data");
+}
+
+TEST(ZlibTest, ZipUnicodePathExtraSizeFilenameOverflow) {
+  // This is based on components/test/data/unzip_service/bug953599.zip (added
+  // in https://crrev.com/1004132), with the Unicode Path Extra Field's
+  // dataSize hex edited to four.
+  base::FilePath zip_file = TestDataDir().AppendASCII("unicode_path_extra_overflow.zip");
+  unzFile uzf = unzOpen(zip_file.AsUTF8Unsafe().c_str());
+  ASSERT_NE(uzf, nullptr);
+  EXPECT_EQ(unzGoToFirstFile(uzf), UNZ_ERRNO);
+  EXPECT_EQ(unzClose(uzf), UNZ_OK);
+}
+
+TEST(ZlibTest, ZipUnicodePathExtra) {
+  // This is components/test/data/unzip_service/bug953599.zip (added in
+  // https://crrev.com/1004132).
+  base::FilePath zip_file = TestDataDir().AppendASCII("unicode_path_extra.zip");
+  unzFile uzf = unzOpen(zip_file.AsUTF8Unsafe().c_str());
+  ASSERT_NE(uzf, nullptr);
+
+  char long_buf[15], short_buf[3];
+  unz_file_info file_info;
+
+  ASSERT_EQ(unzGoToFirstFile(uzf), UNZ_OK);
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, long_buf, sizeof(long_buf),
+                                  nullptr, 0, nullptr, 0), UNZ_OK);
+  ASSERT_EQ(file_info.size_filename, 11);
+  ASSERT_EQ(file_info.size_utf8_filename, 14);
+  ASSERT_EQ(std::string(file_info.utf8_filename), "\xec\x83\x88 \xeb\xac\xb8\xec\x84\x9c.txt");
+
+  // Even if the file name buffer is too short to hold the whole filename, the
+  // unicode path extra field should get parsed correctly, size_filename set,
+  // and the file name buffer should receive the first bytes.
+  ASSERT_EQ(unzGoToFirstFile(uzf), UNZ_OK);
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, short_buf, sizeof(short_buf),
+                                  nullptr, 0, nullptr, 0), UNZ_OK);
+  ASSERT_EQ(file_info.size_filename, 11);
+  ASSERT_EQ(std::string(short_buf, sizeof(short_buf)), "\xc8\xfe\x20");
+  ASSERT_EQ(file_info.size_utf8_filename, 14);
+  ASSERT_EQ(std::string(file_info.utf8_filename), "\xec\x83\x88 \xeb\xac\xb8\xec\x84\x9c.txt");
+
+  // Also with a null filename buffer, the unicode path extra field should get
+  // parsed and size_filename set correctly.
+  ASSERT_EQ(unzGoToFirstFile(uzf), UNZ_OK);
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, nullptr, 0, nullptr, 0,
+                                  nullptr, 0), UNZ_OK);
+  ASSERT_EQ(file_info.size_filename, 11);
+  ASSERT_EQ(file_info.size_utf8_filename, 14);
+  ASSERT_EQ(std::string(file_info.utf8_filename), "\xec\x83\x88 \xeb\xac\xb8\xec\x84\x9c.txt");
+
+  EXPECT_EQ(unzClose(uzf), UNZ_OK);
+}
+
+TEST(ZlibTest, ZipEncryptionFlagMismatch) {
+  // Test archive created with info-zip:
+  // $ echo -n a > a && zip -P a -k a.zip a
+  // and then hex-edited to drop the encrypted flag from the central directory.
+  base::FilePath zip_file = TestDataDir().AppendASCII("enc_flag_mismatch.zip");
+
+  unzFile uzf = unzOpen(zip_file.AsUTF8Unsafe().c_str());
+  ASSERT_NE(uzf, nullptr);
+
+  char name[100];
+  unz_file_info file_info;
+
+  ASSERT_EQ(unzGoToFirstFile(uzf), UNZ_OK);
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, name, sizeof(name),
+                                  nullptr, 0, nullptr, 0), UNZ_OK);
+  ASSERT_EQ(std::string(name), "A");
+
+  // minizip should reject the member due to lfh/cd encrypted flag mismatch.
+  EXPECT_EQ(unzOpenCurrentFilePassword(uzf, "a"), UNZ_BADZIPFILE);
+
+  EXPECT_EQ(unzClose(uzf), UNZ_OK);
+}
+
+TEST(ZlibTest, Crbug500521311) {
+  base::FilePath zip_file = TestDataDir().AppendASCII("bug500521311.zip");
+  unzFile uzf = unzOpen(zip_file.AsUTF8Unsafe().c_str());
+  ASSERT_NE(uzf, nullptr);
+
+  char buf[256];
+  unz_file_info file_info;
+
+  // aaaaaa...
+  ASSERT_EQ(unzGoToFirstFile(uzf), UNZ_OK);
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, buf, sizeof(buf),
+                                  nullptr, 0, nullptr, 0), UNZ_OK);
+  EXPECT_EQ(std::string(file_info.utf8_filename),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+  // The Unicode Path Extra Field in the first Local File Header could
+  // previously cause unzGoToNextFile() to advance the wrong amount,
+  // potentially skipping a central directory entry.
+  ASSERT_EQ(unzGoToNextFile(uzf), UNZ_OK);
+
+  // evil.exe
+  ASSERT_EQ(unzGetCurrentFileInfo(uzf, &file_info, buf, sizeof(buf),
+                                  nullptr, 0, nullptr, 0), UNZ_OK);
+  EXPECT_EQ(std::string(buf), "evil.exe");
+  EXPECT_EQ(unzGoToNextFile(uzf), UNZ_END_OF_LIST_OF_FILE);
+  EXPECT_EQ(unzClose(uzf), UNZ_OK);
+}
+
+// compare256() returns the number of equal leading bytes. The buffers are
+// exactly the 256 bytes it may read, so ASan traps any over-read.
+TEST(ZlibTest, Compare256) {
+  if (!ZLIB_TEST_LITTLE_ENDIAN) {
+    GTEST_SKIP() << "compare256() is little-endian only";
+  }
+  for (int equal = 0; equal <= 256; ++equal) {
+    std::vector<unsigned char> a(256, 'a'), b(256, 'a');
+    if (equal < 256)
+      b[equal] = 'b';
+    EXPECT_EQ(compare256(a.data(), b.data()), equal);
+  }
+}
+
+// longest_match() computes 2 + compare256(scan + 2, match + 2), the first two
+// bytes being known equal, so a match must still reach MAX_MATCH (258).
+TEST(ZlibTest, Compare256ReachesMaxMatch) {
+  if (!ZLIB_TEST_LITTLE_ENDIAN) {
+    GTEST_SKIP() << "compare256() is little-endian only";
+  }
+  for (int match_len = 250; match_len <= 258; ++match_len) {
+    std::vector<unsigned char> a(258, 'a'), b(258, 'a');
+    if (match_len < 258)
+      b[match_len] = 'b';
+    EXPECT_EQ(2 + compare256(a.data() + 2, b.data() + 2), match_len);
+  }
 }
 
 #endif

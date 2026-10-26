@@ -1,15 +1,16 @@
 'use strict';
 
 const common = require('../common');
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
 const assert = require('assert');
 const { X509Certificate } = require('crypto');
 const tls = require('tls');
 const fixtures = require('../common/fixtures');
 
-const { hasOpenSSL3 } = common;
+const { hasOpenSSL, isBoringSSL } = require('../common/crypto');
 
 // Test that all certificate chains provided by the reporter are rejected.
 {
@@ -58,8 +59,8 @@ const { hasOpenSSL3 } = common;
     'IP Address:8.8.8.8',
     'IP Address:8.8.4.4',
     // For backward-compatibility, include invalid IP address lengths.
-    hasOpenSSL3 ? 'IP Address:<invalid length=5>' : 'IP Address:<invalid>',
-    hasOpenSSL3 ? 'IP Address:<invalid length=6>' : 'IP Address:<invalid>',
+    hasOpenSSL(3) ? 'IP Address:<invalid length=5>' : 'IP Address:<invalid>',
+    hasOpenSSL(3) ? 'IP Address:<invalid length=6>' : 'IP Address:<invalid>',
     // IPv6 addresses are represented as OpenSSL does.
     'IP Address:A0B:C0D:E0F:0:0:0:7A7B:7C7D',
     // Regular email addresses don't require escaping.
@@ -87,22 +88,22 @@ const { hasOpenSSL3 } = common;
     // This is an OID that will likely never be assigned to anything, thus
     // OpenSSL should not know it.
     'Registered ID:1.3.9999.12.34',
-    hasOpenSSL3 ?
+    hasOpenSSL(3) ?
       'othername:XmppAddr:abc123' :
       'othername:<unsupported>',
-    hasOpenSSL3 ?
+    hasOpenSSL(3) ?
       'othername:"XmppAddr:abc123\\u002c DNS:good.example.com"' :
       'othername:<unsupported>',
-    hasOpenSSL3 ?
+    hasOpenSSL(3) ?
       'othername:"XmppAddr:good.example.com\\u0000abc123"' :
       'othername:<unsupported>',
     // This is unsupported because the OID is not recognized.
     'othername:<unsupported>',
-    hasOpenSSL3 ? 'othername:SRVName:abc123' : 'othername:<unsupported>',
+    hasOpenSSL(3) ? 'othername:SRVName:abc123' : 'othername:<unsupported>',
     // This is unsupported because it is an SRVName with a UTF8String value,
     // which is not allowed for SRVName.
     'othername:<unsupported>',
-    hasOpenSSL3 ?
+    hasOpenSSL(3) ?
       'othername:"SRVName:abc\\u0000def"' :
       'othername:<unsupported>',
   ];
@@ -129,10 +130,10 @@ const { hasOpenSSL3 } = common;
       tls.connect(port, {
         ca: pem,
         servername: 'example.com',
-        checkServerIdentity: (hostname, peerCert) => {
+        checkServerIdentity: common.mustCall((hostname, peerCert) => {
           assert.strictEqual(hostname, 'example.com');
           assert.strictEqual(peerCert.subjectaltname, expectedSANs[i]);
-        },
+        }),
       }, common.mustCall());
     }));
   }
@@ -172,7 +173,7 @@ const { hasOpenSSL3 } = common;
         ],
       },
     },
-    hasOpenSSL3 ? {
+    hasOpenSSL(3) ? {
       text: 'OCSP - othername:XmppAddr:good.example.com\n' +
             'OCSP - othername:<unsupported>\n' +
             'OCSP - othername:SRVName:abc123',
@@ -195,7 +196,7 @@ const { hasOpenSSL3 } = common;
         ],
       },
     },
-    hasOpenSSL3 ? {
+    hasOpenSSL(3) ? {
       text: 'OCSP - othername:"XmppAddr:good.example.com\\u0000abc123"',
       legacy: {
         'OCSP - othername': [
@@ -221,7 +222,7 @@ const { hasOpenSSL3 } = common;
     // Test the subjectAltName property of the X509Certificate API.
     const cert = new X509Certificate(pem);
     assert.strictEqual(cert.infoAccess,
-                       `${expected.text}${hasOpenSSL3 ? '' : '\n'}`);
+                       `${expected.text}${hasOpenSSL(3) ? '' : '\n'}`);
 
     // Test that the certificate obtained by checkServerIdentity has the correct
     // subjectaltname property.
@@ -236,7 +237,7 @@ const { hasOpenSSL3 } = common;
       tls.connect(port, {
         ca: pem,
         servername: 'example.com',
-        checkServerIdentity: (hostname, peerCert) => {
+        checkServerIdentity: common.mustCall((hostname, peerCert) => {
           assert.strictEqual(hostname, 'example.com');
           assert.deepStrictEqual(peerCert.infoAccess,
                                  Object.assign({ __proto__: null },
@@ -250,7 +251,7 @@ const { hasOpenSSL3 } = common;
           assert.strictEqual(obj.issuerCertificate, undefined);
           obj.issuerCertificate = obj;
           assert.deepStrictEqual(peerCert, obj);
-        },
+        }),
       }, common.mustCall());
     }));
   }
@@ -350,7 +351,7 @@ const { hasOpenSSL3 } = common;
       tls.connect(port, {
         ca: pem,
         servername: 'example.com',
-        checkServerIdentity: (hostname, peerCert) => {
+        checkServerIdentity: common.mustCall((hostname, peerCert) => {
           assert.strictEqual(hostname, 'example.com');
           const expectedObject = Object.assign({ __proto__: null },
                                                expected.legacy);
@@ -368,7 +369,7 @@ const { hasOpenSSL3 } = common;
           assert.strictEqual(obj.issuerCertificate, undefined);
           obj.issuerCertificate = obj;
           assert.deepStrictEqual(peerCert, obj);
-        },
+        }),
       }, common.mustCall());
     }));
   }
@@ -438,6 +439,8 @@ const { hasOpenSSL3 } = common;
 
   // The hostname is the CN, but not a SAN entry.
   const servername = 'good.example.com';
+  const cnFallback = isBoringSSL ? undefined :
+    servername;
   const certX509 = new X509Certificate(cert);
   assert.strictEqual(certX509.subject, `CN=${servername}`);
   assert.strictEqual(certX509.subjectAltName, 'DNS:evil.example.com');
@@ -447,7 +450,7 @@ const { hasOpenSSL3 } = common;
   assert.strictEqual(certX509.checkHost(servername, { subject: 'default' }),
                      undefined);
   assert.strictEqual(certX509.checkHost(servername, { subject: 'always' }),
-                     servername);
+                     cnFallback);
   assert.strictEqual(certX509.checkHost(servername, { subject: 'never' }),
                      undefined);
 
@@ -482,11 +485,13 @@ const { hasOpenSSL3 } = common;
   assert.strictEqual(certX509.subjectAltName, 'IP Address:1.2.3.4');
 
   // The newer X509Certificate API allows customizing this behavior:
-  assert.strictEqual(certX509.checkHost(servername), servername);
+  const cnFallback = isBoringSSL ? undefined :
+    servername;
+  assert.strictEqual(certX509.checkHost(servername), cnFallback);
   assert.strictEqual(certX509.checkHost(servername, { subject: 'default' }),
-                     servername);
+                     cnFallback);
   assert.strictEqual(certX509.checkHost(servername, { subject: 'always' }),
-                     servername);
+                     cnFallback);
   assert.strictEqual(certX509.checkHost(servername, { subject: 'never' }),
                      undefined);
 

@@ -1,4 +1,3 @@
-// Flags: --expose-internals
 'use strict';
 const common = require('../common');
 if (!common.hasCrypto)
@@ -6,9 +5,10 @@ if (!common.hasCrypto)
 
 const assert = require('assert');
 const crypto = require('crypto');
+const { hasFIPS, isBoringSSL } = require('../common/crypto');
+const isFips = hasFIPS(3);
 
-const { internalBinding } = require('internal/test/binding');
-if (typeof internalBinding('crypto').ScryptJob !== 'function')
+if (typeof crypto.scrypt !== 'function' || typeof crypto.scryptSync !== 'function')
   common.skip('no scrypt support');
 
 const good = [
@@ -93,12 +93,16 @@ const good = [
   },
 ];
 
-// Test vectors that should fail.
+// Test vectors that contain invalid parameters.
 const bad = [
   { N: 1, p: 1, r: 1 },         // N < 2
   { N: 3, p: 1, r: 1 },         // Not power of 2.
-  { N: 1, cost: 1 },            // Both N and cost
-  { p: 1, parallelization: 1 }, // Both p and parallelization
+];
+
+// Test vectors that contain incompatible options.
+const incompatibleOptions = [
+  { N: 1, cost: 1 },             // Both N and cost
+  { p: 1, parallelization: 1 },  // Both p and parallelization
   { r: 1, blockSize: 1 },        // Both r and blocksize
 ];
 
@@ -157,13 +161,20 @@ const badargs = [
   },
 ];
 
-for (const options of good) {
-  const { pass, salt, keylen, expected } = options;
-  const actual = crypto.scryptSync(pass, salt, keylen, options);
-  assert.strictEqual(actual.toString('hex'), expected);
-  crypto.scrypt(pass, salt, keylen, options, common.mustSucceed((actual) => {
+if (isFips) {
+  const expected = { code: 'ERR_CRYPTO_INVALID_SCRYPT_PARAMS' };
+  assert.throws(() => crypto.scryptSync('pass', 'salt', 1), expected);
+  assert.throws(
+    () => crypto.scrypt('pass', 'salt', 1, () => {}), expected);
+} else {
+  for (const options of good) {
+    const { pass, salt, keylen, expected } = options;
+    const actual = crypto.scryptSync(pass, salt, keylen, options);
     assert.strictEqual(actual.toString('hex'), expected);
-  }));
+    crypto.scrypt(pass, salt, keylen, options, common.mustSucceed((actual) => {
+      assert.strictEqual(actual.toString('hex'), expected);
+    }));
+  }
 }
 
 for (const options of bad) {
@@ -176,9 +187,11 @@ for (const options of bad) {
                 expected);
 }
 
-for (const options of toobig) {
+for (const options of incompatibleOptions) {
+  const [short, long] = Object.keys(options).sort((a, b) => a.length - b.length);
   const expected = {
-    message: /Invalid scrypt param/
+    message: `Option "${short}" cannot be used in combination with option "${long}"`,
+    code: 'ERR_INCOMPATIBLE_OPTION_PAIR',
   };
   assert.throws(() => crypto.scrypt('pass', 'salt', 1, options, () => {}),
                 expected);
@@ -186,7 +199,22 @@ for (const options of toobig) {
                 expected);
 }
 
-{
+for (const options of toobig) {
+  const expected = isFips ? {
+    code: 'ERR_CRYPTO_INVALID_SCRYPT_PARAMS',
+  } : {
+    message: isBoringSSL ?
+      /Invalid scrypt params:.*(INVALID_PARAMETERS|MEMORY_LIMIT_EXCEEDED)/ :
+      /Invalid scrypt params:.*memory limit exceeded/,
+    code: 'ERR_CRYPTO_INVALID_SCRYPT_PARAMS',
+  };
+  assert.throws(() => crypto.scrypt('pass', 'salt', 1, options, () => {}),
+                expected);
+  assert.throws(() => crypto.scryptSync('pass', 'salt', 1, options),
+                expected);
+}
+
+if (!isFips) {
   const defaults = { N: 16384, p: 1, r: 8 };
   const expected = crypto.scryptSync('pass', 'salt', 1, defaults);
   const actual = crypto.scryptSync('pass', 'salt', 1);
@@ -212,10 +240,12 @@ for (const { args, expected } of badargs) {
 {
   // Values for maxmem that do not fit in 32 bits but that are still safe
   // integers should be allowed.
-  crypto.scrypt('', '', 4, { maxmem: 2 ** 52 },
-                common.mustSucceed((actual) => {
-                  assert.strictEqual(actual.toString('hex'), 'd72c87d0');
-                }));
+  if (!isFips) {
+    crypto.scrypt('', '', 4, { maxmem: 2 ** 52 },
+                  common.mustSucceed((actual) => {
+                    assert.strictEqual(actual.toString('hex'), 'd72c87d0');
+                  }));
+  }
 
   // Values that exceed Number.isSafeInteger should not be allowed.
   assert.throws(() => crypto.scryptSync('', '', 0, { maxmem: 2 ** 53 }), {
@@ -223,7 +253,7 @@ for (const { args, expected } of badargs) {
   });
 }
 
-{
+if (!isFips) {
   // Regression test for https://github.com/nodejs/node/issues/28836.
 
   function testParameter(name, value) {
@@ -256,4 +286,37 @@ for (const { args, expected } of badargs) {
     ['r', 8], ['blockSize', 8],
     ['p', 1], ['parallelization', 1],
   ].forEach((arg) => testParameter(...arg));
+}
+
+// `-0` keylen must not abort the process via the native binding's
+// IsInt32() assertion. Assert that `-0` produces the same outcome as
+// `+0` (which differs by OpenSSL build).
+{
+  let posError;
+  let posResult;
+  try {
+    posResult = crypto.scryptSync('', '', 0);
+  } catch (err) {
+    posError = err;
+  }
+  let negError;
+  let negResult;
+  try {
+    negResult = crypto.scryptSync('', '', -0);
+  } catch (err) {
+    negError = err;
+  }
+  if (posError !== undefined) {
+    assert.strictEqual(negError?.message, posError.message);
+  } else {
+    assert.deepStrictEqual(negResult, posResult);
+  }
+
+  if (isFips) {
+    assert.throws(
+      () => crypto.scrypt('', '', -0, () => {}),
+      { code: 'ERR_CRYPTO_INVALID_SCRYPT_PARAMS' });
+  } else {
+    crypto.scrypt('', '', -0, common.mustCall());
+  }
 }

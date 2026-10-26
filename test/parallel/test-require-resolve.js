@@ -60,11 +60,15 @@ require(fixtures.path('resolve-paths', 'default', 'verify-paths.js'));
 {
   // builtinModules.
   builtinModules.forEach((mod) => {
+    // TODO(@jasnell): Remove once node:quic is no longer flagged
+    if (mod === 'node:quic') return;
+    // Remove once node:vfs is no longer flagged
+    if (mod === 'node:vfs') return;
+    if (mod === 'node:sqlite' && !common.hasSQLite) return;
     assert.strictEqual(require.resolve.paths(mod), null);
-  });
-
-  builtinModules.forEach((mod) => {
-    assert.strictEqual(require.resolve.paths(`node:${mod}`), null);
+    if (!mod.startsWith('node:')) {
+      assert.strictEqual(require.resolve.paths(`node:${mod}`), null);
+    }
   });
 
   // node_modules.

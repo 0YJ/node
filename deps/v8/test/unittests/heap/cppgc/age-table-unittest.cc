@@ -22,7 +22,9 @@ class AgeTableTest : public testing::TestSupportingAllocationOnly {
   using AdjacentCardsPolicy = AgeTable::AdjacentCardsPolicy;
   static constexpr auto kCardSizeInBytes = AgeTable::kCardSizeInBytes;
 
-  AgeTableTest() : age_table_(CagedHeapLocalData::Get().age_table) {}
+  AgeTableTest() : age_table_(CagedHeapLocalData::Get().age_table) {
+    CagedHeap::CommitAgeTable(*(GetPlatform().GetPageAllocator()));
+  }
 
   ~AgeTableTest() override { age_table_.ResetForTesting(); }
 
@@ -74,9 +76,7 @@ class AgeTableTest : public testing::TestSupportingAllocationOnly {
   }
 
  private:
-  static void DestroyPage(BasePage* page) {
-    BasePage::Destroy(page, FreeMemoryHandling::kDoNotDiscard);
-  }
+  static void DestroyPage(BasePage* page) { BasePage::Destroy(page); }
 
   std::vector<std::unique_ptr<BasePage, void (*)(BasePage*)>> allocated_pages_;
   AgeTable& age_table_;
@@ -202,7 +202,8 @@ TEST_F(AgeTableTest, SetAgeForMultipleCardsConsiderAdjacentCards) {
 
 TEST_F(AgeTableTest, MarkAllCardsAsYoung) {
   uint8_t* heap_start = reinterpret_cast<uint8_t*>(CagedHeapBase::GetBase());
-  void* heap_end = heap_start + api_constants::kCagedHeapDefaultReservationSize - 1;
+  void* heap_end =
+      heap_start + api_constants::kCagedHeapDefaultReservationSize - 1;
   AssertAgeForAddressRange(heap_start, heap_end, Age::kOld);
   SetAgeForAddressRange(heap_start, heap_end, Age::kYoung,
                         AdjacentCardsPolicy::kIgnore);

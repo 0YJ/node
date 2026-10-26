@@ -4,7 +4,7 @@ Welcome. You've found your way to the Node.js native crypto subsystem.
 
 Do not be afraid.
 
-While crypto may be a dark, mysterious, and forboding subject; and while
+While crypto may be a dark, mysterious, and foreboding subject; and while
 this directory may be filled with many `*.h` and `*.cc` files, finding
 your way around is not too difficult. And I can promise you that a Gru
 will not jump out of the shadows and eat you (well, "promise" may be a
@@ -30,26 +30,28 @@ throughout the rest of the code.
 The rest of the files are structured by their function, as detailed in the
 following table:
 
-| File (\*.h/\*.cc)    | Description                                                                |
-| -------------------- | -------------------------------------------------------------------------- |
-| `crypto_aes`         | AES Cipher support.                                                        |
-| `crypto_cipher`      | General Encryption/Decryption utilities.                                   |
-| `crypto_clienthello` | TLS/SSL client hello parser implementation. Used during SSL/TLS handshake. |
-| `crypto_context`     | Implementation of the `SecureContext` object.                              |
-| `crypto_dh`          | Diffie-Hellman Key Agreement implementation.                               |
-| `crypto_dsa`         | DSA (Digital Signature) Key Generation functions.                          |
-| `crypto_ec`          | Elliptic-curve cryptography implementation.                                |
-| `crypto_hash`        | Basic hash (e.g. SHA-256) functions.                                       |
-| `crypto_hkdf`        | HKDF (Key derivation) implementation.                                      |
-| `crypto_hmac`        | HMAC implementations.                                                      |
-| `crypto_keys`        | Utilities for using and generating secret, private, and public keys.       |
-| `crypto_pbkdf2`      | PBKDF2 key / bit generation implementation.                                |
-| `crypto_rsa`         | RSA Key Generation functions.                                              |
-| `crypto_scrypt`      | Scrypt key / bit generation implementation.                                |
-| `crypto_sig`         | General digital signature and verification utilities.                      |
-| `crypto_spkac`       | Netscape SPKAC certificate utilities.                                      |
-| `crypto_ssl`         | Implementation of the `SSLWrap` object.                                    |
-| `crypto_timing`      | Implementation of the TimingSafeEqual.                                     |
+| File (\*.h/\*.cc) | Description                                                          |
+| ----------------- | -------------------------------------------------------------------- |
+| `crypto_aes`      | AES Cipher support.                                                  |
+| `crypto_argon2`   | Argon2 key / bit generation implementation.                          |
+| `crypto_cipher`   | General Encryption/Decryption utilities.                             |
+| `crypto_context`  | Implementation of the `SecureContext` object.                        |
+| `crypto_dh`       | Diffie-Hellman Key Agreement implementation.                         |
+| `crypto_dsa`      | DSA (Digital Signature) Key Generation functions.                    |
+| `crypto_ec`       | Elliptic-curve cryptography implementation.                          |
+| `crypto_hash`     | Basic hash (e.g. SHA-256) functions.                                 |
+| `crypto_hkdf`     | HKDF (Key derivation) implementation.                                |
+| `crypto_hmac`     | HMAC implementations.                                                |
+| `crypto_keys`     | Utilities for using and generating secret, private, and public keys. |
+| `crypto_mac`      | Provider-generic MAC implementations.                                |
+| `crypto_pbkdf2`   | PBKDF2 key / bit generation implementation.                          |
+| `crypto_rsa`      | RSA Key Generation functions.                                        |
+| `crypto_scrypt`   | Scrypt key / bit generation implementation.                          |
+| `crypto_sig`      | General digital signature and verification utilities.                |
+| `crypto_spkac`    | Netscape SPKAC certificate utilities.                                |
+| `crypto_ssl`      | Implementation of the `SSLWrap` object.                              |
+| `crypto_timing`   | Implementation of the TimingSafeEqual.                               |
+| `crypto_x509`     | X.509 certificate parsing and validation.                            |
 
 When new crypto protocols are added, they will be added into their own
 `crypto_` `*.h` and `*.cc` files.
@@ -89,11 +91,17 @@ using ECPointPointer = DeleteFnPtr<EC_POINT, EC_POINT_free>;
 using ECKeyPointer = DeleteFnPtr<EC_KEY, EC_KEY_free>;
 using DHPointer = DeleteFnPtr<DH, DH_free>;
 using ECDSASigPointer = DeleteFnPtr<ECDSA_SIG, ECDSA_SIG_free>;
-using HMACCtxPointer = DeleteFnPtr<HMAC_CTX, HMAC_CTX_free>;
 using CipherCtxPointer = DeleteFnPtr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_free>;
 ```
 
 Examples of these being used are pervasive through the `src/crypto` code.
+
+`HMACCtxPointer` is a dedicated HMAC state wrapper rather than a plain
+`DeleteFnPtr` alias. On OpenSSL 3 and later it owns the provider-backed
+`EVP_MAC`/`EVP_MAC_CTX` state. On OpenSSL 1.1.1 and BoringSSL it owns the
+legacy `HMAC_CTX` state. HMAC call sites should use `HMACCtxPointer::New()`,
+`init()`, `update()`, and `digest()`/`digestInto()` so the backend selection
+stays contained in ncrypto.
 
 ### `ByteSource`
 
@@ -105,10 +113,6 @@ an `ArrayBuffer` (`v8::BackingStore`), or allocated data.
   must remain valid until the `ByteSource` is destroyed.
 * If allocated data is used, then it must have been allocated using OpenSSL's
   allocator. It will be freed automatically when the `ByteSource` is destroyed.
-
-The `ByteSource::Builder` class can be used to allocate writable memory that can
-then be released as a `ByteSource`, making it read-only, or freed by destroying
-the `ByteSource::Builder` without releasing it as a `ByteSource`.
 
 ### `ArrayBufferOrViewContents`
 
@@ -149,32 +153,53 @@ threadpool).
 Refer to `crypto_keys.h` and `crypto_keys.cc` for all code relating to the
 core key objects.
 
-#### `ManagedEVPPKey`
-
-The `ManagedEVPPKey` class is a smart pointer for OpenSSL `EVP_PKEY`
-structures. These manage the lifecycle of Public and Private key pairs.
-
 #### `KeyObjectData`
 
 `KeyObjectData` is an internal thread-safe structure used to wrap either
-a `ManagedEVPPKey` (for Public or Private keys) or a `ByteSource` containing
-a Secret key.
+an `EVPKeyPointer` (for Public or Private keys) or a `ByteSource` containing
+a Secret key. It is the shared backing representation used by `KeyObject`,
+`CryptoKey`, and native crypto jobs that operate on key material.
 
 #### `KeyObjectHandle`
 
-The `KeyObjectHandle` provides the interface between the native C++ code
-handling keys and the public JavaScript `KeyObject` API.
+`KeyObjectHandle` is the internal JavaScript-visible C++ handle for a
+`KeyObjectData`. It exposes operations that internal JavaScript uses to
+initialize, inspect, compare, and export key material. Native code passes
+`KeyObjectData` across threads and jobs; a `KeyObjectHandle` is created when
+JavaScript needs access to those operations and is kept out of user-visible
+`KeyObject` own properties.
 
 #### `KeyObject`
 
-A `KeyObject` is the public Node.js-specific API for keys. A single
-`KeyObject` wraps exactly one `KeyObjectHandle`.
+A `KeyObject` is the public Node.js-specific API for keys. It extends a
+native `NativeKeyObject`, which stores `KeyObjectData` for structured
+cloning. The JavaScript constructor caches the known key type in a private
+field outside user-visible own properties. When a `KeyObjectHandle` is first
+needed, JavaScript replaces that value with a hidden native-backed slot tuple.
+Derived metadata, such as symmetric key size and asymmetric key details, is
+read from the cached handle and appended lazily to the same private-field
+cache.
 
 #### `CryptoKey`
 
-A `CryptoKey` is the Web Crypto API's alternative to `KeyObject`. In the
-Node.js implementation, `CryptoKey` is a thin wrapper around the
-`KeyObject` and it is largely possible to use them interchangeably.
+A `CryptoKey` is the Web Crypto API key type. In the Node.js implementation,
+public `CryptoKey` instances are backed by a native `NativeCryptoKey`, not by
+a `KeyObject`. `NativeCryptoKey` stores the same primary `KeyObjectData`
+representation as `KeyObject`, plus the Web Crypto internal slots
+(`[[extractable]]`, `[[algorithm]]`, and `[[usages]]`). Normal construction
+primes a private JavaScript slot cache from the constructor arguments.
+Partially initialized transferred keys populate that cache from the native
+slots on first access. For Hybrid KEM `CryptoKey` instances only,
+`NativeCryptoKey` may also store a secondary `KeyObjectData` and `seed_data`
+used to reconstruct the hybrid key material.
+
+### X.509 certificates
+
+The public `X509Certificate` is backed directly by the native
+`X509Certificate` object. JavaScript caches derived certificate properties in
+a private array whose final entry is a bitmask of populated slots. Certificates
+from another realm use the same cache layout through a private `WeakMap` after
+passing the native brand check.
 
 ### `CryptoJob`
 
@@ -182,20 +207,19 @@ All operations that are not either Stream-based or single-use functions
 are built around the `CryptoJob` class.
 
 A `CryptoJob` encapsulates a single crypto operation that can be
-invoked synchronously or asynchronously.
+invoked synchronously, asynchronously, or as a Web Crypto API
+Promise-based job.
 
 The `CryptoJob` class itself is a C++ template that takes a single
 `CryptoJobTraits` struct as a parameter. The `CryptoJobTraits`
 provides the implementation detail of the job.
 
-There are (currently) four basic `CryptoJob` specializations:
+There are (currently) three basic `CryptoJob` specializations:
 
 * `CipherJob` (defined in `src/crypto_cipher.h`) -- Used for
   encrypt and decrypt operations.
 * `KeyGenJob` (defined in `src/crypto_keygen.h`) -- Used for
   secret and key pair generation operations.
-* `KeyExportJob` (defined in `src/crypto_keys.h`) -- Used for
-  key export operations.
 * `DeriveBitsJob` (defined in `src/crypto_util.h`) -- Used for
   key and byte derivation operations.
 
@@ -226,14 +250,15 @@ specializations and will either be called synchronously within
 the current thread or from within the libuv threadpool.
 
 Every `CryptoJob` instance exposes a `run()` function to the
-JavaScript layer. When called, `run()` with either dispatch the
-job to the libuv threadpool or invoke the Implementation
-function synchronously. If invoked synchronously, run() will
-return a JavaScript array. The first value in the array is
-either an `Error` or `undefined`. If the operation was successful,
-the second value in the array will contain the result of the
-operation. Typically, the result is an `ArrayBuffer`, but
-certain `CryptoJob` types can alter the output.
+JavaScript layer. When called, `run()` will either dispatch the
+job to the libuv threadpool, invoke the Implementation function
+synchronously, or return a `Promise` for Web Crypto API jobs. If
+invoked synchronously, `run()` will return a JavaScript array.
+The first value in the array is either an `Error` or `undefined`.
+If the operation was successful, the second value in the array
+will contain the result of the operation. Typically, the result
+is an `ArrayBuffer`, but certain `CryptoJob` types can alter the
+output.
 
 If the `CryptoJob` is processed asynchronously, then the job
 must have an `ondone` property whose value is a function that
@@ -242,14 +267,19 @@ be called with two arguments. The first is either an `Error`
 or `undefined`, and the second is the result of the operation
 if successful.
 
-For `CipherJob` types, the output is always an `ArrayBuffer`.
+If the `CryptoJob` is processed as a Web Crypto API job, then
+`run()` returns a Promise. Operation-specific failures are
+rejected with an `OperationError`, and successful jobs resolve
+with the Web Crypto API result shape expected by the JavaScript
+implementation.
 
-For `KeyExportJob` types, the output is either an `ArrayBuffer` or
-a JavaScript object (for JWK output format);
+For `CipherJob` types, the output is always an `ArrayBuffer`.
 
 For `KeyGenJob` types, the output is either a single KeyObject,
 or an array containing a Public/Private key pair represented
-either as a `KeyObjectHandle` object or a `Buffer`.
+either as a `KeyObjectHandle` object or a `Buffer`. Web Crypto
+API key generation jobs return a `CryptoKey` or a `CryptoKeyPair`
+object.
 
 For `DeriveBitsJob` type output is typically an `ArrayBuffer` but
 can be other values (`RandomBytesJob` for instance, fills an
@@ -274,11 +304,12 @@ should be used to throw JavaScript errors when necessary.
 
 ### Operation mode
 
-All crypto functions in Node.js operate in one of three
+All crypto functions in Node.js operate in one of these
 modes:
 
 * Synchronous single-call
 * Asynchronous single-call
+* Web Crypto API Promise-based
 * Stream-oriented
 
 It is often possible to perform various operations across

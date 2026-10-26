@@ -24,7 +24,7 @@
  */
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <assert.h>
 #include <string.h>
@@ -35,6 +35,7 @@
 #include <picotls.h>
 #include <picotls/openssl.h>
 
+#include "ngtcp2_macro.h"
 #include "shared.h"
 
 ngtcp2_crypto_aead *ngtcp2_crypto_aead_aes_128_gcm(ngtcp2_crypto_aead *aead) {
@@ -49,7 +50,7 @@ ngtcp2_crypto_md *ngtcp2_crypto_md_sha256(ngtcp2_crypto_md *md) {
 ngtcp2_crypto_ctx *ngtcp2_crypto_ctx_initial(ngtcp2_crypto_ctx *ctx) {
   ngtcp2_crypto_aead_init(&ctx->aead, (void *)&ptls_openssl_aes128gcm);
   ctx->md.native_handle = (void *)&ptls_openssl_sha256;
-  ctx->hp.native_handle = (void *)&ptls_openssl_aes128ctr;
+  ctx->hp.native_handle = (void *)&ptls_openssl_aes128ecb;
   ctx->max_encryption = 0;
   ctx->max_decryption_failure = 0;
   return ctx;
@@ -79,7 +80,7 @@ crypto_cipher_suite_get_aead_max_encryption(ptls_cipher_suite_t *cs) {
   if (cs->aead == &ptls_openssl_chacha20poly1305) {
     return NGTCP2_CRYPTO_MAX_ENCRYPTION_CHACHA20_POLY1305;
   }
-#endif /* PTLS_OPENSSL_HAVE_CHACHA20_POLY1305 */
+#endif /* defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305) */
 
   return 0;
 }
@@ -95,7 +96,7 @@ crypto_cipher_suite_get_aead_max_decryption_failure(ptls_cipher_suite_t *cs) {
   if (cs->aead == &ptls_openssl_chacha20poly1305) {
     return NGTCP2_CRYPTO_MAX_DECRYPTION_FAILURE_CHACHA20_POLY1305;
   }
-#endif /* PTLS_OPENSSL_HAVE_CHACHA20_POLY1305 */
+#endif /* defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305) */
 
   return 0;
 }
@@ -103,18 +104,18 @@ crypto_cipher_suite_get_aead_max_decryption_failure(ptls_cipher_suite_t *cs) {
 static const ptls_cipher_algorithm_t *
 crypto_cipher_suite_get_hp(ptls_cipher_suite_t *cs) {
   if (cs->aead == &ptls_openssl_aes128gcm) {
-    return &ptls_openssl_aes128ctr;
+    return &ptls_openssl_aes128ecb;
   }
 
   if (cs->aead == &ptls_openssl_aes256gcm) {
-    return &ptls_openssl_aes256ctr;
+    return &ptls_openssl_aes256ecb;
   }
 
 #ifdef PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
   if (cs->aead == &ptls_openssl_chacha20poly1305) {
     return &ptls_openssl_chacha20;
   }
-#endif /* PTLS_OPENSSL_HAVE_CHACHA20_POLY1305 */
+#endif /* defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305) */
 
   return NULL;
 }
@@ -124,8 +125,8 @@ static int supported_cipher_suite(ptls_cipher_suite_t *cs) {
          cs->aead == &ptls_openssl_aes256gcm
 #ifdef PTLS_OPENSSL_HAVE_CHACHA20_POLY1305
          || cs->aead == &ptls_openssl_chacha20poly1305
-#endif /* PTLS_OPENSSL_HAVE_CHACHA20_POLY1305 */
-      ;
+#endif /* defined(PTLS_OPENSSL_HAVE_CHACHA20_POLY1305) */
+    ;
 }
 
 ngtcp2_crypto_ctx *ngtcp2_crypto_ctx_tls(ngtcp2_crypto_ctx *ctx,
@@ -146,7 +147,7 @@ ngtcp2_crypto_ctx *ngtcp2_crypto_ctx_tls(ngtcp2_crypto_ctx *ctx,
   ctx->hp.native_handle = (void *)crypto_cipher_suite_get_hp(cs);
   ctx->max_encryption = crypto_cipher_suite_get_aead_max_encryption(cs);
   ctx->max_decryption_failure =
-      crypto_cipher_suite_get_aead_max_decryption_failure(cs);
+    crypto_cipher_suite_get_aead_max_decryption_failure(cs);
   return ctx;
 }
 
@@ -235,6 +236,11 @@ int ngtcp2_crypto_cipher_ctx_encrypt_init(ngtcp2_crypto_cipher_ctx *cipher_ctx,
   actx = ptls_cipher_new(cipher->native_handle, /* is_enc = */ 1, key);
   if (actx == NULL) {
     return -1;
+  }
+
+  if (cipher->native_handle == &ptls_openssl_aes128ecb ||
+      cipher->native_handle == &ptls_openssl_aes256ecb) {
+    ptls_cipher_init(actx, NULL);
   }
 
   cipher_ctx->native_handle = actx;
@@ -329,18 +335,21 @@ int ngtcp2_crypto_decrypt(uint8_t *dest, const ngtcp2_crypto_aead *aead,
                           const uint8_t *nonce, size_t noncelen,
                           const uint8_t *aad, size_t aadlen) {
   ptls_aead_context_t *actx = aead_ctx->native_handle;
+  size_t nwrite;
 
   (void)aead;
 
   ptls_aead_xor_iv(actx, nonce, noncelen);
 
-  if (ptls_aead_decrypt(actx, dest, ciphertext, ciphertextlen, 0, aad,
-                        aadlen) == SIZE_MAX) {
-    return -1;
-  }
+  nwrite =
+    ptls_aead_decrypt(actx, dest, ciphertext, ciphertextlen, 0, aad, aadlen);
 
   /* zero-out static iv once again */
   ptls_aead_xor_iv(actx, nonce, noncelen);
+
+  if (nwrite == SIZE_MAX) {
+    return -1;
+  }
 
   return 0;
 }
@@ -348,32 +357,39 @@ int ngtcp2_crypto_decrypt(uint8_t *dest, const ngtcp2_crypto_aead *aead,
 int ngtcp2_crypto_hp_mask(uint8_t *dest, const ngtcp2_crypto_cipher *hp,
                           const ngtcp2_crypto_cipher_ctx *hp_ctx,
                           const uint8_t *sample) {
+  static const uint8_t PLAINTEXT[16] = {0};
   ptls_cipher_context_t *actx = hp_ctx->native_handle;
-  static const uint8_t PLAINTEXT[] = "\x00\x00\x00\x00\x00";
 
   (void)hp;
 
+  if (hp->native_handle == &ptls_openssl_aes128ecb ||
+      hp->native_handle == &ptls_openssl_aes256ecb) {
+    ptls_cipher_encrypt(actx, dest, sample, NGTCP2_HP_SAMPLELEN);
+
+    return 0;
+  }
+
   ptls_cipher_init(actx, sample);
-  ptls_cipher_encrypt(actx, dest, PLAINTEXT, sizeof(PLAINTEXT) - 1);
+  ptls_cipher_encrypt(actx, dest, PLAINTEXT, sizeof(PLAINTEXT));
 
   return 0;
 }
 
 int ngtcp2_crypto_read_write_crypto_data(
-    ngtcp2_conn *conn, ngtcp2_encryption_level encryption_level,
-    const uint8_t *data, size_t datalen) {
-  ngtcp2_crypto_picotls_ctx *cptls = ngtcp2_conn_get_tls_native_handle(conn);
+  ngtcp2_conn *conn, ngtcp2_encryption_level encryption_level,
+  const uint8_t *data, size_t datalen) {
+  ngtcp2_crypto_picotls_ctx *cptls = ngtcp2_conn_get_tls_native_handle2(conn);
   ptls_buffer_t sendbuf;
   size_t epoch_offsets[5] = {0};
   size_t epoch =
-      ngtcp2_crypto_picotls_from_ngtcp2_encryption_level(encryption_level);
+    ngtcp2_crypto_picotls_from_ngtcp2_encryption_level(encryption_level);
   size_t epoch_datalen;
   size_t i;
   int rv;
 
   ptls_buffer_init(&sendbuf, (void *)"", 0);
 
-  assert(epoch == ptls_get_read_epoch(cptls->ptls));
+  assert(datalen == 0 || epoch == ptls_get_read_epoch(cptls->ptls));
 
   rv = ptls_handle_message(cptls->ptls, &sendbuf, epoch_offsets, epoch, data,
                            datalen, &cptls->handshake_properties);
@@ -386,9 +402,9 @@ int ngtcp2_crypto_read_write_crypto_data(
     goto fin;
   }
 
-  if (!ngtcp2_conn_is_server(conn) &&
+  if (!ngtcp2_conn_is_server2(conn) &&
       cptls->handshake_properties.client.early_data_acceptance ==
-          PTLS_EARLY_DATA_REJECTED) {
+        PTLS_EARLY_DATA_REJECTED) {
     rv = ngtcp2_conn_tls_early_data_rejected(conn);
     if (rv != 0) {
       rv = -1;
@@ -405,8 +421,8 @@ int ngtcp2_crypto_read_write_crypto_data(
     assert(i != 1);
 
     if (ngtcp2_conn_submit_crypto_data(
-            conn, ngtcp2_crypto_picotls_from_epoch(i),
-            sendbuf.base + epoch_offsets[i], epoch_datalen) != 0) {
+          conn, ngtcp2_crypto_picotls_from_epoch(i),
+          sendbuf.base + epoch_offsets[i], epoch_datalen) != 0) {
       rv = -1;
       goto fin;
     }
@@ -463,7 +479,7 @@ ngtcp2_encryption_level ngtcp2_crypto_picotls_from_epoch(size_t epoch) {
 }
 
 size_t ngtcp2_crypto_picotls_from_ngtcp2_encryption_level(
-    ngtcp2_encryption_level encryption_level) {
+  ngtcp2_encryption_level encryption_level) {
   switch (encryption_level) {
   case NGTCP2_ENCRYPTION_LEVEL_INITIAL:
     return 0;
@@ -489,6 +505,17 @@ int ngtcp2_crypto_get_path_challenge_data_cb(ngtcp2_conn *conn, uint8_t *data,
   return 0;
 }
 
+int ngtcp2_crypto_get_path_challenge_data2_cb(ngtcp2_conn *conn,
+                                              ngtcp2_path_challenge_data *data,
+                                              void *user_data) {
+  (void)conn;
+  (void)user_data;
+
+  ptls_openssl_random_bytes(data->data, NGTCP2_PATH_CHALLENGE_DATALEN);
+
+  return 0;
+}
+
 int ngtcp2_crypto_random(uint8_t *data, size_t datalen) {
   ptls_openssl_random_bytes(data, datalen);
 
@@ -496,8 +523,7 @@ int ngtcp2_crypto_random(uint8_t *data, size_t datalen) {
 }
 
 void ngtcp2_crypto_picotls_ctx_init(ngtcp2_crypto_picotls_ctx *cptls) {
-  cptls->ptls = NULL;
-  memset(&cptls->handshake_properties, 0, sizeof(cptls->handshake_properties));
+  *cptls = (ngtcp2_crypto_picotls_ctx){0};
 }
 
 static int set_additional_extensions(ptls_handshake_properties_t *hsprops,
@@ -514,7 +540,7 @@ static int set_additional_extensions(ptls_handshake_properties_t *hsprops,
     return -1;
   }
 
-  nwrite = ngtcp2_conn_encode_local_transport_params(conn, buf, buflen);
+  nwrite = ngtcp2_conn_encode_local_transport_params2(conn, buf, buflen);
   if (nwrite < 0) {
     goto fail;
   }
@@ -532,8 +558,8 @@ fail:
 }
 
 int ngtcp2_crypto_picotls_collect_extension(
-    ptls_t *ptls, struct st_ptls_handshake_properties_t *properties,
-    uint16_t type) {
+  ptls_t *ptls, struct st_ptls_handshake_properties_t *properties,
+  uint16_t type) {
   (void)ptls;
   (void)properties;
 
@@ -541,8 +567,8 @@ int ngtcp2_crypto_picotls_collect_extension(
 }
 
 int ngtcp2_crypto_picotls_collected_extensions(
-    ptls_t *ptls, struct st_ptls_handshake_properties_t *properties,
-    ptls_raw_extension_t *extensions) {
+  ptls_t *ptls, struct st_ptls_handshake_properties_t *properties,
+  ptls_raw_extension_t *extensions) {
   ngtcp2_crypto_conn_ref *conn_ref;
   ngtcp2_conn *conn;
   int rv;
@@ -558,7 +584,7 @@ int ngtcp2_crypto_picotls_collected_extensions(
     conn = conn_ref->get_conn(conn_ref);
 
     rv = ngtcp2_conn_decode_and_set_remote_transport_params(
-        conn, extensions->data.base, extensions->data.len);
+      conn, extensions->data.base, extensions->data.len);
     if (rv != 0) {
       ngtcp2_conn_set_tls_error(conn, rv);
       return -1;
@@ -594,7 +620,7 @@ static int update_traffic_key_server_cb(ptls_update_traffic_key_t *self,
        * wait for the key to get the correct local transport
        * parameters from ngtcp2_conn.
        */
-      cptls = ngtcp2_conn_get_tls_native_handle(conn);
+      cptls = ngtcp2_conn_get_tls_native_handle2(conn);
 
       if (set_additional_extensions(&cptls->handshake_properties, conn) != 0) {
         return -1;
@@ -613,7 +639,7 @@ static int update_traffic_key_server_cb(ptls_update_traffic_key_t *self,
 }
 
 static ptls_update_traffic_key_t update_traffic_key_server = {
-    update_traffic_key_server_cb,
+  update_traffic_key_server_cb,
 };
 
 static int update_traffic_key_cb(ptls_update_traffic_key_t *self, ptls_t *ptls,
@@ -661,7 +687,7 @@ int ngtcp2_crypto_picotls_configure_client_context(ptls_context_t *ctx) {
 }
 
 int ngtcp2_crypto_picotls_configure_server_session(
-    ngtcp2_crypto_picotls_ctx *cptls) {
+  ngtcp2_crypto_picotls_ctx *cptls) {
   ptls_handshake_properties_t *hsprops = &cptls->handshake_properties;
 
   hsprops->collect_extension = ngtcp2_crypto_picotls_collect_extension;
@@ -671,7 +697,7 @@ int ngtcp2_crypto_picotls_configure_server_session(
 }
 
 int ngtcp2_crypto_picotls_configure_client_session(
-    ngtcp2_crypto_picotls_ctx *cptls, ngtcp2_conn *conn) {
+  ngtcp2_crypto_picotls_ctx *cptls, ngtcp2_conn *conn) {
   ptls_handshake_properties_t *hsprops = &cptls->handshake_properties;
 
   hsprops->client.max_early_data_size = calloc(1, sizeof(size_t));
@@ -692,7 +718,7 @@ int ngtcp2_crypto_picotls_configure_client_session(
 }
 
 void ngtcp2_crypto_picotls_deconfigure_session(
-    ngtcp2_crypto_picotls_ctx *cptls) {
+  ngtcp2_crypto_picotls_ctx *cptls) {
   ptls_handshake_properties_t *hsprops;
   ptls_raw_extension_t *exts;
 

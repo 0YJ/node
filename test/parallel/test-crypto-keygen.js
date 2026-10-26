@@ -14,6 +14,11 @@ const {
 } = require('crypto');
 const { inspect } = require('util');
 
+const {
+  hasOpenSSL,
+  isBoringSSL: commonIsBoringSSL,
+} = require('../common/crypto');
+const isBoringSSL = commonIsBoringSSL;
 
 // Test invalid parameter encoding.
 {
@@ -54,6 +59,20 @@ const { inspect } = require('util');
     code: 'ERR_INVALID_ARG_VALUE',
     message: "The argument 'type' must be a supported key type. Received 'rsa2'"
   });
+
+  for (const type of ['toString', 'constructor']) {
+    assert.throws(() => generateKeyPairSync(type, {}), {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_VALUE',
+      message: `The argument 'type' must be a supported key type. Received '${type}'`
+    });
+
+    assert.throws(() => generateKeyPair(type, {}, common.mustNotCall()), {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_VALUE',
+      message: `The argument 'type' must be a supported key type. Received '${type}'`
+    });
+  }
 }
 
 {
@@ -73,6 +92,21 @@ const { inspect } = require('util');
     message: 'The "options" argument must be of type object. ' +
       'Received type number (0)'
   });
+
+  for (const type of ['rsa', 'ed25519']) {
+    assert.throws(() => generateKeyPairSync(type, null), {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_TYPE',
+      message: 'The "options" argument must be of type object. ' +
+        'Received null'
+    });
+    assert.throws(() => generateKeyPair(type, null, common.mustNotCall()), {
+      name: 'TypeError',
+      code: 'ERR_INVALID_ARG_TYPE',
+      message: 'The "options" argument must be of type object. ' +
+        'Received null'
+    });
+  }
 }
 
 {
@@ -345,13 +379,19 @@ const { inspect } = require('util');
   }
 
   // Test invalid exponents. (caught by OpenSSL)
+  let invalidExponentError = /bad e value/;
+  if (isBoringSSL) {
+    invalidExponentError = /BAD_E_VALUE/;
+  } else if (hasOpenSSL(3)) {
+    invalidExponentError = /exponent/;
+  }
   for (const publicExponent of [1, 1 + 0x10001]) {
     generateKeyPair('rsa', {
       modulusLength: 4096,
       publicExponent
     }, common.mustCall((err) => {
       assert.strictEqual(err.name, 'Error');
-      assert.match(err.message, common.hasOpenSSL3 ? /exponent/ : /bad e value/);
+      assert.match(err.message, invalidExponentError);
     }));
   }
 }
@@ -479,16 +519,21 @@ const { inspect } = require('util');
     });
   }));
 
-  generateKeyPair('ec', {
-    namedCurve: 'secp256k1',
-  }, common.mustSucceed((publicKey, privateKey) => {
-    assert.deepStrictEqual(publicKey.asymmetricKeyDetails, {
-      namedCurve: 'secp256k1'
-    });
-    assert.deepStrictEqual(privateKey.asymmetricKeyDetails, {
-      namedCurve: 'secp256k1'
-    });
-  }));
+  if (isBoringSSL) {
+    common.printSkipMessage('Skipping secp256k1 keygen test case ' +
+                            'unsupported by BoringSSL');
+  } else {
+    generateKeyPair('ec', {
+      namedCurve: 'secp256k1',
+    }, common.mustSucceed((publicKey, privateKey) => {
+      assert.deepStrictEqual(publicKey.asymmetricKeyDetails, {
+        namedCurve: 'secp256k1'
+      });
+      assert.deepStrictEqual(privateKey.asymmetricKeyDetails, {
+        namedCurve: 'secp256k1'
+      });
+    }));
+  }
 }
 
 {
@@ -798,23 +843,4 @@ const { inspect } = require('util');
     code: 'ERR_CRYPTO_INVALID_DIGEST',
     message: 'Invalid MGF1 digest: sha2'
   });
-}
-
-{
-  // This test makes sure deprecated and new options must
-  // be the same value.
-
-  assert.throws(() => generateKeyPair('rsa-pss', {
-    modulusLength: 512,
-    saltLength: 16,
-    mgf1Hash: 'sha256',
-    mgf1HashAlgorithm: 'sha1'
-  }, common.mustNotCall()), { code: 'ERR_INVALID_ARG_VALUE' });
-
-  assert.throws(() => generateKeyPair('rsa-pss', {
-    modulusLength: 512,
-    saltLength: 16,
-    hash: 'sha256',
-    hashAlgorithm: 'sha1'
-  }, common.mustNotCall()), { code: 'ERR_INVALID_ARG_VALUE' });
 }

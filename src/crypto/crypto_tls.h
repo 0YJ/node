@@ -25,7 +25,6 @@
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
 #include "crypto/crypto_context.h"
-#include "crypto/crypto_clienthello.h"
 
 #include "async_wrap.h"
 #include "stream_wrap.h"
@@ -43,6 +42,11 @@ class TLSWrap : public AsyncWrap,
                 public StreamBase,
                 public StreamListener {
  public:
+  enum InternalFields {
+    kInternalFieldCount = std::max<uint32_t>(AsyncWrap::kInternalFieldCount,
+                                             StreamBase::kInternalFieldCount),
+  };
+
   enum class Kind {
     kClient,
     kServer
@@ -58,15 +62,26 @@ class TLSWrap : public AsyncWrap,
 
   ~TLSWrap() override;
 
-  bool is_cert_cb_running() const { return cert_cb_running_; }
-  bool is_waiting_cert_cb() const { return cert_cb_ != nullptr; }
-  bool has_session_callbacks() const { return session_callbacks_; }
-  void set_cert_cb_running(bool on = true) { cert_cb_running_ = on; }
-  void set_awaiting_new_session(bool on = true) { awaiting_new_session_ = on; }
-  void enable_session_callbacks() { session_callbacks_ = true; }
-  bool is_server() const { return kind_ == Kind::kServer; }
-  bool is_client() const { return kind_ == Kind::kClient; }
-  bool is_awaiting_new_session() const { return awaiting_new_session_; }
+  inline bool is_cert_cb_running() const { return flags_.cert_cb_running; }
+  inline bool is_waiting_cert_cb() const { return cert_cb_ != nullptr; }
+  inline bool has_session_callbacks() const { return flags_.session_callbacks; }
+  // We need to suspend the ClientHello only for server session id
+  // callbacks, and only on the first pass.
+  inline bool should_suspend_for_client_hello() const {
+    return is_server() && flags_.session_callbacks && !flags_.hello_answered;
+  }
+  inline void set_cert_cb_running(bool on = true) {
+    flags_.cert_cb_running = on;
+  }
+  inline void set_awaiting_new_session(bool on = true) {
+    flags_.awaiting_new_session = on;
+  }
+  inline void enable_session_callbacks() { flags_.session_callbacks = true; }
+  inline bool is_server() const { return kind_ == Kind::kServer; }
+  inline bool is_client() const { return kind_ == Kind::kClient; }
+  inline bool is_awaiting_new_session() const {
+    return flags_.awaiting_new_session;
+  }
 
   // Implement StreamBase:
   bool IsAlive() override;
@@ -98,12 +113,29 @@ class TLSWrap : public AsyncWrap,
   // Called by the done() callback of the 'newSession' event.
   void NewSessionDoneCb();
 
+  // Schedules 'onclienthello'; returns false to suspend the handshake until
+  // clientHelloDone(). The emit itself must not run on the library's stack.
+  bool OnEarlyClientHello(const unsigned char* session_id,
+                          size_t session_id_len,
+                          bool has_ticket);
+
+  // Schedules 'oncertcb'. The handshake stays suspended until certCbDone().
+  void ScheduleCertCb(std::string servername, bool ocsp);
+
   // Implement MemoryRetainer:
   void MemoryInfo(MemoryTracker* tracker) const override;
   SET_MEMORY_INFO_NAME(TLSWrap)
   SET_SELF_SIZE(TLSWrap)
 
   std::string diagnostic_name() const override;
+
+  bool get_alpn_callback_enabled() const {
+    return flags_.alpn_callback_enabled;
+  }
+
+  const std::vector<unsigned char>& get_alpn_protos() const {
+    return alpn_protos_;
+  }
 
  private:
   // OpenSSL structures are opaque. Estimate SSL memory size for OpenSSL 1.1.1b:
@@ -115,9 +147,6 @@ class TLSWrap : public AsyncWrap,
 
   static constexpr int kClearOutChunkSize = 16384;
 
-  // Maximum number of bytes for hello parser
-  static constexpr int kMaxHelloLength = 16384;
-
   // Usual ServerHello + Certificate size
   static constexpr int kInitialClientBufferLength = 4096;
 
@@ -128,11 +157,14 @@ class TLSWrap : public AsyncWrap,
 
   // Alternative to StreamListener::stream(), that returns a StreamBase instead
   // of a StreamResource.
-  StreamBase* underlying_stream() const {
+  inline StreamBase* underlying_stream() const {
     return static_cast<StreamBase*>(stream());
   }
 
   void WaitForCertCb(CertCb cb, void* arg);
+  void EmitClientHello(const std::vector<unsigned char>& session_id,
+                       bool has_ticket);
+  void EmitCertCb(const std::string& servername, bool ocsp);
 
   TLSWrap(Environment* env,
           v8::Local<v8::Object> obj,
@@ -173,6 +205,7 @@ class TLSWrap : public AsyncWrap,
   static int SelectSNIContextCallback(SSL* s, int* ad, void* arg);
 
   static void CertCbDone(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void ClientHelloDone(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void DestroySSL(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EnableCertCb(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EnableALPNCb(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -181,7 +214,6 @@ class TLSWrap : public AsyncWrap,
   static void EnableSessionCallbacks(
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void EnableTrace(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void EndParser(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void ExportKeyingMaterial(
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetALPNNegotiatedProto(
@@ -197,6 +229,8 @@ class TLSWrap : public AsyncWrap,
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetPeerX509Certificate(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void HasPeerCertificate(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetPeerFinished(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetProtocol(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void GetServername(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -208,11 +242,12 @@ class TLSWrap : public AsyncWrap,
   static void IsSessionReused(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void LoadSession(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void NewSessionDone(const v8::FunctionCallbackInfo<v8::Value>& args);
-  static void OnClientHelloParseEnd(void* arg);
+  static void ResumeAfterCertCb(void* arg);
   static void Receive(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Renegotiate(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void RequestOCSP(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetALPNProtocols(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void SetKeyCert(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetOCSPResponse(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetServername(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetSession(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -247,9 +282,8 @@ class TLSWrap : public AsyncWrap,
 
   Environment* const env_;
   Kind kind_;
-  SSLSessionPointer next_sess_;
-  SSLPointer ssl_;
-  ClientHelloParser hello_parser_;
+  ncrypto::SSLSessionPointer next_sess_;
+  ncrypto::SSLPointer ssl_;
   v8::Global<v8::ArrayBufferView> ocsp_response_;
   BaseObjectPtr<SecureContext> sni_context_;
   BaseObjectPtr<SecureContext> sc_;
@@ -264,22 +298,30 @@ class TLSWrap : public AsyncWrap,
   BaseObjectPtr<AsyncWrap> current_empty_write_;
   std::string error_;
 
-  bool session_callbacks_ = false;
-  bool awaiting_new_session_ = false;
-  bool in_dowrite_ = false;
-  bool started_ = false;
-  bool shutdown_ = false;
-  bool cert_cb_running_ = false;
-  bool eof_ = false;
-
   // TODO(@jasnell): These state flags should be revisited.
   // The established_ flag indicates that the handshake is
   // completed. The write_callback_scheduled_ flag is less
   // clear -- once it is set to true, it is never set to
   // false and it is only set to true after established_
   // is set to true, so it's likely redundant.
-  bool established_ = false;
-  bool write_callback_scheduled_ = false;
+  struct Flags {
+    bool session_callbacks : 1;
+    bool awaiting_new_session : 1;
+    // 'onclienthello' has been emitted for this connection.
+    bool hello_emitted : 1;
+    // JS has answered it by calling clientHelloDone().
+    bool hello_answered : 1;
+    bool in_dowrite : 1;
+    bool started : 1;
+    bool shutdown : 1;
+    bool cert_cb_running : 1;
+    bool eof : 1;
+    bool established : 1;
+    bool write_callback_scheduled : 1;
+    bool has_active_write_issued_by_prev_listener : 1;
+    bool alpn_callback_enabled : 1;
+  };
+  Flags flags_{};
 
   int cycle_depth_ = 0;
 
@@ -287,13 +329,9 @@ class TLSWrap : public AsyncWrap,
   CertCb cert_cb_ = nullptr;
   void* cert_cb_arg_ = nullptr;
 
-  BIOPointer bio_trace_;
+  ncrypto::BIOPointer bio_trace_;
 
-  bool has_active_write_issued_by_prev_listener_ = false;
-
- public:
   std::vector<unsigned char> alpn_protos_;  // Accessed by SelectALPNCallback.
-  bool alpn_callback_enabled_ = false;      // Accessed by SelectALPNCallback.
 };
 
 }  // namespace crypto

@@ -8,7 +8,7 @@
       'includes': ['config/archs/linux64-s390x/asm_avx2/openssl.gypi'],
     }, 'target_arch=="arm" and OS=="linux"', {
       'includes': ['config/archs/linux-armv4/asm_avx2/openssl.gypi'],
-    }, 'target_arch=="arm64" and OS=="linux"', {
+    }, 'target_arch=="arm64" and OS in ("linux", "openharmony")', {
       'includes': ['config/archs/linux-aarch64/asm_avx2/openssl.gypi'],
     }, 'target_arch=="ia32" and OS=="freebsd"', {
       'includes': ['config/archs/BSD-x86/asm_avx2/openssl.gypi'],
@@ -69,6 +69,8 @@
       ],
     }, 'target_arch=="x64" and OS=="linux"', {
       'includes': ['config/archs/linux-x86_64/asm_avx2/openssl.gypi'],
+    }, 'target_arch=="riscv64" and OS=="linux"', {
+      'includes': ['config/archs/linux64-riscv64/asm_avx2/openssl.gypi'],
     }, {
       # Other architectures don't use assembly
       'includes': ['config/archs/linux-x86_64/asm_avx2/openssl.gypi'],

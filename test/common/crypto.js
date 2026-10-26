@@ -1,8 +1,9 @@
 'use strict';
 
 const common = require('../common');
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
 const assert = require('assert');
 const crypto = require('crypto');
@@ -33,23 +34,6 @@ const modp2buf = Buffer.from([
   0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 ]);
 
-function testDH({ publicKey: alicePublicKey, privateKey: alicePrivateKey },
-                { publicKey: bobPublicKey, privateKey: bobPrivateKey },
-                expectedValue) {
-  const buf1 = crypto.diffieHellman({
-    privateKey: alicePrivateKey,
-    publicKey: bobPublicKey,
-  });
-  const buf2 = crypto.diffieHellman({
-    privateKey: bobPrivateKey,
-    publicKey: alicePublicKey,
-  });
-  assert.deepStrictEqual(buf1, buf2);
-
-  if (expectedValue !== undefined)
-    assert.deepStrictEqual(buf1, expectedValue);
-}
-
 // Asserts that the size of the given key (in chars or bytes) is within 10% of
 // the expected size.
 function assertApproximateSize(key, expectedSize) {
@@ -66,9 +50,14 @@ function assertApproximateSize(key, expectedSize) {
 function testEncryptDecrypt(publicKey, privateKey) {
   const message = 'Hello Node.js world!';
   const plaintext = Buffer.from(message, 'utf8');
+  const withOaepHash = (key) => {
+    if (!hasFIPS(3)) return key;
+    if (key?.key !== undefined) return { ...key, oaepHash: 'sha256' };
+    return { key, oaepHash: 'sha256' };
+  };
   for (const key of [publicKey, privateKey]) {
-    const ciphertext = publicEncrypt(key, plaintext);
-    const received = privateDecrypt(privateKey, ciphertext);
+    const ciphertext = publicEncrypt(withOaepHash(key), plaintext);
+    const received = privateDecrypt(withOaepHash(privateKey), ciphertext);
     assert.strictEqual(received.toString('utf8'), message);
   }
 }
@@ -115,9 +104,35 @@ const pkcs8EncExp = getRegExpForPEM('ENCRYPTED PRIVATE KEY');
 const sec1Exp = getRegExpForPEM('EC PRIVATE KEY');
 const sec1EncExp = (cipher) => getRegExpForPEM('EC PRIVATE KEY', cipher);
 
+// Synthesize OPENSSL_VERSION_NUMBER format with the layout 0xMNN00PPSL
+const opensslVersionNumber = (major = 0, minor = 0, patch = 0) => {
+  assert(major >= 0 && major <= 0xf);
+  assert(minor >= 0 && minor <= 0xff);
+  assert(patch >= 0 && patch <= 0xff);
+  return (major << 28) | (minor << 20) | (patch << 4);
+};
+
+let OPENSSL_VERSION_NUMBER;
+const hasOpenSSL = (major = 0, minor = 0, patch = 0) => {
+  if (!common.hasCrypto) return false;
+  if (OPENSSL_VERSION_NUMBER === undefined) {
+    const regexp = /(?<m>\d+)\.(?<n>\d+)\.(?<p>\d+)/;
+    const { m, n, p } = process.versions.openssl.match(regexp).groups;
+    OPENSSL_VERSION_NUMBER = opensslVersionNumber(m, n, p);
+  }
+  return OPENSSL_VERSION_NUMBER >= opensslVersionNumber(major, minor, patch);
+};
+
+const isBoringSSL = process.features.openssl_is_boringssl;
+
+const hasFIPS = (major = 0, minor = 0, patch = 0) => {
+  return crypto.getFips() === 1 && hasOpenSSL(major, minor, patch);
+};
+
+let opensslCli = null;
+
 module.exports = {
   modp2buf,
-  testDH,
   assertApproximateSize,
   testEncryptDecrypt,
   testSignVerify,
@@ -129,4 +144,34 @@ module.exports = {
   pkcs8EncExp,  // used once
   sec1Exp,
   sec1EncExp,
+  hasOpenSSL,
+  hasFIPS,
+  isBoringSSL,
+  get hasOpenSSL3() {
+    return hasOpenSSL(3);
+  },
+  // opensslCli defined lazily to reduce overhead of spawnSync
+  get opensslCli() {
+    if (opensslCli !== null) return opensslCli;
+
+    if (process.config.variables.node_shared_openssl) {
+      // Use external command
+      opensslCli = 'openssl';
+    } else {
+      const path = require('path');
+      // Use command built from sources included in Node.js repository
+      opensslCli = path.join(path.dirname(process.execPath), 'openssl-cli');
+    }
+
+    if (exports.isWindows) opensslCli += '.exe';
+
+    const { spawnSync } = require('child_process');
+
+    const opensslCmd = spawnSync(opensslCli, ['version']);
+    if (opensslCmd.status !== 0 || opensslCmd.error !== undefined) {
+      // OpenSSL command cannot be executed
+      opensslCli = false;
+    }
+    return opensslCli;
+  },
 };

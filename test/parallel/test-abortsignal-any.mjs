@@ -16,7 +16,7 @@ describe('AbortSignal.any()', { concurrency: !process.env.TEST_PARALLEL }, () =>
       () => AbortSignal.any([AbortSignal.abort(), undefined]),
       {
         code: 'ERR_INVALID_ARG_TYPE',
-        message: 'The "signals[1]" argument must be an instance of AbortSignal. Received undefined'
+        message: 'signals[1] is not of type AbortSignal.',
       },
     );
   });
@@ -100,5 +100,35 @@ describe('AbortSignal.any()', { concurrency: !process.env.TEST_PARALLEL }, () =>
     signals.forEach((signal, i) => signal.addEventListener('abort', () => result += i));
     controller.abort();
     assert.strictEqual(result, '01234');
+  });
+
+  it('must accept WebIDL sequence', () => {
+    const controller = new AbortController();
+    const iterable = {
+      *[Symbol.iterator]() {
+        yield controller.signal;
+        yield new AbortController().signal;
+        yield new AbortController().signal;
+        yield new AbortController().signal;
+      },
+    };
+    const signal = AbortSignal.any(iterable);
+    let result = 0;
+    signal.addEventListener('abort', () => result += 1);
+    controller.abort();
+    assert.strictEqual(result, 1);
+  });
+
+  it('throws TypeError if any value does not implement AbortSignal', () => {
+    const expectedError = { code: 'ERR_INVALID_ARG_TYPE' };
+    assert.throws(() => AbortSignal.any([ null ]), expectedError);
+    assert.throws(() => AbortSignal.any([ undefined ]), expectedError);
+    assert.throws(() => AbortSignal.any([ '123' ]), expectedError);
+    assert.throws(() => AbortSignal.any([ 123 ]), expectedError);
+    assert.throws(() => AbortSignal.any([{}]), expectedError);
+    assert.throws(() => AbortSignal.any([{ aborted: true }]), expectedError);
+    assert.throws(() => AbortSignal.any([{
+      aborted: true, reason: '', throwIfAborted: null,
+    }]), expectedError);
   });
 });

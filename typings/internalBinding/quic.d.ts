@@ -2,7 +2,7 @@ interface QuicCallbacks {
   onEndpointClose: (context: number, status: number) => void;
   onSessionNew: (session: Session) => void;
   onSessionClose: (type: number, code: bigint, reason?: string) => void;
-  onSessionDatagram: (datagram: Uint8Array, early: boolean) => void;);
+  onSessionDatagram: (datagram: Uint8Array, early: boolean) => void;
   onSessionDatagramStatus: (id: bigint, status: string) => void;
   onSessionHandshake: (sni: string,
                        alpn: string,
@@ -22,6 +22,7 @@ interface QuicCallbacks {
   onStreamBlocked: () => void;
   onStreamClose: (error: [number,bigint,string]) => void;
   onStreamReset: (error: [number,bigint,string]) => void;
+  onStreamStopSending: (error: [number,bigint,string]) => void;
   onStreamHeaders: (headers: string[], kind: number) => void;
   onStreamTrailers: () => void;
 }

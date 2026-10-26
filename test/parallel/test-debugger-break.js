@@ -11,7 +11,7 @@ const path = require('path');
 
 const scriptFullPath = fixtures.path('debugger', 'break.js');
 const script = path.relative(process.cwd(), scriptFullPath);
-const cli = startCLI(['--port=0', script]);
+const cli = startCLI([script]);
 
 (async () => {
   await cli.waitForInitialBreak();
@@ -41,7 +41,7 @@ const cli = startCLI(['--port=0', script]);
   assert.match(
     cli.output,
     /> 3 name = 'Robin';/,
-    'marks the 3nd line');
+    'marks the 3rd line');
 
   await cli.stepCommand('cont');
   assert.ok(
@@ -53,6 +53,7 @@ const cli = startCLI(['--port=0', script]);
     'marks the debugger line');
 
   await cli.command('sb("break.js", 6)');
+  await cli.waitFor(/> 6.*[.\s\S]*debug>/);
   assert.doesNotMatch(cli.output, /Could not resolve breakpoint/);
 
   await cli.command('sb("otherFunction()")');

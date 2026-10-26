@@ -12,16 +12,16 @@
 #include "src/base/macros.h"
 #include "src/common/globals.h"
 #include "src/heap/allocation-observer.h"
+#include "src/heap/base-page.h"
 #include "src/heap/base-space.h"
 #include "src/heap/base/active-system-pages.h"
-#include "src/heap/basic-memory-chunk.h"
 #include "src/heap/free-list.h"
 #include "src/heap/linear-allocation-area.h"
 #include "src/heap/list.h"
 #include "src/heap/main-allocator.h"
 #include "src/heap/memory-chunk-layout.h"
-#include "src/heap/memory-chunk.h"
-#include "src/heap/page.h"
+#include "src/heap/mutable-page.h"
+#include "src/heap/normal-page.h"
 #include "src/heap/slot-set.h"
 #include "src/objects/objects.h"
 #include "src/utils/allocation.h"
@@ -48,10 +48,10 @@ class SemiSpace;
 
 // Some assertion macros used in the debugging mode.
 
-#define DCHECK_OBJECT_SIZE(size) \
+#define DCHECK_VALID_REGULAR_OBJECT_SIZE(size) \
   DCHECK((0 < size) && (size <= kMaxRegularHeapObjectSize))
 
-#define DCHECK_CODEOBJECT_SIZE(size) \
+#define DCHECK_VALID_REGULAR_CODEOBJECT_SIZE(size) \
   DCHECK((0 < size) && (size <= MemoryChunkLayout::MaxRegularCodeObjectSize()))
 
 template <typename Enum, typename Callback>
@@ -66,9 +66,6 @@ void ForAll(Callback callback) {
 // sealed after startup (i.e. not ReadOnlySpace).
 class V8_EXPORT_PRIVATE Space : public BaseSpace {
  public:
-  static inline void MoveExternalBackingStoreBytes(
-      ExternalBackingStoreType type, Space* from, Space* to, size_t amount);
-
   Space(Heap* heap, AllocationSpace id, std::unique_ptr<FreeList> free_list)
       : BaseSpace(heap, id), free_list_(std::move(free_list)) {}
 
@@ -86,38 +83,30 @@ class V8_EXPORT_PRIVATE Space : public BaseSpace {
 
   virtual std::unique_ptr<ObjectIterator> GetObjectIterator(Heap* heap) = 0;
 
-  inline void IncrementExternalBackingStoreBytes(ExternalBackingStoreType type,
-                                                 size_t amount);
-  inline void DecrementExternalBackingStoreBytes(ExternalBackingStoreType type,
-                                                 size_t amount);
+  virtual MutablePage* first_page() { return memory_chunk_list_.front(); }
+  virtual MutablePage* last_page() { return memory_chunk_list_.back(); }
 
-  // Returns amount of off-heap memory in-use by objects in this Space.
-  virtual size_t ExternalBackingStoreBytes(
-      ExternalBackingStoreType type) const {
-    return external_backing_store_bytes_[static_cast<int>(type)];
-  }
-
-  virtual MemoryChunk* first_page() { return memory_chunk_list_.front(); }
-  virtual MemoryChunk* last_page() { return memory_chunk_list_.back(); }
-
-  virtual const MemoryChunk* first_page() const {
+  virtual const MutablePage* first_page() const {
     return memory_chunk_list_.front();
   }
-  virtual const MemoryChunk* last_page() const {
+  virtual const MutablePage* last_page() const {
     return memory_chunk_list_.back();
   }
 
-  virtual heap::List<MemoryChunk>& memory_chunk_list() {
+  virtual heap::List<MutablePage>& memory_chunk_list() {
     return memory_chunk_list_;
   }
 
-  virtual Page* InitializePage(MemoryChunk* chunk) { UNREACHABLE(); }
+  virtual NormalPage* InitializePage(MutablePage* chunk) { UNREACHABLE(); }
+
+  virtual void NotifyBlackAreaCreated(size_t size) {}
+  virtual void NotifyBlackAreaDestroyed(size_t size) {}
 
   FreeList* free_list() { return free_list_.get(); }
 
   Address FirstPageAddress() const {
     DCHECK_NOT_NULL(first_page());
-    return first_page()->address();
+    return first_page()->ChunkAddress();
   }
 
 #ifdef DEBUG
@@ -126,10 +115,7 @@ class V8_EXPORT_PRIVATE Space : public BaseSpace {
 
  protected:
   // The List manages the pages that belong to the given space.
-  heap::List<MemoryChunk> memory_chunk_list_;
-  // Tracks off-heap memory used by this space.
-  std::atomic<size_t> external_backing_store_bytes_[static_cast<int>(
-      ExternalBackingStoreType::kNumValues)] = {0};
+  heap::List<MutablePage> memory_chunk_list_;
   std::unique_ptr<FreeList> free_list_;
 };
 
@@ -171,38 +157,38 @@ class PageIteratorImpl
   PageType* p_;
 };
 
-using PageIterator = PageIteratorImpl<Page>;
-using ConstPageIterator = PageIteratorImpl<const Page>;
+using PageIterator = PageIteratorImpl<NormalPage>;
+using ConstPageIterator = PageIteratorImpl<const NormalPage>;
 using LargePageIterator = PageIteratorImpl<LargePage>;
 using ConstLargePageIterator = PageIteratorImpl<const LargePage>;
 
 class PageRange {
  public:
   using iterator = PageIterator;
-  PageRange(Page* begin, Page* end) : begin_(begin), end_(end) {}
-  inline explicit PageRange(Page* page);
+  PageRange(NormalPage* begin, NormalPage* end) : begin_(begin), end_(end) {}
+  inline explicit PageRange(NormalPage* page);
 
   iterator begin() { return iterator(begin_); }
   iterator end() { return iterator(end_); }
 
  private:
-  Page* begin_;
-  Page* end_;
+  NormalPage* begin_;
+  NormalPage* end_;
 };
 
 class ConstPageRange {
  public:
   using iterator = ConstPageIterator;
-  ConstPageRange(const Page* begin, const Page* end)
+  ConstPageRange(const NormalPage* begin, const NormalPage* end)
       : begin_(begin), end_(end) {}
-  inline explicit ConstPageRange(const Page* page);
+  inline explicit ConstPageRange(const NormalPage* page);
 
   iterator begin() { return iterator(begin_); }
   iterator end() { return iterator(end_); }
 
  private:
-  const Page* begin_;
-  const Page* end_;
+  const NormalPage* begin_;
+  const NormalPage* end_;
 };
 
 class V8_EXPORT_PRIVATE SpaceWithLinearArea : public Space {
@@ -236,11 +222,11 @@ class MemoryChunkIterator {
   explicit MemoryChunkIterator(Heap* heap) : space_iterator_(heap) {}
 
   V8_INLINE bool HasNext();
-  V8_INLINE MemoryChunk* Next();
+  V8_INLINE MutablePage* Next();
 
  private:
   SpaceIterator space_iterator_;
-  MemoryChunk* current_chunk_ = nullptr;
+  MutablePage* current_chunk_ = nullptr;
 };
 
 }  // namespace internal

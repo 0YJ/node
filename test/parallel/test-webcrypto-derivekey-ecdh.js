@@ -103,6 +103,25 @@ async function prepareKeys() {
       }
 
       {
+        // Non-multiple of 8 derived HMAC key length
+        const key = await subtle.deriveKey({
+          name: 'ECDH',
+          public: publicKey
+        }, privateKey, {
+          name: 'HMAC',
+          hash: 'SHA-256',
+          length: 9
+        }, true, ['sign', 'verify']);
+
+        const raw = await subtle.exportKey('raw', key);
+        const expected = Buffer.from(result.slice(0, 4), 'hex');
+        expected[1] &= 0b10000000;
+
+        assert.strictEqual(key.algorithm.length, 9);
+        assert.deepStrictEqual(Buffer.from(raw), expected);
+      }
+
+      {
         // Case insensitivity
         const key = await subtle.deriveKey({
           name: 'eCdH',
@@ -174,7 +193,7 @@ async function prepareKeys() {
         },
         keys['P-521'].privateKey,
         ...otherArgs),
-      { message: /Keys must be ECDH, X25519, or X448 keys/ });
+      { message: 'key algorithm mismatch' });
   }
 
   {

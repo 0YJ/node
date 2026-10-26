@@ -13,8 +13,9 @@
 #include "src/heap/heap.h"
 #include "src/heap/large-spaces.h"
 #include "src/heap/main-allocator.h"
-#include "src/heap/memory-chunk.h"
+#include "src/heap/mutable-page.h"
 #include "src/heap/spaces-inl.h"
+#include "src/heap/trusted-range.h"
 #include "test/unittests/test-utils.h"
 
 namespace v8 {
@@ -23,8 +24,8 @@ namespace internal {
 static Tagged<HeapObject> AllocateUnaligned(MainAllocator* allocator,
                                             SpaceWithLinearArea* space,
                                             int size) {
-  AllocationResult allocation =
-      allocator->AllocateRaw(size, kTaggedAligned, AllocationOrigin::kRuntime);
+  AllocationResult allocation = allocator->AllocateRaw(
+      size, kTaggedAligned, AllocationOrigin::kRuntime, AllocationHint());
   CHECK(!allocation.IsFailure());
   Tagged<HeapObject> filler;
   CHECK(allocation.To(&filler));
@@ -35,8 +36,8 @@ static Tagged<HeapObject> AllocateUnaligned(MainAllocator* allocator,
 static Tagged<HeapObject> AllocateUnaligned(OldLargeObjectSpace* allocator,
                                             OldLargeObjectSpace* space,
                                             int size) {
-  AllocationResult allocation =
-      allocator->AllocateRaw(space->heap()->main_thread_local_heap(), size);
+  AllocationResult allocation = allocator->AllocateRaw(
+      space->heap()->main_thread_local_heap(), size, AllocationHint());
   CHECK(!allocation.IsFailure());
   Tagged<HeapObject> filler;
   CHECK(allocation.To(&filler));
@@ -55,14 +56,15 @@ TEST_F(SpacesTest, CompactionSpaceMerge) {
 
   CompactionSpace* compaction_space =
       new CompactionSpace(heap, OLD_SPACE, NOT_EXECUTABLE,
-                          CompactionSpaceKind::kCompactionSpaceForMarkCompact);
+                          CompactionSpaceKind::kCompactionSpaceForMarkCompact,
+                          CompactionSpace::DestinationHeap::kSameHeap);
   MainAllocator allocator(heap, compaction_space, MainAllocator::kInGC);
   EXPECT_TRUE(compaction_space != nullptr);
 
-  for (Page* p : *old_space) {
+  for (NormalPage* p : *old_space) {
     // Unlink free lists from the main space to avoid reusing the memory for
     // compaction spaces.
-    old_space->UnlinkFreeListCategories(p);
+    old_space->free_list()->EvictFreeListItems(p);
   }
 
   // Cannot loop until "Available()" since we initially have 0 bytes available
@@ -76,7 +78,7 @@ TEST_F(SpacesTest, CompactionSpaceMerge) {
     Tagged<HeapObject> object =
         allocator
             .AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
-                         AllocationOrigin::kGC)
+                         AllocationOrigin::kGC, AllocationHint())
             .ToObjectChecked();
     heap->CreateFillerObjectAt(object.address(), kMaxRegularHeapObjectSize);
   }
@@ -93,77 +95,65 @@ TEST_F(SpacesTest, CompactionSpaceMerge) {
   heap->SetGCState(Heap::NOT_IN_GC);
 }
 
-TEST_F(SpacesTest, WriteBarrierFromHeapObject) {
-  constexpr Address address1 = Page::kPageSize;
-  Tagged<HeapObject> object1 =
-      HeapObject::unchecked_cast(Tagged<Object>(address1));
-  BasicMemoryChunk* chunk1 = BasicMemoryChunk::FromHeapObject(object1);
-  heap_internals::MemoryChunk* slim_chunk1 =
-      heap_internals::MemoryChunk::FromHeapObject(object1);
-  EXPECT_EQ(static_cast<void*>(chunk1), static_cast<void*>(slim_chunk1));
-  constexpr Address address2 = 2 * Page::kPageSize - 1;
-  Tagged<HeapObject> object2 =
-      HeapObject::unchecked_cast(Tagged<Object>(address2));
-  BasicMemoryChunk* chunk2 = BasicMemoryChunk::FromHeapObject(object2);
-  heap_internals::MemoryChunk* slim_chunk2 =
-      heap_internals::MemoryChunk::FromHeapObject(object2);
-  EXPECT_EQ(static_cast<void*>(chunk2), static_cast<void*>(slim_chunk2));
-}
+TEST_F(SpacesTest, WriteBarriers) {
+  // Test allocates a real page in OLD_SPACE to check various flag combinaton.
+  Heap* heap = i_isolate()->heap();
+  OldSpace* old_space = heap->old_space();
+  EXPECT_TRUE(old_space != nullptr);
 
-TEST_F(SpacesTest, WriteBarrierIsMarking) {
-  const size_t kSizeOfMemoryChunk = sizeof(MemoryChunk);
-  char memory[kSizeOfMemoryChunk];
-  memset(&memory, 0, kSizeOfMemoryChunk);
-  MemoryChunk* chunk = reinterpret_cast<MemoryChunk*>(&memory);
-  heap_internals::MemoryChunk* slim_chunk =
-      reinterpret_cast<heap_internals::MemoryChunk*>(&memory);
-  EXPECT_FALSE(chunk->IsFlagSet(MemoryChunk::INCREMENTAL_MARKING));
-  EXPECT_FALSE(slim_chunk->IsMarking());
-  chunk->SetFlag(MemoryChunk::INCREMENTAL_MARKING);
-  EXPECT_TRUE(chunk->IsFlagSet(MemoryChunk::INCREMENTAL_MARKING));
-  EXPECT_TRUE(slim_chunk->IsMarking());
-  chunk->ClearFlag(MemoryChunk::INCREMENTAL_MARKING);
-  EXPECT_FALSE(chunk->IsFlagSet(MemoryChunk::INCREMENTAL_MARKING));
-  EXPECT_FALSE(slim_chunk->IsMarking());
-}
+  for (NormalPage* p : *old_space) {
+    // Unlink free lists from the main space to avoid reusing the memory for
+    // compaction spaces.
+    old_space->free_list()->EvictFreeListItems(p);
+  }
 
-TEST_F(SpacesTest, WriteBarrierInYoungGenerationToSpace) {
-  const size_t kSizeOfMemoryChunk = sizeof(MemoryChunk);
-  char memory[kSizeOfMemoryChunk];
-  memset(&memory, 0, kSizeOfMemoryChunk);
-  MemoryChunk* chunk = reinterpret_cast<MemoryChunk*>(&memory);
-  heap_internals::MemoryChunk* slim_chunk =
-      reinterpret_cast<heap_internals::MemoryChunk*>(&memory);
-  EXPECT_FALSE(chunk->InYoungGeneration());
-  EXPECT_FALSE(slim_chunk->InYoungGeneration());
-  chunk->SetFlag(MemoryChunk::TO_PAGE);
-  EXPECT_TRUE(chunk->InYoungGeneration());
-  EXPECT_TRUE(slim_chunk->InYoungGeneration());
-  chunk->ClearFlag(MemoryChunk::TO_PAGE);
-  EXPECT_FALSE(chunk->InYoungGeneration());
-  EXPECT_FALSE(slim_chunk->InYoungGeneration());
-}
+  heap->SetGCState(Heap::MARK_COMPACT);
+  {
+    std::unique_ptr<CompactionSpace> compaction_space(
+        new CompactionSpace(heap, OLD_SPACE, NOT_EXECUTABLE,
+                            CompactionSpaceKind::kCompactionSpaceForMarkCompact,
+                            CompactionSpace::DestinationHeap::kSameHeap));
+    EXPECT_TRUE(compaction_space);
+    MainAllocator allocator(heap, compaction_space.get(), MainAllocator::kInGC);
 
-TEST_F(SpacesTest, WriteBarrierInYoungGenerationFromSpace) {
-  const size_t kSizeOfMemoryChunk = sizeof(MemoryChunk);
-  char memory[kSizeOfMemoryChunk];
-  memset(&memory, 0, kSizeOfMemoryChunk);
-  MemoryChunk* chunk = reinterpret_cast<MemoryChunk*>(&memory);
-  heap_internals::MemoryChunk* slim_chunk =
-      reinterpret_cast<heap_internals::MemoryChunk*>(&memory);
-  EXPECT_FALSE(chunk->InYoungGeneration());
-  EXPECT_FALSE(slim_chunk->InYoungGeneration());
-  chunk->SetFlag(MemoryChunk::FROM_PAGE);
-  EXPECT_TRUE(chunk->InYoungGeneration());
-  EXPECT_TRUE(slim_chunk->InYoungGeneration());
-  chunk->ClearFlag(MemoryChunk::FROM_PAGE);
-  EXPECT_FALSE(chunk->InYoungGeneration());
-  EXPECT_FALSE(slim_chunk->InYoungGeneration());
+    Tagged<HeapObject> object =
+        allocator
+            .AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
+                         AllocationOrigin::kGC, AllocationHint())
+            .ToObjectChecked();
+    heap->CreateFillerObjectAt(object.address(), kMaxRegularHeapObjectSize);
+    EXPECT_EQ(1, compaction_space->CountTotalPages());
+
+    MemoryChunk* chunk = MemoryChunk::FromHeapObject(object);
+    MutablePage* metadata = MutablePage::FromHeapObject(i_isolate(), object);
+
+    // Marking states.
+    EXPECT_FALSE(chunk->IsMarking());
+    metadata->SetFlagNonExecutable(MemoryChunk::INCREMENTAL_MARKING);
+    EXPECT_TRUE(chunk->IsMarking());
+    metadata->ClearFlagNonExecutable(MemoryChunk::INCREMENTAL_MARKING);
+    EXPECT_FALSE(chunk->IsMarking());
+
+    // In young generation for TO space.
+    EXPECT_FALSE(chunk->InYoungGeneration());
+    metadata->SetFlagNonExecutable(MemoryChunk::TO_PAGE);
+    EXPECT_TRUE(chunk->InYoungGeneration());
+    metadata->ClearFlagNonExecutable(MemoryChunk::TO_PAGE);
+    EXPECT_FALSE(chunk->InYoungGeneration());
+
+    // In young generation for FROM space.
+    EXPECT_FALSE(chunk->InYoungGeneration());
+    metadata->SetFlagNonExecutable(MemoryChunk::FROM_PAGE);
+    EXPECT_TRUE(chunk->InYoungGeneration());
+    metadata->ClearFlagNonExecutable(MemoryChunk::FROM_PAGE);
+    EXPECT_FALSE(chunk->InYoungGeneration());
+  }
+  heap->SetGCState(Heap::NOT_IN_GC);
 }
 
 TEST_F(SpacesTest, CodeRangeAddressReuse) {
   CodeRangeAddressHint hint;
-  const size_t base_alignment = MemoryChunk::kPageSize;
+  const size_t base_alignment = NormalPage::kPageSize;
   // Create code ranges.
   Address code_range1 = hint.GetAddressHint(100, base_alignment);
   CHECK(IsAligned(code_range1, base_alignment));
@@ -425,6 +415,43 @@ TEST_F(SpacesTest, InlineAllocationObserverCadence) {
   CHECK_EQ(observer1.count(), 32);
   CHECK_EQ(observer2.count(), 28);
 }
+
+#if V8_ENABLE_SANDBOX
+TEST_F(SpacesTest, TrustedSpaceNullPage) {
+  // Trusted space should have a reserved, inaccessible area at the start to
+  // mitigate (compressed) nullptr dereference bugs.
+
+  v8::Isolate::Scope isolate_scope(v8_isolate());
+  v8::HandleScope handle_scope(v8_isolate());
+  v8::Context::New(v8_isolate())->Enter();
+
+  Address trusted_space_base =
+      i_isolate()->isolate_group()->GetTrustedPtrComprCageBase();
+  const size_t size_of_reserved_area = 1 * MB;
+
+  // Test that no objects are allocated in the reserved area.
+  MainAllocator* trusted_space_allocator =
+      i_isolate()->heap()->allocator()->trusted_space_allocator();
+  for (int i = 0; i < 64; ++i) {
+    Tagged<HeapObject> allocation = AllocateUnaligned(
+        trusted_space_allocator, i_isolate()->heap()->trusted_space(), 32);
+    CHECK_GE(allocation.address(), trusted_space_base);
+    size_t offset = allocation.address() - trusted_space_base;
+    CHECK_GT(offset, size_of_reserved_area);
+  }
+
+  // Test that the reserved area is inaccessible.
+  auto ReadByteAt = [](Address address) {
+    return *reinterpret_cast<volatile uint8_t*>(address);
+  };
+  uint8_t buf = 0;
+  EXPECT_DEATH_IF_SUPPORTED(buf += ReadByteAt(trusted_space_base), "");
+  EXPECT_DEATH_IF_SUPPORTED(
+      buf += ReadByteAt(trusted_space_base + size_of_reserved_area - 1), "");
+  // Mostly just to prevent the compiler from optimizing away the memory loads.
+  CHECK_EQ(buf, 0);
+}
+#endif  // V8_ENABLE_SANDBOX
 
 }  // namespace internal
 }  // namespace v8

@@ -1,6 +1,6 @@
 'use strict';
 
-// Flags: --expose-internals --experimental-permission --allow-fs-read=*
+// Flags: --expose-internals --permission --allow-fs-read=*
 
 const common = require('../common');
 const stream = require('stream');
@@ -8,7 +8,11 @@ const REPL = require('internal/repl');
 const assert = require('assert');
 const { inspect } = require('util');
 
-common.skipIfDumbTerminal();
+if (process.env.TERM === 'dumb') {
+  common.skip('skipping - dumb terminal');
+}
+
+common.skipIfInspectorDisabled();
 
 // Create an input stream specialized for testing an array of actions
 class ActionStream extends stream.Stream {
@@ -76,7 +80,7 @@ function runTest() {
   REPL.createInternalRepl(opts.env, {
     input: new ActionStream(),
     output: new stream.Writable({
-      write(chunk, _, next) {
+      write: common.mustCallAtLeast((chunk, _, next) => {
         const output = chunk.toString();
 
         if (!opts.showEscapeCodes &&
@@ -101,7 +105,7 @@ function runTest() {
         }
 
         next();
-      }
+      }),
     }),
     allowBlockingCompletions: true,
     completer: opts.completer,
@@ -109,13 +113,13 @@ function runTest() {
     useColors: false,
     preview: opts.preview,
     terminal: true
-  }, function(err, repl) {
+  }, common.mustCall((err, repl) => {
     if (err) {
       console.error(`Failed test # ${numtests - tests.length}`);
       throw err;
     }
 
-    repl.once('close', () => {
+    repl.once('close', common.mustCall(() => {
 
       if (opts.checkTotal) {
         assert.deepStrictEqual(lastChunks, expected);
@@ -125,10 +129,10 @@ function runTest() {
       }
 
       setImmediate(runTestWrap, true);
-    });
+    }));
 
     repl.input.run(opts.test);
-  });
+  }));
 }
 
 // run the tests

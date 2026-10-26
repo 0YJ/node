@@ -9,7 +9,7 @@ const http2 = require('http2');
 const check = Buffer.from([0x00, 0x01, 0x00, 0x00, 0x10, 0x00,
                            0x00, 0x02, 0x00, 0x00, 0x00, 0x01,
                            0x00, 0x03, 0xff, 0xff, 0xff, 0xff,
-                           0x00, 0x04, 0x00, 0x00, 0xff, 0xff,
+                           0x00, 0x04, 0x00, 0x40, 0x00, 0x00,
                            0x00, 0x05, 0x00, 0x00, 0x40, 0x00,
                            0x00, 0x06, 0x00, 0x00, 0xff, 0xff,
                            0x00, 0x08, 0x00, 0x00, 0x00, 0x00]);
@@ -20,7 +20,7 @@ assert.deepStrictEqual(val, check);
   ['headerTableSize', 0],
   ['headerTableSize', 2 ** 32 - 1],
   ['initialWindowSize', 0],
-  ['initialWindowSize', 2 ** 32 - 1],
+  ['initialWindowSize', 2 ** 31 - 1],  // Max per HTTP/2 spec
   ['maxFrameSize', 16384],
   ['maxFrameSize', 2 ** 24 - 1],
   ['maxConcurrentStreams', 0],
@@ -42,6 +42,8 @@ http2.getPackedSettings({ enablePush: false });
   ['headerTableSize', -1],
   ['headerTableSize', 2 ** 32],
   ['initialWindowSize', -1],
+  ['initialWindowSize', 2 ** 31],  // Max per HTTP/2 spec is 2^31-1
+  ['initialWindowSize', 2 ** 32 - 1],  // Regression test for nghttp2 crash
   ['initialWindowSize', 2 ** 32],
   ['maxFrameSize', 16383],
   ['maxFrameSize', 2 ** 24],

@@ -22,34 +22,14 @@
  * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-#ifndef NGTCP2_SHARED_H
-#define NGTCP2_SHARED_H
+#ifndef SHARED_H
+#define SHARED_H
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <ngtcp2/ngtcp2_crypto.h>
-
-/**
- * @macro
- *
- * :macro:`NGTCP2_INITIAL_SALT_V1` is a salt value which is used to
- * derive initial secret.  It is used for QUIC v1.
- */
-#define NGTCP2_INITIAL_SALT_V1                                                 \
-  "\x38\x76\x2c\xf7\xf5\x59\x34\xb3\x4d\x17\x9a\xe6\xa4\xc8\x0c\xad\xcc\xbb"   \
-  "\x7f\x0a"
-
-/**
- * @macro
- *
- * :macro:`NGTCP2_INITIAL_SALT_V2` is a salt value which is used to
- * derive initial secret.  It is used for QUIC v2.
- */
-#define NGTCP2_INITIAL_SALT_V2                                                 \
-  "\x0d\xed\xe3\xde\xf7\x00\xa6\xdb\x81\x93\x81\xbe\x6e\x26\x9d\xcb\xf9\xbd"   \
-  "\x2e\xd9"
 
 /* Maximum key usage (encryption) limits */
 #define NGTCP2_CRYPTO_MAX_ENCRYPTION_AES_GCM (1ULL << 23)
@@ -281,15 +261,15 @@ int ngtcp2_crypto_set_remote_transport_params(ngtcp2_conn *conn, void *tls);
  * This function calls `ngtcp2_conn_set_initial_crypto_ctx` to set
  * initial AEAD and message digest algorithm.  After the successful
  * call of this function, application can use
- * `ngtcp2_conn_get_initial_crypto_ctx` to get the object.
+ * `ngtcp2_conn_get_initial_crypto_ctx2` to get the object.
  *
  * This function returns 0 if it succeeds, or -1.
  */
 int ngtcp2_crypto_derive_and_install_initial_key(
-    ngtcp2_conn *conn, uint8_t *rx_secret, uint8_t *tx_secret,
-    uint8_t *initial_secret, uint8_t *rx_key, uint8_t *rx_iv, uint8_t *rx_hp,
-    uint8_t *tx_key, uint8_t *tx_iv, uint8_t *tx_hp, uint32_t version,
-    const ngtcp2_cid *client_dcid);
+  ngtcp2_conn *conn, uint8_t *rx_secret, uint8_t *tx_secret,
+  uint8_t *initial_secret, uint8_t *rx_key, uint8_t *rx_iv, uint8_t *rx_hp,
+  uint8_t *tx_key, uint8_t *tx_iv, uint8_t *tx_hp, uint32_t version,
+  const ngtcp2_cid *client_dcid);
 
 /**
  * @function
@@ -337,10 +317,10 @@ int ngtcp2_crypto_derive_and_install_initial_key(
  * This function returns 0 if it succeeds, or -1.
  */
 int ngtcp2_crypto_derive_and_install_vneg_initial_key(
-    ngtcp2_conn *conn, uint8_t *rx_secret, uint8_t *tx_secret,
-    uint8_t *initial_secret, uint8_t *rx_key, uint8_t *rx_iv, uint8_t *rx_hp,
-    uint8_t *tx_key, uint8_t *tx_iv, uint8_t *tx_hp, uint32_t version,
-    const ngtcp2_cid *client_dcid);
+  ngtcp2_conn *conn, uint8_t *rx_secret, uint8_t *tx_secret,
+  uint8_t *initial_secret, uint8_t *rx_key, uint8_t *rx_iv, uint8_t *rx_hp,
+  uint8_t *tx_key, uint8_t *tx_iv, uint8_t *tx_hp, uint32_t version,
+  const ngtcp2_cid *client_dcid);
 
 /**
  * @function
@@ -394,4 +374,4 @@ int ngtcp2_crypto_hkdf_expand_label(uint8_t *dest, size_t destlen,
                                     const uint8_t *secret, size_t secretlen,
                                     const uint8_t *label, size_t labellen);
 
-#endif /* NGTCP2_SHARED_H */
+#endif /* !defined(SHARED_H) */

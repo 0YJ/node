@@ -14,7 +14,6 @@
 namespace v8 {
 namespace internal {
 
-const int MemoryReducer::kLongDelayMs = 8000;
 const int MemoryReducer::kShortDelayMs = 500;
 const int MemoryReducer::kWatchdogDelayMs = 100000;
 const double MemoryReducer::kCommittedMemoryFactor = 1.1;
@@ -34,9 +33,19 @@ MemoryReducer::TimerTask::TimerTask(MemoryReducer* memory_reducer)
     : CancelableTask(memory_reducer->heap()->isolate()),
       memory_reducer_(memory_reducer) {}
 
+namespace {
+size_t GetCommitedSize(Heap* heap) {
+  return heap->CommittedOldGenerationMemory() + heap->EmbedderSizeOfObjects() +
+         heap->external_memory();
+}
+}  // namespace
 
 void MemoryReducer::TimerTask::RunInternal() {
   Heap* heap = memory_reducer_->heap();
+  // Set the current isolate such that trusted pointer tables etc are
+  // available and the cage base is set correctly for multi-cage mode.
+  SetCurrentIsolateScope isolate_scope(heap->isolate());
+
   const double time_ms = heap->MonotonicallyIncreasingTimeInMs();
   heap->allocator()->new_space_allocator()->FreeLinearAllocationArea();
   heap->tracer()->SampleAllocation(base::TimeTicks::Now(),
@@ -57,11 +66,11 @@ void MemoryReducer::TimerTask::RunInternal() {
   const Event event{
       kTimer,
       time_ms,
-      heap->CommittedOldGenerationMemory(),
+      GetCommitedSize(heap),
       false,
       low_allocation_rate || optimize_for_memory,
       heap->incremental_marking()->IsStopped() &&
-          heap->incremental_marking()->CanBeStarted(),
+          heap->incremental_marking()->CanAndShouldBeStarted(),
   };
   memory_reducer_->NotifyTimer(event);
 }
@@ -94,7 +103,7 @@ void MemoryReducer::NotifyTimer(const Event& event) {
 
 void MemoryReducer::NotifyMarkCompact(size_t committed_memory_before) {
   if (!v8_flags.incremental_marking) return;
-  const size_t committed_memory = heap()->CommittedOldGenerationMemory();
+  const size_t committed_memory = GetCommitedSize(heap());
 
   // Trigger one more GC if
   // - this GC decreased committed memory,
@@ -161,8 +170,9 @@ MemoryReducer::State MemoryReducer::Step(const State& state,
                 state.committed_memory_at_last_run() + kCommittedMemoryDelta)) {
           return state;
         } else {
-          return State::CreateWait(0, event.time_ms + kLongDelayMs,
-                                   event.time_ms);
+          return State::CreateWait(
+              0, event.time_ms + v8_flags.memory_reducer_delay_ms,
+              event.time_ms);
         }
       } else {
         DCHECK_EQ(kPossibleGarbage, event.type);
@@ -188,13 +198,15 @@ MemoryReducer::State MemoryReducer::Step(const State& state,
               return state;
             }
           } else {
-            return State::CreateWait(state.started_gcs(),
-                                     event.time_ms + kLongDelayMs,
-                                     state.last_gc_time_ms());
+            return State::CreateWait(
+                state.started_gcs(),
+                event.time_ms + v8_flags.memory_reducer_delay_ms,
+                state.last_gc_time_ms());
           }
         case kMarkCompact:
-          return State::CreateWait(state.started_gcs(),
-                                   event.time_ms + kLongDelayMs, event.time_ms);
+          return State::CreateWait(
+              state.started_gcs(),
+              event.time_ms + v8_flags.memory_reducer_delay_ms, event.time_ms);
       }
     case kRun:
       CHECK_LE(state.started_gcs(), MaxNumberOfGCs());
@@ -228,7 +240,6 @@ void MemoryReducer::TearDown() { state_ = State::CreateUninitialized(); }
 
 // static
 int MemoryReducer::MaxNumberOfGCs() {
-  if (v8_flags.memory_reducer_single_gc) return 1;
   DCHECK_GT(v8_flags.memory_reducer_gc_count, 0);
   return v8_flags.memory_reducer_gc_count;
 }

@@ -1,4 +1,4 @@
-// Flags: --no-warnings
+// Flags: --no-warnings --expose-internals
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -22,11 +22,33 @@
 
 'use strict';
 const common = require('../common');
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
-if (!common.opensslCli)
+const { isBoringSSL } = require('../common/crypto');
+
+if (isBoringSSL) {
+  require('../common/boringssl').assertFiniteFieldDheUnsupported();
+  return;
+}
+
+const {
+  opensslCli,
+  hasOpenSSL,
+  hasFIPS,
+} = require('../common/crypto');
+
+// OpenSSL has a set of security levels which affect what algorithms
+// are available by default. Different OpenSSL versions have different
+// default security levels and we use this value to adjust what a test
+// expects based on the security level. You can read more in
+// https://docs.openssl.org/1.1.1/man3/SSL_CTX_set_security_level/#default-callback-behaviour
+const secLevel = require('internal/crypto/util').getOpenSSLSecLevel();
+
+if (!opensslCli) {
   common.skip('missing openssl-cli');
+}
 
 const assert = require('assert');
 const { X509Certificate } = require('crypto');
@@ -43,16 +65,19 @@ const dheCipher = 'DHE-RSA-AES128-SHA256';
 const ecdheCipher = 'ECDHE-RSA-AES128-SHA256';
 const ciphers = `${dheCipher}:${ecdheCipher}`;
 
-// Test will emit a warning because the DH parameter size is < 2048 bits
-common.expectWarning('SecurityWarning',
-                     'DH parameter is less than 2048 bits');
+if (secLevel < 2 && !hasFIPS(3)) {
+  // Test will emit a warning because the DH parameter size is < 2048 bits
+  // when the test is run on versions lower than OpenSSL32
+  common.expectWarning('SecurityWarning',
+                       'DH parameter is less than 2048 bits');
+}
 
 function loadDHParam(n) {
   const keyname = `dh${n}.pem`;
   return fixtures.readKey(keyname);
 }
 
-function test(dhparam, keylen, expectedCipher) {
+function test(dhparam, keylen, expectedCipher, expectedError) {
   const options = {
     key,
     cert,
@@ -62,14 +87,34 @@ function test(dhparam, keylen, expectedCipher) {
   };
 
   const server = tls.createServer(options, (conn) => conn.end());
+  if (typeof expectedError === 'string' || Array.isArray(expectedError)) {
+    server.once('tlsClientError', common.mustCall((err) => {
+      if (Array.isArray(expectedError)) {
+        assert.ok(expectedError.includes(err.code), err);
+      } else {
+        assert.strictEqual(err.code, expectedError);
+      }
+    }));
+  }
 
   server.listen(0, '127.0.0.1', common.mustCall(() => {
     const args = ['s_client', '-connect', `127.0.0.1:${server.address().port}`,
                   '-cipher', `${ciphers}:@SECLEVEL=1`];
 
-    execFile(common.opensslCli, args, common.mustSucceed((stdout) => {
+    execFile(opensslCli, args, common.mustCall((err, stdout, stderr) => {
+      if (expectedError) {
+        assert.strictEqual(err?.code, 1);
+        if (expectedError instanceof RegExp) assert.match(stderr, expectedError);
+        server.close();
+        return;
+      }
+
+      assert.ifError(err);
       assert(keylen === null ||
-             stdout.includes(`Server Temp Key: DH, ${keylen} bits`));
+             // s_client < OpenSSL 3.5
+             stdout.includes(`Server Temp Key: DH, ${keylen} bits`) ||
+             // s_client >= OpenSSL 3.5
+             stdout.includes(`Peer Temp Key: DH, ${keylen} bits`));
       assert(stdout.includes(`Cipher    : ${expectedCipher}`));
       server.close();
     }));
@@ -78,16 +123,22 @@ function test(dhparam, keylen, expectedCipher) {
   return once(server, 'close');
 }
 
-function testCustomParam(keylen, expectedCipher) {
+function testCustomParam(keylen, expectedCipher, expectedError) {
   const dhparam = loadDHParam(keylen);
   if (keylen === 'error') keylen = null;
-  return test(dhparam, keylen, expectedCipher);
+  return test(dhparam, keylen, expectedCipher, expectedError);
 }
 
 (async () => {
-  // By default, DHE is disabled while ECDHE is enabled.
+  // By default, DHE is disabled while ECDHE is enabled. OpenSSL 4.0
+  // implements RFC 7919 FFDHE negotiation for TLS 1.2 which enables DHE
+  // (with FFDHE-2048) even without a server-supplied dhparam.
   for (const dhparam of [undefined, null]) {
-    await test(dhparam, null, ecdheCipher);
+    if (hasOpenSSL(4, 0)) {
+      await test(dhparam, 2048, dheCipher);
+    } else {
+      await test(dhparam, null, ecdheCipher);
+    }
   }
 
   // The DHE parameters selected by OpenSSL depend on the strength of the
@@ -104,9 +155,40 @@ function testCustomParam(keylen, expectedCipher) {
   }, /DH parameter is less than 1024 bits/);
 
   // Custom DHE parameters are supported (but discouraged).
-  await testCustomParam(1024, dheCipher);
-  await testCustomParam(2048, dheCipher);
+  // 1024 is disallowed at security level 2 and above so use 3072 instead
+  // for higher security levels.
+  // OpenSSL 4.0 implements RFC 7919 FFDHE negotiation for TLS 1.2 and
+  // ignores the server-supplied dhparam in favor of FFDHE-2048, so the
+  // negotiated key length is always 2048.
+  if (hasFIPS(3)) {
+    if (hasFIPS(4)) {
+      await test(loadDHParam(3072), 2048, dheCipher);
+      await testCustomParam(2048, dheCipher);
+    } else {
+      const errorCode = hasFIPS(3, 5) ?
+        [
+          'ERR_SSL_INVALID_KEY_LENGTH',
+          'ERR_SSL_SSL/TLS_ALERT_ILLEGAL_PARAMETER',
+        ] : 'ERR_SSL_INTERNAL_ERROR';
+      await testCustomParam(3072, null, errorCode);
+      await testCustomParam(2048, null, errorCode);
+    }
+  } else {
+    if (secLevel < 2) {
+      await testCustomParam(1024, dheCipher);
+    } else if (hasOpenSSL(4, 0)) {
+      await test(loadDHParam(3072), 2048, dheCipher);
+    } else {
+      await testCustomParam(3072, dheCipher);
+    }
+    await testCustomParam(2048, dheCipher);
+  }
 
-  // Invalid DHE parameters are discarded. ECDHE remains enabled.
-  await testCustomParam('error', ecdheCipher);
+  // Invalid DHE parameters are discarded. Prior to OpenSSL 4.0 this
+  // disabled DHE and ECDHE was negotiated; since 4.0, FFDHE-2048 is used.
+  if (hasOpenSSL(4, 0)) {
+    await test(loadDHParam('error'), 2048, dheCipher);
+  } else {
+    await testCustomParam('error', ecdheCipher);
+  }
 })().then(common.mustCall());

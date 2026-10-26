@@ -21,11 +21,20 @@
 
 'use strict';
 const common = require('../common');
-if (!common.hasCrypto)
+if (!common.hasCrypto) {
   common.skip('missing crypto');
+}
 
-if (!common.opensslCli)
+const {
+  hasOpenSSL,
+  hasFIPS,
+  opensslCli,
+  isBoringSSL,
+} = require('../common/crypto');
+
+if (!opensslCli) {
   common.skip('node compiled without OpenSSL CLI.');
+}
 
 const assert = require('assert');
 const { execFile } = require('child_process');
@@ -36,16 +45,51 @@ function loadPEM(n) {
   return fixtures.readKey(`${n}.pem`);
 }
 
-const server = tls.Server({
-  secureProtocol: 'TLSv1_2_server_method',
+const serverOptions = {
   key: loadPEM('agent2-key'),
-  cert: loadPEM('agent2-cert')
-}, null).listen(0, common.mustCall(() => {
-  const args = ['s_client', '-quiet', '-tls1_1',
-                '-cipher', (common.hasOpenSSL31 ? 'DEFAULT:@SECLEVEL=0' : 'DEFAULT'),
+  cert: loadPEM('agent2-cert'),
+};
+if (hasFIPS(3)) {
+  serverOptions.minVersion = 'TLSv1.3';
+  serverOptions.maxVersion = 'TLSv1.3';
+} else {
+  serverOptions.secureProtocol = 'TLSv1_2_server_method';
+}
+
+const server = tls.Server(serverOptions, null).listen(0, common.mustCall(() => {
+  if (isBoringSSL) {
+    let gotClientError = false;
+    let gotServerError = false;
+    function maybeClose() {
+      if (gotClientError && gotServerError)
+        server.close();
+    }
+
+    server.once('tlsClientError', common.mustCall((err) => {
+      assert.strictEqual(err.code, 'ERR_SSL_UNSUPPORTED_PROTOCOL');
+      gotServerError = true;
+      maybeClose();
+    }));
+
+    const client = tls.connect({
+      port: server.address().port,
+      rejectUnauthorized: false,
+      secureProtocol: 'TLSv1_1_method',
+    }, common.mustNotCall());
+    client.once('error', common.mustCall((err) => {
+      assert.strictEqual(err.code, 'ERR_SSL_TLSV1_ALERT_PROTOCOL_VERSION');
+      gotClientError = true;
+      maybeClose();
+    }));
+    return;
+  }
+
+  const args = ['s_client', '-quiet', hasFIPS(3) ? '-tls1_2' : '-tls1_1',
+                '-cipher', hasFIPS(3) ? 'DEFAULT' :
+                  (hasOpenSSL(3, 1) ? 'DEFAULT:@SECLEVEL=0' : 'DEFAULT'),
                 '-connect', `127.0.0.1:${server.address().port}`];
 
-  execFile(common.opensslCli, args, common.mustCall((err, _, stderr) => {
+  execFile(opensslCli, args, common.mustCall((err, _, stderr) => {
     assert.strictEqual(err.code, 1);
     assert.match(stderr, /SSL alert number 70/);
     server.close();

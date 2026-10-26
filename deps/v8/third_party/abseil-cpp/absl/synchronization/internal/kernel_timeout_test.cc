@@ -24,19 +24,29 @@
 #include "absl/time/time.h"
 #include "gtest/gtest.h"
 
-// Test go/btm support by randomizing the value of clock_gettime() for
-// CLOCK_MONOTONIC. This works by overriding a weak symbol in glibc.
+#if 0  // All supported platforms currently have steady clocks.
+#define ABSL_INTERNAL_KERNEL_TIMEOUT_SUPPORTS_STEADY_CLOCK 0
+#else
+#define ABSL_INTERNAL_KERNEL_TIMEOUT_SUPPORTS_STEADY_CLOCK 1
+#endif
+
+static_assert(
+    absl::synchronization_internal::KernelTimeout::SupportsSteadyClock() ==
+    static_cast<bool>(ABSL_INTERNAL_KERNEL_TIMEOUT_SUPPORTS_STEADY_CLOCK));
+
+// Randomizing the value of clock_gettime() for CLOCK_MONOTONIC.
+// This works by overriding a weak symbol in glibc.
 // We should be resistant to this randomization when !SupportsSteadyClock().
-#if defined(__GOOGLE_GRTE_VERSION__) &&      \
-    !defined(ABSL_HAVE_ADDRESS_SANITIZER) && \
-    !defined(ABSL_HAVE_MEMORY_SANITIZER) &&  \
+#if !ABSL_INTERNAL_KERNEL_TIMEOUT_SUPPORTS_STEADY_CLOCK && \
+    !defined(ABSL_HAVE_ADDRESS_SANITIZER) &&               \
+    !defined(ABSL_HAVE_MEMORY_SANITIZER) &&                \
     !defined(ABSL_HAVE_THREAD_SANITIZER)
 extern "C" int __clock_gettime(clockid_t c, struct timespec* ts);
 
 extern "C" int clock_gettime(clockid_t c, struct timespec* ts) {
   if (c == CLOCK_MONOTONIC &&
       !absl::synchronization_internal::KernelTimeout::SupportsSteadyClock()) {
-    absl::SharedBitGen gen;
+    thread_local absl::BitGen gen;  // NOLINT
     ts->tv_sec = absl::Uniform(gen, 0, 1'000'000'000);
     ts->tv_nsec = absl::Uniform(gen, 0, 1'000'000'000);
     return 0;
@@ -58,7 +68,8 @@ constexpr absl::Duration kTimingBound = absl::Microseconds(250);
 
 using absl::synchronization_internal::KernelTimeout;
 
-TEST(KernelTimeout, FiniteTimes) {
+// TODO(b/348224897): re-enabled when the flakiness is fixed.
+TEST(KernelTimeout, DISABLED_FiniteTimes) {
   constexpr absl::Duration kDurationsToTest[] = {
     absl::ZeroDuration(),
     absl::Nanoseconds(1),
@@ -228,7 +239,8 @@ TEST(KernelTimeout, InfinitePast) {
   EXPECT_EQ(t.ToChronoDuration(), std::chrono::nanoseconds(0));
 }
 
-TEST(KernelTimeout, FiniteDurations) {
+// TODO(b/348224897): re-enabled when the flakiness is fixed.
+TEST(KernelTimeout, DISABLED_FiniteDurations) {
   constexpr absl::Duration kDurationsToTest[] = {
     absl::ZeroDuration(),
     absl::Nanoseconds(1),
@@ -274,7 +286,8 @@ TEST(KernelTimeout, FiniteDurations) {
   }
 }
 
-TEST(KernelTimeout, NegativeDurations) {
+// TODO(b/348224897): re-enabled when the flakiness is fixed.
+TEST(KernelTimeout, DISABLED_NegativeDurations) {
   constexpr absl::Duration kDurationsToTest[] = {
     -absl::ZeroDuration(),
     -absl::Nanoseconds(1),

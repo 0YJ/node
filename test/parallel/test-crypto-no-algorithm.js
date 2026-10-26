@@ -4,13 +4,16 @@ const common = require('../common');
 if (!common.hasCrypto)
   common.skip('missing crypto');
 
-if (!common.hasOpenSSL3)
+const { hasOpenSSL } = require('../common/crypto');
+
+if (!hasOpenSSL(3))
   common.skip('this test requires OpenSSL 3.x');
 
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const { isMainThread } = require('worker_threads');
 
-if (common.isMainThread) {
+if (isMainThread) {
   // TODO(richardlau): Decide if `crypto.setFips` should error if the
   // provider named "fips" is not available.
   crypto.setFips(1);
@@ -23,13 +26,31 @@ if (common.isMainThread) {
              `did not find ${expected} in ${err.opensslErrorStack}`);
     }
   }));
+
+  const derivations = [
+    ['HKDF', () => crypto.hkdfSync('sha256', Buffer.alloc(32), Buffer.alloc(8),
+                                   Buffer.alloc(0), 32)],
+    ['PBKDF2', () => crypto.pbkdf2Sync('passphrase', Buffer.alloc(16), 1000, 32,
+                                       'sha256')],
+  ];
+  for (const { 0: name, 1: derive } of derivations) {
+    try {
+      derive();
+    } catch (err) {
+      assert.match(err.message, /derivation failed/);
+      assert.strictEqual(err.code, 'ERR_OSSL_EVP_UNSUPPORTED', `${name}: ${err.code}`);
+      const expected = /digital envelope routines::unsupported/;
+      assert(err.opensslErrorStack.some((msg) => expected.test(msg)),
+             `${name}: did not find ${expected} in ${err.opensslErrorStack}`);
+    }
+  }
 }
 
 {
   // Startup test. Should not hang.
-  const { path } = require('../common/fixtures');
+  const fixtures = require('../common/fixtures');
   const { spawnSync } = require('node:child_process');
-  const baseConf = path('openssl3-conf', 'base_only.cnf');
+  const baseConf = fixtures.path('openssl3-conf', 'base_only.cnf');
   const cp = spawnSync(process.execPath,
                        [ `--openssl-config=${baseConf}`, '-p', '"hello"' ],
                        { encoding: 'utf8' });

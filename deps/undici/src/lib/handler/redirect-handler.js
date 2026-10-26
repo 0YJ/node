@@ -1,143 +1,125 @@
 'use strict'
 
 const util = require('../core/util')
-const { kBodyUsed } = require('../core/symbols')
 const assert = require('node:assert')
 const { InvalidArgumentError } = require('../core/errors')
-const EE = require('node:events')
 
 const redirectableStatusCodes = [300, 301, 302, 303, 307, 308]
 
-const kBody = Symbol('body')
-
-class BodyAsyncIterable {
-  constructor (body) {
-    this[kBody] = body
-    this[kBodyUsed] = false
-  }
-
-  async * [Symbol.asyncIterator] () {
-    assert(!this[kBodyUsed], 'disturbed')
-    this[kBodyUsed] = true
-    yield * this[kBody]
-  }
-}
+const noop = () => {}
 
 class RedirectHandler {
+  static buildDispatch (dispatcher, maxRedirections) {
+    if (maxRedirections != null && (!Number.isInteger(maxRedirections) || maxRedirections < 0)) {
+      throw new InvalidArgumentError('maxRedirections must be a positive number')
+    }
+
+    const dispatch = dispatcher.dispatch.bind(dispatcher)
+    return (opts, originalHandler) => dispatch(opts, new RedirectHandler(dispatch, maxRedirections, opts, originalHandler))
+  }
+
   constructor (dispatch, maxRedirections, opts, handler) {
     if (maxRedirections != null && (!Number.isInteger(maxRedirections) || maxRedirections < 0)) {
       throw new InvalidArgumentError('maxRedirections must be a positive number')
     }
 
-    util.validateHandler(handler, opts.method, opts.upgrade)
+    if (opts.throwOnMaxRedirect != null && typeof opts.throwOnMaxRedirect !== 'boolean') {
+      throw new InvalidArgumentError('throwOnMaxRedirect must be a boolean')
+    }
 
     this.dispatch = dispatch
     this.location = null
-    this.abort = null
-    this.opts = { ...opts, maxRedirections: 0 } // opts must be a copy
+    const { maxRedirections: _, stripHeadersOnRedirect, stripHeadersOnCrossOriginRedirect, ...cleanOpts } = opts
+    this.opts = cleanOpts // opts must be a copy, exclude maxRedirections
+    this.opts.body = util.wrapRequestBody(this.opts.body)
+    this.stripHeadersOnRedirect = normalizeStripHeaders(stripHeadersOnRedirect, 'stripHeadersOnRedirect')
+    this.stripHeadersOnCrossOriginRedirect = normalizeStripHeaders(stripHeadersOnCrossOriginRedirect, 'stripHeadersOnCrossOriginRedirect')
     this.maxRedirections = maxRedirections
     this.handler = handler
     this.history = []
-    this.redirectionLimitReached = false
-
-    if (util.isStream(this.opts.body)) {
-      // TODO (fix): Provide some way for the user to cache the file to e.g. /tmp
-      // so that it can be dispatched again?
-      // TODO (fix): Do we need 100-expect support to provide a way to do this properly?
-      if (util.bodyLength(this.opts.body) === 0) {
-        this.opts.body
-          .on('data', function () {
-            assert(false)
-          })
-      }
-
-      if (typeof this.opts.body.readableDidRead !== 'boolean') {
-        this.opts.body[kBodyUsed] = false
-        EE.prototype.on.call(this.opts.body, 'data', function () {
-          this[kBodyUsed] = true
-        })
-      }
-    } else if (this.opts.body && typeof this.opts.body.pipeTo === 'function') {
-      // TODO (fix): We can't access ReadableStream internal state
-      // to determine whether or not it has been disturbed. This is just
-      // a workaround.
-      this.opts.body = new BodyAsyncIterable(this.opts.body)
-    } else if (
-      this.opts.body &&
-      typeof this.opts.body !== 'string' &&
-      !ArrayBuffer.isView(this.opts.body) &&
-      util.isIterable(this.opts.body)
-    ) {
-      // TODO: Should we allow re-using iterable if !this.opts.idempotent
-      // or through some other flag?
-      this.opts.body = new BodyAsyncIterable(this.opts.body)
-    }
   }
 
-  onConnect (abort) {
-    this.abort = abort
-    this.handler.onConnect(abort, { history: this.history })
+  onRequestStart (controller, context) {
+    this.handler.onRequestStart?.(controller, { ...context, history: this.history })
   }
 
-  onUpgrade (statusCode, headers, socket) {
-    this.handler.onUpgrade(statusCode, headers, socket)
+  onRequestUpgrade (controller, statusCode, headers, socket) {
+    this.handler.onRequestUpgrade?.(controller, statusCode, headers, socket)
   }
 
-  onError (error) {
-    this.handler.onError(error)
-  }
-
-  onHeaders (statusCode, headers, resume, statusText) {
-    this.location = this.history.length >= this.maxRedirections || util.isDisturbed(this.opts.body)
-      ? null
-      : parseLocation(statusCode, headers)
-
+  onResponseStart (controller, statusCode, headers, statusMessage) {
     if (this.opts.throwOnMaxRedirect && this.history.length >= this.maxRedirections) {
-      if (this.request) {
-        this.request.abort(new Error('max redirects'))
-      }
-
-      this.redirectionLimitReached = true
-      this.abort(new Error('max redirects'))
-      return
+      throw new Error('max redirects')
     }
+
+    let removeContentHeaders = statusCode === 303
+
+    // https://tools.ietf.org/html/rfc7231#section-6.4.2
+    // https://fetch.spec.whatwg.org/#http-redirect-fetch
+    // In case of HTTP 301 or 302 with POST, change the method to GET
+    // QUERY is safe (RFC 10008) and should not change method like GET.
+    if ((statusCode === 301 || statusCode === 302) && this.opts.method === 'POST') {
+      this.opts.method = 'GET'
+      if (util.isStream(this.opts.body)) {
+        util.destroy(this.opts.body.on('error', noop))
+      }
+      this.opts.body = null
+      removeContentHeaders = true
+    }
+
+    // https://tools.ietf.org/html/rfc7231#section-6.4.4
+    // In case of HTTP 303, always replace method to be either HEAD or GET
+    if (statusCode === 303 && this.opts.method !== 'HEAD') {
+      this.opts.method = 'GET'
+      if (util.isStream(this.opts.body)) {
+        util.destroy(this.opts.body.on('error', noop))
+      }
+      this.opts.body = null
+    }
+
+    this.location = this.history.length >= this.maxRedirections || util.isDisturbed(this.opts.body) || redirectableStatusCodes.indexOf(statusCode) === -1
+      ? null
+      : headers.location
 
     if (this.opts.origin) {
       this.history.push(new URL(this.opts.path, this.opts.origin))
     }
 
     if (!this.location) {
-      return this.handler.onHeaders(statusCode, headers, resume, statusText)
+      this.handler.onResponseStart?.(controller, statusCode, headers, statusMessage)
+      return
     }
 
     const { origin, pathname, search } = util.parseURL(new URL(this.location, this.opts.origin && new URL(this.opts.path, this.opts.origin)))
     const path = search ? `${pathname}${search}` : pathname
 
+    // Check for redirect loops by seeing if we've already visited this URL in our history
+    // This catches the case where Client/Pool try to handle cross-origin redirects but fail
+    // and keep redirecting to the same URL in an infinite loop
+    const redirectUrlString = `${origin}${path}`
+    for (const historyUrl of this.history) {
+      if (historyUrl.toString() === redirectUrlString) {
+        throw new InvalidArgumentError(`Redirect loop detected. Cannot redirect to ${origin}. This typically happens when using a Client or Pool with cross-origin redirects. Use an Agent for cross-origin redirects.`)
+      }
+    }
+
     // Remove headers referring to the original URL.
-    // By default it is Host only, unless it's a 303 (see below), which removes also all Content-* headers.
+    // By default it is Host only. A 303 or a 301/302 POST-to-GET redirect also removes all Content-* headers.
     // https://tools.ietf.org/html/rfc7231#section-6.4
-    this.opts.headers = cleanRequestHeaders(this.opts.headers, statusCode === 303, this.opts.origin !== origin)
+    this.opts.headers = cleanRequestHeaders(this.opts.headers, removeContentHeaders, this.opts.origin !== origin, this.stripHeadersOnRedirect, this.stripHeadersOnCrossOriginRedirect)
     this.opts.path = path
     this.opts.origin = origin
-    this.opts.maxRedirections = 0
     this.opts.query = null
-
-    // https://tools.ietf.org/html/rfc7231#section-6.4.4
-    // In case of HTTP 303, always replace method to be either HEAD or GET
-    if (statusCode === 303 && this.opts.method !== 'HEAD') {
-      this.opts.method = 'GET'
-      this.opts.body = null
-    }
   }
 
-  onData (chunk) {
+  onResponseData (controller, chunk) {
     if (this.location) {
       /*
         https://tools.ietf.org/html/rfc7231#section-6.4
 
         TLDR: undici always ignores 3xx response bodies.
 
-        Redirection is used to serve the requested resource from another URL, so it is assumes that
+        Redirection is used to serve the requested resource from another URL, so it assumes that
         no body is generated (and thus can be ignored). Even though generating a body is not prohibited.
 
         For status 301, 302, 303, 307 and 308 (the latter from RFC 7238), the specs mention that the body usually
@@ -150,11 +132,11 @@ class RedirectHandler {
         servers and browsers implementors, we ignore the body as there is no specified way to eventually parse it.
       */
     } else {
-      return this.handler.onData(chunk)
+      this.handler.onResponseData?.(controller, chunk)
     }
   }
 
-  onComplete (trailers) {
+  onResponseEnd (controller, trailers) {
     if (this.location) {
       /*
         https://tools.ietf.org/html/rfc7231#section-6.4
@@ -164,63 +146,70 @@ class RedirectHandler {
 
         See comment on onData method above for more detailed information.
       */
-
-      this.location = null
-      this.abort = null
-
       this.dispatch(this.opts, this)
     } else {
-      this.handler.onComplete(trailers)
+      this.handler.onResponseEnd(controller, trailers)
     }
   }
 
-  onBodySent (chunk) {
-    if (this.handler.onBodySent) {
-      this.handler.onBodySent(chunk)
-    }
-  }
-}
-
-function parseLocation (statusCode, headers) {
-  if (redirectableStatusCodes.indexOf(statusCode) === -1) {
-    return null
-  }
-
-  for (let i = 0; i < headers.length; i += 2) {
-    if (headers[i].length === 8 && util.headerNameToString(headers[i]) === 'location') {
-      return headers[i + 1]
-    }
+  onResponseError (controller, error) {
+    this.handler.onResponseError?.(controller, error)
   }
 }
 
 // https://tools.ietf.org/html/rfc7231#section-6.4.4
-function shouldRemoveHeader (header, removeContent, unknownOrigin) {
-  if (header.length === 4) {
-    return util.headerNameToString(header) === 'host'
-  }
-  if (removeContent && util.headerNameToString(header).startsWith('content-')) {
+function shouldRemoveHeader (header, removeContent, unknownOrigin, stripHeaders, stripHeadersOnCrossOrigin) {
+  const name = util.headerNameToString(header)
+  if (name === 'host') {
     return true
   }
-  if (unknownOrigin && (header.length === 13 || header.length === 6 || header.length === 19)) {
-    const name = util.headerNameToString(header)
+  if (stripHeaders?.has(name) || (unknownOrigin && stripHeadersOnCrossOrigin?.has(name))) {
+    return true
+  }
+  if (removeContent && name.startsWith('content-')) {
+    return true
+  }
+  if (unknownOrigin) {
     return name === 'authorization' || name === 'cookie' || name === 'proxy-authorization'
   }
   return false
 }
 
 // https://tools.ietf.org/html/rfc7231#section-6.4
-function cleanRequestHeaders (headers, removeContent, unknownOrigin) {
+function normalizeStripHeaders (headers, optionName) {
+  if (headers == null) {
+    return null
+  }
+
+  if (!Array.isArray(headers)) {
+    throw new InvalidArgumentError(`${optionName} must be an array`)
+  }
+
+  const normalized = new Set()
+  for (const header of headers) {
+    if (typeof header !== 'string') {
+      throw new InvalidArgumentError(`${optionName} must contain header names`)
+    }
+
+    normalized.add(util.headerNameToString(header))
+  }
+  return normalized
+}
+
+function cleanRequestHeaders (headers, removeContent, unknownOrigin, stripHeaders, stripHeadersOnCrossOrigin) {
   const ret = []
   if (Array.isArray(headers)) {
     for (let i = 0; i < headers.length; i += 2) {
-      if (!shouldRemoveHeader(headers[i], removeContent, unknownOrigin)) {
+      if (!shouldRemoveHeader(headers[i], removeContent, unknownOrigin, stripHeaders, stripHeadersOnCrossOrigin)) {
         ret.push(headers[i], headers[i + 1])
       }
     }
   } else if (headers && typeof headers === 'object') {
-    for (const key of Object.keys(headers)) {
-      if (!shouldRemoveHeader(key, removeContent, unknownOrigin)) {
-        ret.push(key, headers[key])
+    const entries = util.hasSafeIterator(headers) ? headers : Object.entries(headers)
+
+    for (const [key, value] of entries) {
+      if (!shouldRemoveHeader(key, removeContent, unknownOrigin, stripHeaders, stripHeadersOnCrossOrigin)) {
+        ret.push(key, value)
       }
     }
   } else {

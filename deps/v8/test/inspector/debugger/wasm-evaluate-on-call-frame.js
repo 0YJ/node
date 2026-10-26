@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-multi-memory
 
 utils.load('test/inspector/wasm-inspector-test.js');
 
@@ -96,10 +95,12 @@ InspectorTest.runAsyncTestSuite([
 
   async function testGlobals() {
     const builder = new WasmModuleBuilder();
-    const global0 = builder.addGlobal(kWasmI32, true);  // global0
-    const global1 = builder.addGlobal(kWasmI32, true).exportAs('global0');
-    const global2 = builder.addGlobal(kWasmI64, true).exportAs('global3');
-    const global3 = builder.addGlobal(kWasmI64, true);  // global3
+    const global0 = builder.addGlobal(kWasmI32, true, false);  // global0
+    const global1 =
+      builder.addGlobal(kWasmI32, true, false).exportAs('global0');
+    const global2 =
+      builder.addGlobal(kWasmI64, true, false).exportAs('global3');
+    const global3 = builder.addGlobal(kWasmI64, true, false);  // global3
     const main = builder.addFunction('main', kSig_v_v)
                         .addBody([
                           kExprI64Const, 42,

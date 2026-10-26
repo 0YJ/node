@@ -6,6 +6,7 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('assert');
+const { getFips } = require('crypto');
 const { subtle } = globalThis.crypto;
 
 const vectors = require('../fixtures/crypto/hmac')();
@@ -35,7 +36,7 @@ async function testVerify({ hash,
     subtle.generateKey(
       {
         name: 'RSA-PSS',
-        modulusLength: 1024,
+        modulusLength: getFips() === 1 ? 2048 : 1024,
         publicExponent: new Uint8Array([1, 0, 1]),
         hash: 'SHA-256',
       },
@@ -62,7 +63,7 @@ async function testVerify({ hash,
   // Test failure when using the wrong algorithms
   await assert.rejects(
     subtle.verify({ name, hash }, rsaKeys.publicKey, signature, plaintext), {
-      message: /Unable to use this key to verify/
+      message: /Key algorithm mismatch/
     });
 
   // Test failure when signature is altered
@@ -126,7 +127,7 @@ async function testSign({ hash,
     subtle.generateKey(
       {
         name: 'RSA-PSS',
-        modulusLength: 1024,
+        modulusLength: getFips() === 1 ? 2048 : 1024,
         publicExponent: new Uint8Array([1, 0, 1]),
         hash: 'SHA-256',
       },
@@ -165,7 +166,7 @@ async function testSign({ hash,
   // Test failure when using the wrong algorithms
   await assert.rejects(
     subtle.sign({ name, hash }, rsaKeys.privateKey, plaintext), {
-      message: /Unable to use this key to sign/
+      message: /Key algorithm mismatch/
     });
 }
 

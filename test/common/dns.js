@@ -13,6 +13,7 @@ const types = {
   PTR: 12,
   MX: 15,
   TXT: 16,
+  SRV: 33,
   ANY: 255,
   CAA: 257,
 };
@@ -196,11 +197,11 @@ function writeDNSPacket(parsed) {
 
   buffers.push(new Uint16Array([
     parsed.id,
-    parsed.flags === undefined ? kStandardResponseFlags : parsed.flags,
-    parsed.questions && parsed.questions.length,
-    parsed.answers && parsed.answers.length,
-    parsed.authorityAnswers && parsed.authorityAnswers.length,
-    parsed.additionalRecords && parsed.additionalRecords.length,
+    parsed.flags ?? kStandardResponseFlags,
+    parsed.questions?.length,
+    parsed.answers?.length,
+    parsed.authorityAnswers?.length,
+    parsed.additionalRecords?.length,
   ]));
 
   for (const q of parsed.questions) {
@@ -277,6 +278,15 @@ function writeDNSPacket(parsed) {
         buffers.push(Buffer.from([Number(rr.critical)]));
         buffers.push(Buffer.from([Number(5)]));
         buffers.push(Buffer.from('issue' + rr.issue));
+        break;
+      }
+      case 'SRV':
+      {
+        // SRV record format: priority (2) + weight (2) + port (2) + target
+        const target = writeDomainName(rr.name);
+        rdLengthBuf[0] = 6 + target.length;
+        buffers.push(new Uint16Array([rr.priority, rr.weight, rr.port]));
+        buffers.push(target);
         break;
       }
       default:

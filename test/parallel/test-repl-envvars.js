@@ -2,13 +2,15 @@
 
 // Flags: --expose-internals
 
-require('../common');
+const common = require('../common');
 const stream = require('stream');
 const { describe, test } = require('node:test');
 const REPL = require('internal/repl');
 const assert = require('assert');
 const inspect = require('util').inspect;
 const { REPL_MODE_SLOPPY, REPL_MODE_STRICT } = require('repl');
+
+common.skipIfInspectorDisabled();
 
 const tests = [
   {
@@ -66,9 +68,7 @@ function run(test) {
   Object.assign(process.env, env);
 
   return new Promise((resolve) => {
-    REPL.createInternalRepl(process.env, opts, function(err, repl) {
-      assert.ifError(err);
-
+    REPL.createInternalRepl(process.env, opts, common.mustSucceed((repl) => {
       assert.strictEqual(repl.terminal, expected.terminal,
                          `Expected ${inspect(expected)} with ${inspect(env)}`);
       assert.strictEqual(repl.useColors, expected.useColors,
@@ -80,7 +80,7 @@ function run(test) {
       }
       repl.close();
       resolve();
-    });
+    }));
   });
 }
 

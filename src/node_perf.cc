@@ -14,6 +14,7 @@
 namespace node {
 namespace performance {
 
+using v8::Array;
 using v8::Context;
 using v8::DontDelete;
 using v8::Function;
@@ -190,8 +191,9 @@ void MarkGarbageCollectionEnd(
   }
   env->performance_state()->current_gc_type = 0;
   // If no one is listening to gc performance entries, do not create them.
-  if (LIKELY(!state->observers[NODE_PERFORMANCE_ENTRY_TYPE_GC]))
+  if (!state->observers[NODE_PERFORMANCE_ENTRY_TYPE_GC]) [[likely]] {
     return;
+  }
 
   double start_time =
       (state->performance_last_gc_start_mark - env->time_origin()) /
@@ -261,10 +263,31 @@ void LoopIdleTime(const FunctionCallbackInfo<Value>& args) {
   args.GetReturnValue().Set(1.0 * idle_time / NANOS_PER_MILLIS);
 }
 
+void UvMetricsInfo(const FunctionCallbackInfo<Value>& args) {
+  Environment* env = Environment::GetCurrent(args);
+  Isolate* isolate = env->isolate();
+  uv_metrics_t metrics;
+  // uv_metrics_info always return 0
+  CHECK_EQ(uv_metrics_info(env->event_loop(), &metrics), 0);
+  Local<Value> data[] = {
+      Integer::New(isolate, metrics.loop_count),
+      Integer::New(isolate, metrics.events),
+      Integer::New(isolate, metrics.events_waiting),
+  };
+  Local<Array> arr = Array::New(env->isolate(), data, arraysize(data));
+  args.GetReturnValue().Set(arr);
+}
+
 void CreateELDHistogram(const FunctionCallbackInfo<Value>& args) {
   Environment* env = Environment::GetCurrent(args);
   int64_t interval = args[0].As<Integer>()->Value();
   CHECK_GT(interval, 0);
+  if (args[1]->IsTrue()) {
+    BaseObjectPtr<IterationHistogram> histogram =
+        IterationHistogram::Create(env, Histogram::Options{1});
+    args.GetReturnValue().Set(histogram->object());
+    return;
+  }
   BaseObjectPtr<IntervalHistogram> histogram =
       IntervalHistogram::Create(env, interval, [](Histogram& histogram) {
         uint64_t delta = histogram.RecordDelta();
@@ -324,6 +347,7 @@ static void CreatePerIsolateProperties(IsolateData* isolate_data,
   SetMethod(isolate, target, "loopIdleTime", LoopIdleTime);
   SetMethod(isolate, target, "createELDHistogram", CreateELDHistogram);
   SetMethod(isolate, target, "markBootstrapComplete", MarkBootstrapComplete);
+  SetMethod(isolate, target, "uvMetricsInfo", UvMetricsInfo);
   SetFastMethodNoSideEffect(
       isolate, target, "now", SlowPerformanceNow, &fast_performance_now);
 }
@@ -347,6 +371,7 @@ void CreatePerContextProperties(Local<Object> target,
 
   NODE_DEFINE_CONSTANT(constants, NODE_PERFORMANCE_GC_MAJOR);
   NODE_DEFINE_CONSTANT(constants, NODE_PERFORMANCE_GC_MINOR);
+  NODE_DEFINE_CONSTANT(constants, NODE_PERFORMANCE_GC_MINOR_MARK_SWEEP);
   NODE_DEFINE_CONSTANT(constants, NODE_PERFORMANCE_GC_INCREMENTAL);
   NODE_DEFINE_CONSTANT(constants, NODE_PERFORMANCE_GC_WEAKCB);
 
@@ -390,11 +415,12 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
   registry->Register(LoopIdleTime);
   registry->Register(CreateELDHistogram);
   registry->Register(MarkBootstrapComplete);
+  registry->Register(UvMetricsInfo);
   registry->Register(SlowPerformanceNow);
-  registry->Register(FastPerformanceNow);
-  registry->Register(fast_performance_now.GetTypeInfo());
+  registry->Register(fast_performance_now);
   HistogramBase::RegisterExternalReferences(registry);
   IntervalHistogram::RegisterExternalReferences(registry);
+  IterationHistogram::RegisterExternalReferences(registry);
 }
 }  // namespace performance
 }  // namespace node

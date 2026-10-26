@@ -13,7 +13,12 @@
 // It represents "uint32_t(-1)"
 #define ada_url_omitted 0xffffffff
 
-// string that is owned by the ada_url instance
+// string that points to data stored in the ada_url instance
+//
+// Lifetime rules:
+// - This pointer remains valid only while the underlying ada_url is unchanged.
+// - Any mutation (e.g., ada_set_* and ada_clear_*) may invalidate previously
+//   returned ada_string pointers.
 typedef struct {
   const char* data;
   size_t length;
@@ -57,6 +62,9 @@ bool ada_is_valid(ada_url result);
 
 // url_aggregator getters
 // if ada_is_valid(result)) is false, an empty string is returned
+//
+// Important: this invalidation rule applies only to getters that return
+// ada_string. The ada_get_origin getter returns ada_owned_string.
 ada_owned_string ada_get_origin(ada_url result);
 ada_string ada_get_href(ada_url result);
 ada_string ada_get_username(ada_url result);
@@ -151,6 +159,8 @@ ada_string ada_search_params_get(ada_url_search_params result, const char* key,
                                  size_t key_length);
 ada_strings ada_search_params_get_all(ada_url_search_params result,
                                       const char* key, size_t key_length);
+void ada_search_params_reset(ada_url_search_params result, const char* input,
+                             size_t length);
 ada_url_search_params_keys_iter ada_search_params_get_keys(
     ada_url_search_params result);
 ada_url_search_params_values_iter ada_search_params_get_values(
@@ -181,5 +191,19 @@ ada_string_pair ada_search_params_entries_iter_next(
     ada_url_search_params_entries_iter result);
 bool ada_search_params_entries_iter_has_next(
     ada_url_search_params_entries_iter result);
+
+// max URL length configuration
+void ada_set_max_input_length(uint32_t length);
+uint32_t ada_get_max_input_length(void);
+
+// Definitions for Ada's version number.
+typedef struct {
+  int major;
+  int minor;
+  int revision;
+} ada_version_components;
+
+const char* ada_get_version();
+ada_version_components ada_get_version_components();
 
 #endif  // ADA_C_H

@@ -1,6 +1,9 @@
 'use strict';
 
 const common = require('../common');
+
+common.skipIfInspectorDisabled();
+
 const fixtures = require('../common/fixtures');
 // Refs: https://github.com/nodejs/node/pull/2253
 if (common.isSunOS)
@@ -88,10 +91,10 @@ let stdinStdout = '';
 stdinProc.stdout.on('data', function(d) {
   stdinStdout += d;
 });
-stdinProc.on('close', function(code) {
+stdinProc.on('close', common.mustCall((code) => {
   assert.strictEqual(code, 0);
   assert.strictEqual(stdinStdout, 'A\nhello\n');
-});
+}));
 
 // Test that preload can be used with repl
 const replProc = childProcess.spawn(
@@ -104,7 +107,7 @@ let replStdout = '';
 replProc.stdout.on('data', (d) => {
   replStdout += d;
 });
-replProc.on('close', function(code) {
+replProc.on('close', common.mustCall((code) => {
   assert.strictEqual(code, 0);
   const output = [
     'A',
@@ -112,7 +115,7 @@ replProc.on('close', function(code) {
   ];
   assert.ok(replStdout.startsWith(output[0]));
   assert.ok(replStdout.endsWith(output[1]));
-});
+}));
 
 // Test that preload placement at other points in the cmdline
 // also test that duplicated preload only gets loaded once

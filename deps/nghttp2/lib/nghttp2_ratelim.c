@@ -26,9 +26,11 @@
 #include "nghttp2_helper.h"
 
 void nghttp2_ratelim_init(nghttp2_ratelim *rl, uint64_t burst, uint64_t rate) {
-  rl->val = rl->burst = burst;
-  rl->rate = rate;
-  rl->tstamp = 0;
+  *rl = (nghttp2_ratelim){
+    .burst = burst,
+    .rate = rate,
+    .val = burst,
+  };
 }
 
 void nghttp2_ratelim_update(nghttp2_ratelim *rl, uint64_t tstamp) {
@@ -61,7 +63,7 @@ void nghttp2_ratelim_update(nghttp2_ratelim *rl, uint64_t tstamp) {
   }
 
   rl->val += gain;
-  rl->val = nghttp2_min(rl->val, rl->burst);
+  rl->val = nghttp2_min_uint64(rl->val, rl->burst);
 }
 
 int nghttp2_ratelim_drain(nghttp2_ratelim *rl, uint64_t n) {

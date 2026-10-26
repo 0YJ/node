@@ -7,16 +7,20 @@ const {
 const assert = require('node:assert')
 const {
   isValidHTTPToken,
-  isValidHeaderChar,
+  isValidHeaderValue,
   isStream,
   destroy,
   isBuffer,
   isFormDataLike,
   isIterable,
+  hasSafeIterator,
   isBlobLike,
-  buildURL,
-  validateHandler,
-  getServerName
+  serializePathWithQuery,
+  parseHeaders,
+  assertRequestHandler,
+  getServerName,
+  normalizedMethodRecords,
+  getProtocolFromUrlString
 } = require('./util')
 const { channels } = require('./diagnostics.js')
 const { headerNameLowerCasedRecord } = require('./constants')
@@ -24,7 +28,71 @@ const { headerNameLowerCasedRecord } = require('./constants')
 // Verifies that a given path is valid does not contain control chars \x00 to \x20
 const invalidPathRegex = /[^\u0021-\u00ff]/
 
+function isValidContentLengthHeaderValue (val) {
+  if (typeof val !== 'string' || val.length === 0) {
+    return false
+  }
+
+  for (let i = 0; i < val.length; i++) {
+    const charCode = val.charCodeAt(i)
+    if (charCode < 48 || charCode > 57) {
+      return false
+    }
+  }
+
+  return true
+}
+
 const kHandler = Symbol('handler')
+const kController = Symbol('controller')
+const kResume = Symbol('resume')
+
+class RequestController {
+  #paused = false
+  #reason = null
+  #aborted = false
+  #abort
+
+  [kResume] = null
+
+  rawHeaders = null
+  rawTrailers = null
+
+  constructor (abort) {
+    this.#abort = abort
+  }
+
+  pause () {
+    this.#paused = true
+  }
+
+  resume () {
+    if (this.#paused) {
+      this.#paused = false
+      this[kResume]?.()
+    }
+  }
+
+  abort (reason) {
+    if (!this.#aborted) {
+      this.#aborted = true
+      this.#reason = reason
+      this.#abort(reason)
+    }
+  }
+
+  get aborted () {
+    return this.#aborted
+  }
+
+  get reason () {
+    return this.#reason
+  }
+
+  get paused () {
+    return this.#paused
+  }
+}
 
 class Request {
   constructor (origin, {
@@ -39,9 +107,11 @@ class Request {
     headersTimeout,
     bodyTimeout,
     reset,
-    throwOnError,
     expectContinue,
-    servername
+    servername,
+    throwOnError,
+    maxRedirections,
+    typeOfService
   }, handler) {
     if (typeof path !== 'string') {
       throw new InvalidArgumentError('path must be a string')
@@ -51,18 +121,22 @@ class Request {
       method !== 'CONNECT'
     ) {
       throw new InvalidArgumentError('path must be an absolute URL or start with a slash')
-    } else if (invalidPathRegex.exec(path) !== null) {
+    } else if (invalidPathRegex.test(path)) {
       throw new InvalidArgumentError('invalid request path')
     }
 
     if (typeof method !== 'string') {
       throw new InvalidArgumentError('method must be a string')
-    } else if (!isValidHTTPToken(method)) {
+    } else if (normalizedMethodRecords[method] === undefined && !isValidHTTPToken(method)) {
       throw new InvalidArgumentError('invalid request method')
     }
 
     if (upgrade && typeof upgrade !== 'string') {
       throw new InvalidArgumentError('upgrade must be a string')
+    }
+
+    if (upgrade && !isValidHeaderValue(upgrade)) {
+      throw new InvalidArgumentError('invalid upgrade header')
     }
 
     if (headersTimeout != null && (!Number.isFinite(headersTimeout) || headersTimeout < 0)) {
@@ -81,13 +155,25 @@ class Request {
       throw new InvalidArgumentError('invalid expectContinue')
     }
 
+    if (throwOnError != null) {
+      throw new InvalidArgumentError('invalid throwOnError')
+    }
+
+    if (maxRedirections != null && maxRedirections !== 0) {
+      throw new InvalidArgumentError('maxRedirections is not supported, use the redirect interceptor')
+    }
+
+    if (typeOfService != null && (!Number.isInteger(typeOfService) || typeOfService < 0 || typeOfService > 255)) {
+      throw new InvalidArgumentError('typeOfService must be an integer between 0 and 255')
+    }
+
     this.headersTimeout = headersTimeout
 
     this.bodyTimeout = bodyTimeout
 
-    this.throwOnError = throwOnError === true
-
     this.method = method
+
+    this.typeOfService = typeOfService
 
     this.abort = null
 
@@ -127,20 +213,22 @@ class Request {
     }
 
     this.completed = false
-
     this.aborted = false
 
     this.upgrade = upgrade || null
 
-    this.path = query ? buildURL(path, query) : path
+    this.path = query ? serializePathWithQuery(path, query) : path
 
+    // TODO: shall we maybe standardize it to an URL object?
     this.origin = origin
 
+    this.protocol = getProtocolFromUrlString(origin)
+
     this.idempotent = idempotent == null
-      ? method === 'HEAD' || method === 'GET'
+      ? method === 'HEAD' || method === 'GET' || method === 'QUERY'
       : idempotent
 
-    this.blocking = blocking == null ? false : blocking
+    this.blocking = blocking ?? this.method !== 'HEAD'
 
     this.reset = reset == null ? null : reset
 
@@ -163,7 +251,7 @@ class Request {
         processHeader(this, headers[i], headers[i + 1])
       }
     } else if (headers && typeof headers === 'object') {
-      if (headers[Symbol.iterator]) {
+      if (hasSafeIterator(headers)) {
         for (const header of headers) {
           if (!Array.isArray(header) || header.length !== 2) {
             throw new InvalidArgumentError('headers must be in key-value pair format')
@@ -180,9 +268,9 @@ class Request {
       throw new InvalidArgumentError('headers must be an object or an array')
     }
 
-    validateHandler(handler, method, upgrade)
+    assertRequestHandler(handler, method, upgrade)
 
-    this.servername = servername || getServerName(this.host)
+    this.servername = servername || getServerName(this.host) || null
 
     this[kHandler] = handler
 
@@ -192,6 +280,9 @@ class Request {
   }
 
   onBodySent (chunk) {
+    if (channels.bodyChunkSent.hasSubscribers) {
+      channels.bodyChunkSent.publish({ request: this, chunk })
+    }
     if (this[kHandler].onBodySent) {
       try {
         return this[kHandler].onBodySent(chunk)
@@ -215,23 +306,26 @@ class Request {
     }
   }
 
-  onConnect (abort) {
+  onRequestStart (abort, context) {
     assert(!this.aborted)
     assert(!this.completed)
 
+    this[kController] = new RequestController(abort)
+
     if (this.error) {
-      abort(this.error)
-    } else {
-      this.abort = abort
-      return this[kHandler].onConnect(abort)
+      this[kController].abort(this.error)
+      return
     }
+
+    this.abort = abort
+    return this[kHandler].onRequestStart(this[kController], context)
   }
 
   onResponseStarted () {
     return this[kHandler].onResponseStarted?.()
   }
 
-  onHeaders (statusCode, headers, resume, statusText) {
+  onResponseStart (statusCode, headers, resume, statusText) {
     assert(!this.aborted)
     assert(!this.completed)
 
@@ -239,51 +333,82 @@ class Request {
       channels.headers.publish({ request: this, response: { statusCode, headers, statusText } })
     }
 
-    try {
-      return this[kHandler].onHeaders(statusCode, headers, resume, statusText)
-    } catch (err) {
-      this.abort(err)
+    const controller = this[kController]
+    if (controller) {
+      controller[kResume] = resume
+      controller.rawHeaders = headers
     }
-  }
 
-  onData (chunk) {
-    assert(!this.aborted)
-    assert(!this.completed)
+    const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers
 
     try {
-      return this[kHandler].onData(chunk)
+      this[kHandler].onResponseStart?.(controller, statusCode, parsedHeaders, statusText)
+      return !controller?.paused
     } catch (err) {
       this.abort(err)
       return false
     }
   }
 
-  onUpgrade (statusCode, headers, socket) {
+  onResponseData (chunk) {
     assert(!this.aborted)
     assert(!this.completed)
 
-    return this[kHandler].onUpgrade(statusCode, headers, socket)
+    if (channels.bodyChunkReceived.hasSubscribers) {
+      channels.bodyChunkReceived.publish({ request: this, chunk })
+    }
+
+    const controller = this[kController]
+    try {
+      this[kHandler].onResponseData?.(controller, chunk)
+      return !controller?.paused
+    } catch (err) {
+      this.abort(err)
+      return false
+    }
   }
 
-  onComplete (trailers) {
+  onRequestUpgrade (statusCode, headers, socket) {
+    assert(!this.aborted)
+    assert(!this.completed)
+
+    const controller = this[kController]
+    if (controller) {
+      controller.rawHeaders = headers
+    }
+
+    const parsedHeaders = Array.isArray(headers) ? parseHeaders(headers) : headers
+
+    return this[kHandler].onRequestUpgrade?.(controller, statusCode, parsedHeaders, socket)
+  }
+
+  onResponseEnd (trailers) {
     this.onFinally()
 
     assert(!this.aborted)
+    assert(!this.completed)
 
     this.completed = true
     if (channels.trailers.hasSubscribers) {
       channels.trailers.publish({ request: this, trailers })
     }
 
+    const controller = this[kController]
+    if (controller) {
+      controller.rawTrailers = trailers
+    }
+
+    const parsedTrailers = Array.isArray(trailers) ? parseHeaders(trailers) : trailers
+
     try {
-      return this[kHandler].onComplete(trailers)
+      return this[kHandler].onResponseEnd?.(controller, parsedTrailers)
     } catch (err) {
       // TODO (fix): This might be a bad idea?
-      this.onError(err)
+      this.onResponseError(err)
     }
   }
 
-  onError (error) {
+  onResponseError (error) {
     this.onFinally()
 
     if (channels.error.hasSubscribers) {
@@ -295,7 +420,9 @@ class Request {
     }
     this.aborted = true
 
-    return this[kHandler].onError(error)
+    const controller = this[kController]
+
+    return this[kHandler].onResponseError?.(controller, error)
   }
 
   onFinally () {
@@ -336,7 +463,7 @@ function processHeader (request, key, val) {
     const arr = []
     for (let i = 0; i < val.length; i++) {
       if (typeof val[i] === 'string') {
-        if (!isValidHeaderChar(val[i])) {
+        if (!isValidHeaderValue(val[i])) {
           throw new InvalidArgumentError(`invalid ${key} header`)
         }
         arr.push(val[i])
@@ -345,46 +472,69 @@ function processHeader (request, key, val) {
       } else if (typeof val[i] === 'object') {
         throw new InvalidArgumentError(`invalid ${key} header`)
       } else {
-        arr.push(`${val[i]}`)
+        // Coerce primitives (and reject unsafe coercions such as functions
+        // with a crafted toString/Symbol.toPrimitive).
+        const str = `${val[i]}`
+        if (!isValidHeaderValue(str)) {
+          throw new InvalidArgumentError(`invalid ${key} header`)
+        }
+        arr.push(str)
       }
     }
     val = arr
   } else if (typeof val === 'string') {
-    if (!isValidHeaderChar(val)) {
+    if (!isValidHeaderValue(val)) {
       throw new InvalidArgumentError(`invalid ${key} header`)
     }
   } else if (val === null) {
     val = ''
-  } else if (typeof val === 'object') {
-    throw new InvalidArgumentError(`invalid ${key} header`)
   } else {
+    // Coerce primitives (and reject unsafe coercions such as functions
+    // with a crafted toString/Symbol.toPrimitive).
     val = `${val}`
+    if (!isValidHeaderValue(val)) {
+      throw new InvalidArgumentError(`invalid ${key} header`)
+    }
   }
 
-  if (request.host === null && headerName === 'host') {
+  if (headerName === 'host') {
+    if (request.host !== null) {
+      throw new InvalidArgumentError('duplicate host header')
+    }
     if (typeof val !== 'string') {
       throw new InvalidArgumentError('invalid host header')
     }
     // Consumed by Client
     request.host = val
-  } else if (request.contentLength === null && headerName === 'content-length') {
-    request.contentLength = parseInt(val, 10)
-    if (!Number.isFinite(request.contentLength)) {
+  } else if (headerName === 'content-length') {
+    if (request.contentLength !== null) {
+      throw new InvalidArgumentError('duplicate content-length header')
+    }
+    if (!isValidContentLengthHeaderValue(val)) {
       throw new InvalidArgumentError('invalid content-length header')
     }
+    request.contentLength = parseInt(val, 10)
   } else if (request.contentType === null && headerName === 'content-type') {
     request.contentType = val
     request.headers.push(key, val)
   } else if (headerName === 'transfer-encoding' || headerName === 'keep-alive' || headerName === 'upgrade') {
     throw new InvalidArgumentError(`invalid ${headerName} header`)
   } else if (headerName === 'connection') {
-    const value = typeof val === 'string' ? val.toLowerCase() : null
-    if (value !== 'close' && value !== 'keep-alive') {
+    // Per RFC 7230 Section 6.1, Connection header can contain
+    // a comma-separated list of connection option tokens (header names)
+    const value = typeof val === 'string' ? val : null
+    if (value === null) {
       throw new InvalidArgumentError('invalid connection header')
     }
 
-    if (value === 'close') {
-      request.reset = true
+    for (const token of value.toLowerCase().split(',')) {
+      const trimmed = token.trim()
+      if (!isValidHTTPToken(trimmed)) {
+        throw new InvalidArgumentError('invalid connection header')
+      }
+      if (trimmed === 'close') {
+        request.reset = true
+      }
     }
   } else if (headerName === 'expect') {
     throw new NotSupportedError('expect header not supported')

@@ -46,6 +46,7 @@ const { getSystemErrorName } = require('util');
     delete providers.MESSAGEPORT;
     delete providers.WORKER;
     // TODO(danbev): Test for these
+    delete providers.ARGON2REQUEST;
     delete providers.JSUDPWRAP;
     delete providers.KEYPAIRGENREQUEST;
     delete providers.KEYGENREQUEST;
@@ -61,6 +62,10 @@ const { getSystemErrorName } = require('util');
     delete providers.ELDHISTOGRAM;
     delete providers.SIGINTWATCHDOG;
     delete providers.WORKERHEAPSNAPSHOT;
+    delete providers.WORKERHEAPSTATISTICS;
+    delete providers.WORKERCPUUSAGE;
+    delete providers.WORKERCPUPROFILE;
+    delete providers.WORKERHEAPPROFILE;
     delete providers.BLOBREADER;
     delete providers.RANDOMPRIMEREQUEST;
     delete providers.CHECKPRIMEREQUEST;
@@ -70,6 +75,9 @@ const { getSystemErrorName } = require('util');
     delete providers.QUIC_ENDPOINT;
     delete providers.QUIC_SESSION;
     delete providers.QUIC_STREAM;
+    delete providers.LOCKS;
+    delete providers.DTLS_ENDPOINT;
+    delete providers.DTLS_SESSION;
 
     const objKeys = Object.keys(providers);
     if (objKeys.length > 0)
@@ -133,6 +141,7 @@ function testInitialized(req, ctor_name) {
 
 if (common.hasCrypto) { // eslint-disable-line node-core/crypto-check
   const crypto = require('crypto');
+  const { hasFIPS } = require('../common/crypto');
 
   // The handle for PBKDF2 and RandomBytes isn't returned by the function call,
   // so need to check it from the callback.
@@ -146,7 +155,8 @@ if (common.hasCrypto) { // eslint-disable-line node-core/crypto-check
     testInitialized(this, 'RandomBytesJob');
   }));
 
-  if (typeof internalBinding('crypto').ScryptJob === 'function') {
+  if (typeof internalBinding('crypto').ScryptJob === 'function' &&
+      !hasFIPS(3)) {
     crypto.scrypt('password', 'salt', 8, common.mustCall(function() {
       testInitialized(this, 'ScryptJob');
     }));

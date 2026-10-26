@@ -1,18 +1,19 @@
 #pragma once
 
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
-#if HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
 
+#include <memory>
+#include "application.h"
 #include "session.h"
 
-namespace node {
-namespace quic {
+namespace node::quic {
 
-std::unique_ptr<Session::Application> createHttp3Application(
+// Create an HTTP/3 Application implementation for the given session.
+// Uses the Application_Options from the session's config for HTTP/3
+// specific settings (qpack, max header length, etc.).
+std::unique_ptr<Session::Application> CreateHttp3Application(
     Session* session, const Session::Application_Options& options);
 
-}  // namespace quic
-}  // namespace node
+}  // namespace node::quic
 
-#endif  // HAVE_OPENSSL && NODE_OPENSSL_HAS_QUIC
 #endif  // defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS

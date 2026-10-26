@@ -111,6 +111,8 @@ async function testImportSpki({ name, publicUsages }, namedCurve, extractable) {
   assert.deepStrictEqual(key.usages, publicUsages);
   assert.deepStrictEqual(key.algorithm.name, name);
   assert.deepStrictEqual(key.algorithm.namedCurve, namedCurve);
+  assert.strictEqual(key.algorithm, key.algorithm);
+  assert.strictEqual(key.usages, key.usages);
 
   if (extractable) {
     // Test the roundtrip
@@ -118,10 +120,17 @@ async function testImportSpki({ name, publicUsages }, namedCurve, extractable) {
     assert.strictEqual(
       Buffer.from(spki).toString('hex'),
       keyData[namedCurve].spki.toString('hex'));
+
+    await assert.rejects(
+      subtle.exportKey('pkcs8', key), {
+        message: 'Key must be a private key',
+        name: 'InvalidAccessError',
+      });
   } else {
     await assert.rejects(
       subtle.exportKey('spki', key), {
-        message: /key is not extractable/
+        message: /key is not extractable/,
+        name: 'InvalidAccessError',
       });
   }
 
@@ -151,6 +160,8 @@ async function testImportPkcs8(
   assert.deepStrictEqual(key.usages, privateUsages);
   assert.deepStrictEqual(key.algorithm.name, name);
   assert.deepStrictEqual(key.algorithm.namedCurve, namedCurve);
+  assert.strictEqual(key.algorithm, key.algorithm);
+  assert.strictEqual(key.usages, key.usages);
 
   if (extractable) {
     // Test the roundtrip
@@ -158,10 +169,17 @@ async function testImportPkcs8(
     assert.strictEqual(
       Buffer.from(pkcs8).toString('hex'),
       keyData[namedCurve].pkcs8.toString('hex'));
+
+    await assert.rejects(
+      subtle.exportKey('spki', key), {
+        message: 'Key must be a public key',
+        name: 'InvalidAccessError',
+      });
   } else {
     await assert.rejects(
       subtle.exportKey('pkcs8', key), {
-        message: /key is not extractable/
+        message: /key is not extractable/,
+        name: 'InvalidAccessError',
       });
   }
 
@@ -234,6 +252,10 @@ async function testImportJwk(
   assert.strictEqual(privateKey.algorithm.name, name);
   assert.strictEqual(publicKey.algorithm.namedCurve, namedCurve);
   assert.strictEqual(privateKey.algorithm.namedCurve, namedCurve);
+  assert.strictEqual(privateKey.algorithm, privateKey.algorithm);
+  assert.strictEqual(privateKey.usages, privateKey.usages);
+  assert.strictEqual(publicKey.algorithm, publicKey.algorithm);
+  assert.strictEqual(publicKey.usages, publicKey.usages);
 
   if (extractable) {
     // Test the round trip
@@ -262,11 +284,13 @@ async function testImportJwk(
   } else {
     await assert.rejects(
       subtle.exportKey('jwk', publicKey), {
-        message: /key is not extractable/
+        message: /key is not extractable/,
+        name: 'InvalidAccessError',
       });
     await assert.rejects(
       subtle.exportKey('jwk', privateKey), {
-        message: /key is not extractable/
+        message: /key is not extractable/,
+        name: 'InvalidAccessError',
       });
   }
 
@@ -310,7 +334,7 @@ async function testImportJwk(
         { name, namedCurve },
         extractable,
         publicUsages),
-      { message: 'JWK "crv" does not match the requested algorithm' });
+      { message: crv ? 'JWK "crv" does not match the requested algorithm' : 'Invalid keyData' });
 
     await assert.rejects(
       subtle.importKey(
@@ -319,7 +343,7 @@ async function testImportJwk(
         { name, namedCurve },
         extractable,
         privateUsages),
-      { message: 'JWK "crv" does not match the requested algorithm' });
+      { message: crv ? 'JWK "crv" does not match the requested algorithm' : 'Invalid keyData' });
   }
 
   await assert.rejects(
@@ -330,19 +354,30 @@ async function testImportJwk(
       extractable,
       [/* empty usages */]),
     { name: 'SyntaxError', message: 'Usages cannot be empty when importing a private key.' });
+
+  await assert.rejects(
+    subtle.importKey(
+      'jwk',
+      { kty: jwk.kty, /* missing x */ y: jwk.y, crv: jwk.crv },
+      { name, namedCurve },
+      extractable,
+      publicUsages),
+    { name: 'DataError', message: 'Invalid keyData' });
 }
 
 async function testImportRaw({ name, publicUsages }, namedCurve) {
   const jwk = keyData[namedCurve].jwk;
 
+  const uncompressedRaw = Buffer.concat([
+    Buffer.alloc(1, 0x04),
+    Buffer.from(jwk.x, 'base64url'),
+    Buffer.from(jwk.y, 'base64url'),
+  ]);
+
   const [publicKey] = await Promise.all([
     subtle.importKey(
       'raw',
-      Buffer.concat([
-        Buffer.alloc(1, 0x04),
-        Buffer.from(jwk.x, 'base64url'),
-        Buffer.from(jwk.y, 'base64url'),
-      ]),
+      uncompressedRaw,
       { name, namedCurve },
       true, publicUsages),
     subtle.importKey(
@@ -359,6 +394,12 @@ async function testImportRaw({ name, publicUsages }, namedCurve) {
   assert.deepStrictEqual(publicKey.usages, publicUsages);
   assert.strictEqual(publicKey.algorithm.name, name);
   assert.strictEqual(publicKey.algorithm.namedCurve, namedCurve);
+  assert.strictEqual(publicKey.algorithm, publicKey.algorithm);
+  assert.strictEqual(publicKey.usages, publicKey.usages);
+
+  // Test raw export round-trip (always uncompressed)
+  const exported = await subtle.exportKey('raw', publicKey);
+  assert.deepStrictEqual(Buffer.from(exported), uncompressedRaw);
 }
 
 (async function() {
@@ -375,6 +416,42 @@ async function testImportRaw({ name, publicUsages }, namedCurve) {
   }
 
   await Promise.all(tests);
+})().then(common.mustCall());
+
+// JWK key usage validation precedes `key_ops` validation.
+(async function() {
+  const jwk = keyData['P-256'].jwk;
+  const publicJwk = {
+    kty: jwk.kty,
+    crv: jwk.crv,
+    x: jwk.x,
+    y: jwk.y,
+  };
+
+  for (const { name, publicUsages, privateUsages } of testVectors) {
+    const invalidUsage = name === 'ECDH' ?
+      privateUsages[0] : publicUsages[0];
+    const invalidJwk = name === 'ECDH' ? publicJwk : jwk;
+
+    await assert.rejects(
+      subtle.importKey(
+        'jwk',
+        { ...invalidJwk, key_ops: [invalidUsage, invalidUsage] },
+        { name, namedCurve: 'P-256' },
+        true,
+        [invalidUsage]),
+      { name: 'SyntaxError', message: /Unsupported key usage/ });
+
+    const validUsage = privateUsages[0];
+    await assert.rejects(
+      subtle.importKey(
+        'jwk',
+        { ...jwk, key_ops: [validUsage, validUsage] },
+        { name, namedCurve: 'P-256' },
+        true,
+        [validUsage]),
+      { name: 'DataError', message: 'Duplicate key operation' });
+  }
 })().then(common.mustCall());
 
 
@@ -404,14 +481,14 @@ async function testImportRaw({ name, publicUsages }, namedCurve) {
       subtle.importKey(
         'spki',
         rsaPublic.export({ format: 'der', type: 'spki' }),
-        { name, hash: 'SHA-256', namedCurve: 'P-256' },
+        { name, namedCurve: 'P-256' },
         true, publicUsages), { message: /Invalid key type/ },
     ).then(common.mustCall());
     assert.rejects(
       subtle.importKey(
         'pkcs8',
         rsaPrivate.export({ format: 'der', type: 'pkcs8' }),
-        { name, hash: 'SHA-256', namedCurve: 'P-256' },
+        { name, namedCurve: 'P-256' },
         true, privateUsages), { message: /Invalid key type/ },
     ).then(common.mustCall());
   }
@@ -472,7 +549,7 @@ async function testImportRaw({ name, publicUsages }, namedCurve) {
         subtle.importKey(
           'pkcs8',
           pkcs8,
-          { name, hash: 'SHA-256', namedCurve },
+          { name, namedCurve },
           true, privateUsages), { name: 'DataError', message: /Invalid keyData/ },
       ).then(common.mustCall());
     }

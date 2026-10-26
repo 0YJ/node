@@ -27,7 +27,7 @@
 
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
-#endif /* HAVE_CONFIG_H */
+#endif /* defined(HAVE_CONFIG_H) */
 
 #include <ngtcp2/ngtcp2.h>
 
@@ -41,51 +41,66 @@
 typedef struct ngtcp2_frame_chain ngtcp2_frame_chain;
 
 /* NGTCP2_STRM_FLAG_NONE indicates that no flag is set. */
-#define NGTCP2_STRM_FLAG_NONE 0x00u
+#define NGTCP2_STRM_FLAG_NONE 0x00U
 /* NGTCP2_STRM_FLAG_SHUT_RD indicates that further reception of stream
    data is not allowed. */
-#define NGTCP2_STRM_FLAG_SHUT_RD 0x01u
+#define NGTCP2_STRM_FLAG_SHUT_RD 0x01U
 /* NGTCP2_STRM_FLAG_SHUT_WR indicates that further transmission of
    stream data is not allowed. */
-#define NGTCP2_STRM_FLAG_SHUT_WR 0x02u
+#define NGTCP2_STRM_FLAG_SHUT_WR 0x02U
 #define NGTCP2_STRM_FLAG_SHUT_RDWR                                             \
   (NGTCP2_STRM_FLAG_SHUT_RD | NGTCP2_STRM_FLAG_SHUT_WR)
 /* NGTCP2_STRM_FLAG_RESET_STREAM indicates that RESET_STREAM is sent
    from the local endpoint.  In this case, NGTCP2_STRM_FLAG_SHUT_WR is
    also set. */
-#define NGTCP2_STRM_FLAG_RESET_STREAM 0x04u
+#define NGTCP2_STRM_FLAG_RESET_STREAM 0x04U
 /* NGTCP2_STRM_FLAG_RESET_STREAM_RECVED indicates that RESET_STREAM is
    received from the remote endpoint.  In this case,
    NGTCP2_STRM_FLAG_SHUT_RD is also set. */
-#define NGTCP2_STRM_FLAG_RESET_STREAM_RECVED 0x08u
+#define NGTCP2_STRM_FLAG_RESET_STREAM_RECVED 0x08U
 /* NGTCP2_STRM_FLAG_STOP_SENDING indicates that STOP_SENDING is sent
    from the local endpoint. */
-#define NGTCP2_STRM_FLAG_STOP_SENDING 0x10u
+#define NGTCP2_STRM_FLAG_STOP_SENDING 0x10U
 /* NGTCP2_STRM_FLAG_RESET_STREAM_ACKED indicates that the outgoing
    RESET_STREAM is acknowledged by peer. */
-#define NGTCP2_STRM_FLAG_RESET_STREAM_ACKED 0x20u
+#define NGTCP2_STRM_FLAG_RESET_STREAM_ACKED 0x20U
 /* NGTCP2_STRM_FLAG_FIN_ACKED indicates that a STREAM with FIN bit set
    is acknowledged by a remote endpoint. */
-#define NGTCP2_STRM_FLAG_FIN_ACKED 0x40u
+#define NGTCP2_STRM_FLAG_FIN_ACKED 0x40U
 /* NGTCP2_STRM_FLAG_ANY_ACKED indicates that any portion of stream
    data, including 0 length segment, is acknowledged. */
-#define NGTCP2_STRM_FLAG_ANY_ACKED 0x80u
+#define NGTCP2_STRM_FLAG_ANY_ACKED 0x80U
 /* NGTCP2_STRM_FLAG_APP_ERROR_CODE_SET indicates that app_error_code
    field is set.  This resolves the ambiguity that the initial
    app_error_code value 0 might be a proper application error code.
    In this case, without this flag, we are unable to distinguish
    assigned value from unassigned one.  */
-#define NGTCP2_STRM_FLAG_APP_ERROR_CODE_SET 0x100u
+#define NGTCP2_STRM_FLAG_APP_ERROR_CODE_SET 0x100U
 /* NGTCP2_STRM_FLAG_SEND_STOP_SENDING is set when STOP_SENDING frame
    should be sent. */
-#define NGTCP2_STRM_FLAG_SEND_STOP_SENDING 0x200u
+#define NGTCP2_STRM_FLAG_SEND_STOP_SENDING 0x200U
 /* NGTCP2_STRM_FLAG_SEND_RESET_STREAM is set when RESET_STREAM frame
    should be sent. */
-#define NGTCP2_STRM_FLAG_SEND_RESET_STREAM 0x400u
+#define NGTCP2_STRM_FLAG_SEND_RESET_STREAM 0x400U
 /* NGTCP2_STRM_FLAG_STOP_SENDING_RECVED indicates that STOP_SENDING is
    received from the remote endpoint.  In this case,
    NGTCP2_STRM_FLAG_SHUT_WR is also set. */
-#define NGTCP2_STRM_FLAG_STOP_SENDING_RECVED 0x800u
+#define NGTCP2_STRM_FLAG_STOP_SENDING_RECVED 0x800U
+/* NGTCP2_STRM_FLAG_ANY_SENT indicates that any STREAM frame,
+   including empty one, has been sent. */
+#define NGTCP2_STRM_FLAG_ANY_SENT 0x1000U
+/* NGTCP2_STRM_FLAG_NO_REORDERED_DATA_BUFFERING is set when
+   ngtcp2_strm_stop_buffering_reordered_data is called. */
+#define NGTCP2_STRM_FLAG_NO_REORDERED_DATA_BUFFERING 0x2000U
+/* NGTCP2_STRM_FLAG_RX_APP_ERROR_CODE_SET is set when
+   ngtcp2_strm.rx.app_error_code is set. */
+#define NGTCP2_STRM_FLAG_RX_APP_ERROR_CODE_SET 0x4000U
+/* NGTCP2_STRM_FLAG_TX_RESET_STREAM_APP_ERROR_CODE_SET is set when
+   ngtcp2_strm.tx.reset_stream_app_error_code is set. */
+#define NGTCP2_STRM_FLAG_TX_RESET_STREAM_APP_ERROR_CODE_SET 0x8000U
+/* NGTCP2_STRM_FLAG_TX_STOP_SENDING_APP_ERROR_CODE_SET is set when
+   ngtcp2_strm.tx.stop_sending_app_error_code is set. */
+#define NGTCP2_STRM_FLAG_TX_STOP_SENDING_APP_ERROR_CODE_SET 0x10000U
 
 typedef struct ngtcp2_strm ngtcp2_strm;
 
@@ -105,13 +120,13 @@ struct ngtcp2_strm {
            acked_offset is used instead. */
         uint64_t cont_acked_offset;
         /* streamfrq contains STREAM or CRYPTO frame for
-           retransmission.  The flow control credits have been paid
-           when they are transmitted first time.  There are no
+           retransmission.  The flow control credits have already been
+           paid when they are transmitted first time.  There are no
            restriction regarding flow control for retransmission. */
         ngtcp2_ksl *streamfrq;
-        /* offset is the next offset of outgoing data.  In other words, it
-           is the number of bytes sent in this stream without
-           duplication. */
+        /* offset is the next offset of new outgoing data.  In other
+           words, it is the number of bytes sent in this stream
+           without duplication. */
         uint64_t offset;
         /* max_tx_offset is the maximum offset that local endpoint can
            send for this stream. */
@@ -135,10 +150,18 @@ struct ngtcp2_strm {
            multiple STREAM frames in one lost packet. */
         int64_t last_lost_pkt_num;
         /* stop_sending_app_error_code is the application specific
-           error code that is sent along with STOP_SENDING. */
+           error code that is sent along with STOP_SENDING.  If this
+           field is set,
+           NGTCP2_STRM_FLAG_TX_STOP_SENDING_APP_ERROR_CODE_SET is set.
+           This field is eventually passed to ngtcp2_stream_close2
+           callback as rx_app_error_code parameter. */
         uint64_t stop_sending_app_error_code;
         /* reset_stream_app_error_code is the application specific
-           error code that is sent along with RESET_STREAM. */
+           error code that is sent along with RESET_STREAM.  If this
+           field is set,
+           NGTCP2_STRM_FLAG_TX_RESET_STREAM_APP_ERROR_CODE_SET is set.
+           This field is eventually passed to ngtcp2_stream_close2
+           callback as tx_app_error_code parameter. */
         uint64_t reset_stream_app_error_code;
       } tx;
 
@@ -163,19 +186,25 @@ struct ngtcp2_strm {
         uint64_t unsent_max_offset;
         /* window is the stream-level flow control window size. */
         uint64_t window;
+        /* app_error_code is the application error code that is
+           received in RESET_STREAM frame.  If this field is set,
+           NGTCP2_STRM_FLAG_RX_APP_ERROR_CODE_SET is set.  This field
+           is eventually passed to ngtcp2_stream_close2 callback as
+           rx_app_error_code parameter. */
+        uint64_t app_error_code;
       } rx;
 
       const ngtcp2_mem *mem;
       int64_t stream_id;
       void *stream_user_data;
-      /* flags is bit-wise OR of zero or more of NGTCP2_STRM_FLAG_*. */
-      uint32_t flags;
       /* app_error_code is an error code the local endpoint sent in
          RESET_STREAM or STOP_SENDING, or received from a remote endpoint
          in RESET_STREAM or STOP_SENDING.  First application error code is
          chosen and when set, NGTCP2_STRM_FLAG_APP_ERROR_CODE_SET flag is
          set in flags field. */
       uint64_t app_error_code;
+      /* flags is bit-wise OR of zero or more of NGTCP2_STRM_FLAG_*. */
+      uint32_t flags;
     };
 
     ngtcp2_opl_entry oplent;
@@ -200,40 +229,39 @@ void ngtcp2_strm_free(ngtcp2_strm *strm);
  * ngtcp2_strm_rx_offset returns the minimum offset of stream data
  * which is not received yet.
  */
-uint64_t ngtcp2_strm_rx_offset(ngtcp2_strm *strm);
+uint64_t ngtcp2_strm_rx_offset(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_recv_reordering handles reordered data.
  *
- * It returns 0 if it succeeds, or one of the following negative error
- * codes:
+ * If ngtcp2_strm_stop_buffering_reordered_data has been called, this
+ * function only records the range of the reordered data.  The actual
+ * data is not buffered.
+ *
+ * It returns the number of bytes newly buffered if it succeeds, or
+ * one of the following negative error codes:
  *
  * NGTCP2_ERR_NOMEM
  *     Out of memory
  */
-int ngtcp2_strm_recv_reordering(ngtcp2_strm *strm, const uint8_t *data,
-                                size_t datalen, uint64_t offset);
+ngtcp2_ssize ngtcp2_strm_recv_reordering(ngtcp2_strm *strm, const uint8_t *data,
+                                         size_t datalen, uint64_t offset);
 
 /*
- * ngtcp2_strm_update_rx_offset tells that data up to offset bytes are
- * received in order.
+ * ngtcp2_strm_update_rx_offset tells that data up to |offset| bytes
+ * are received in order.
  */
 void ngtcp2_strm_update_rx_offset(ngtcp2_strm *strm, uint64_t offset);
 
 /*
- * ngtcp2_strm_discard_reordered_data discards all buffered reordered
- * data.
- */
-void ngtcp2_strm_discard_reordered_data(ngtcp2_strm *strm);
-
-/*
- * ngtcp2_strm_shutdown shutdowns |strm|.  |flags| should be
- * NGTCP2_STRM_FLAG_SHUT_RD, and/or NGTCP2_STRM_FLAG_SHUT_WR.
+ * ngtcp2_strm_shutdown shutdowns |strm|.  |flags| should be one of
+ * NGTCP2_STRM_FLAG_SHUT_RD, NGTCP2_STRM_FLAG_SHUT_WR, and
+ * NGTCP2_STRM_FLAG_SHUT_RDWR.
  */
 void ngtcp2_strm_shutdown(ngtcp2_strm *strm, uint32_t flags);
 
 /*
- * ngtcp2_strm_streamfrq_push pushes |frc| to streamfrq for
+ * ngtcp2_strm_streamfrq_push pushes |frc| to strm->tx.streamfrq for
  * retransmission.
  *
  * This function returns 0 if it succeeds, or one of the following
@@ -245,11 +273,12 @@ void ngtcp2_strm_shutdown(ngtcp2_strm *strm, uint32_t flags);
 int ngtcp2_strm_streamfrq_push(ngtcp2_strm *strm, ngtcp2_frame_chain *frc);
 
 /*
- * ngtcp2_strm_streamfrq_pop pops the first ngtcp2_frame_chain and
- * assigns it to |*pfrc|.  This function splits into or merges several
- * ngtcp2_frame_chain objects so that the returned ngtcp2_frame_chain
- * has at most |left| data length.  If there is no frames to send,
- * this function returns 0 and |*pfrc| is NULL.
+ * ngtcp2_strm_streamfrq_pop assigns a ngtcp2_frame_chain that only
+ * contains unacknowledged stream data with smallest offset to |*pfrc|
+ * for retransmission.  The assigned ngtcp2_frame_chain has stream
+ * data at most |left| bytes.  strm->tx.streamfrq is adjusted to
+ * exclude the portion of data included in it.  If there is no stream
+ * data to send, this function returns 0 and |*pfrc| is NULL.
  *
  * This function returns 0 if it succeeds, or one of the following
  * negative error codes:
@@ -264,18 +293,18 @@ int ngtcp2_strm_streamfrq_pop(ngtcp2_strm *strm, ngtcp2_frame_chain **pfrc,
  * ngtcp2_strm_streamfrq_unacked_offset returns the smallest offset of
  * unacknowledged stream data held in strm->tx.streamfrq.
  */
-uint64_t ngtcp2_strm_streamfrq_unacked_offset(ngtcp2_strm *strm);
+uint64_t ngtcp2_strm_streamfrq_unacked_offset(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_streamfrq_top returns the first ngtcp2_frame_chain.
  * The queue must not be empty.
  */
-ngtcp2_frame_chain *ngtcp2_strm_streamfrq_top(ngtcp2_strm *strm);
+ngtcp2_frame_chain *ngtcp2_strm_streamfrq_top(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_streamfrq_empty returns nonzero if streamfrq is empty.
  */
-int ngtcp2_strm_streamfrq_empty(ngtcp2_strm *strm);
+int ngtcp2_strm_streamfrq_empty(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_streamfrq_clear removes all frames from streamfrq.
@@ -285,26 +314,26 @@ void ngtcp2_strm_streamfrq_clear(ngtcp2_strm *strm);
 /*
  * ngtcp2_strm_is_tx_queued returns nonzero if |strm| is queued.
  */
-int ngtcp2_strm_is_tx_queued(ngtcp2_strm *strm);
+int ngtcp2_strm_is_tx_queued(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_is_all_tx_data_acked returns nonzero if all outgoing
  * data for |strm| which have sent so far have been acknowledged.
  */
-int ngtcp2_strm_is_all_tx_data_acked(ngtcp2_strm *strm);
+int ngtcp2_strm_is_all_tx_data_acked(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_is_all_tx_data_fin_acked behaves like
  * ngtcp2_strm_is_all_tx_data_acked, but it also requires that STREAM
  * frame with fin bit set is acknowledged.
  */
-int ngtcp2_strm_is_all_tx_data_fin_acked(ngtcp2_strm *strm);
+int ngtcp2_strm_is_all_tx_data_fin_acked(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_get_unacked_range_after returns the range that is not
- * acknowledged yet and intersects or comes after |offset|.
+ * acknowledged yet and includes or comes after |offset|.
  */
-ngtcp2_range ngtcp2_strm_get_unacked_range_after(ngtcp2_strm *strm,
+ngtcp2_range ngtcp2_strm_get_unacked_range_after(const ngtcp2_strm *strm,
                                                  uint64_t offset);
 
 /*
@@ -312,11 +341,11 @@ ngtcp2_range ngtcp2_strm_get_unacked_range_after(ngtcp2_strm *strm,
  * this offset have been acknowledged by a remote endpoint.  It
  * returns 0 if no data is acknowledged.
  */
-uint64_t ngtcp2_strm_get_acked_offset(ngtcp2_strm *strm);
+uint64_t ngtcp2_strm_get_acked_offset(const ngtcp2_strm *strm);
 
 /*
- * ngtcp2_strm_ack_data tells |strm| that the data [offset,
- * offset+len) is acknowledged by a remote endpoint.
+ * ngtcp2_strm_ack_data tells |strm| that the data [|offset|, |offset|
+ * + |len|) is acknowledged by a remote endpoint.
  */
 int ngtcp2_strm_ack_data(ngtcp2_strm *strm, uint64_t offset, uint64_t len);
 
@@ -331,26 +360,41 @@ void ngtcp2_strm_set_app_error_code(ngtcp2_strm *strm, uint64_t app_error_code);
  * ngtcp2_strm_require_retransmit_reset_stream returns nonzero if
  * RESET_STREAM frame should be retransmitted.
  */
-int ngtcp2_strm_require_retransmit_reset_stream(ngtcp2_strm *strm);
+int ngtcp2_strm_require_retransmit_reset_stream(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_require_retransmit_stop_sending returns nonzero if
  * STOP_SENDING frame should be retransmitted.
  */
-int ngtcp2_strm_require_retransmit_stop_sending(ngtcp2_strm *strm);
+int ngtcp2_strm_require_retransmit_stop_sending(const ngtcp2_strm *strm);
 
 /*
  * ngtcp2_strm_require_retransmit_max_stream_data returns nonzero if
  * MAX_STREAM_DATA frame should be retransmitted.
  */
-int ngtcp2_strm_require_retransmit_max_stream_data(ngtcp2_strm *strm,
-                                                   ngtcp2_max_stream_data *fr);
+int ngtcp2_strm_require_retransmit_max_stream_data(
+  const ngtcp2_strm *strm, const ngtcp2_max_stream_data *fr);
 
 /*
  * ngtcp2_strm_require_retransmit_stream_data_blocked returns nonzero
  * if STREAM_DATA_BLOCKED frame frame should be retransmitted.
  */
 int ngtcp2_strm_require_retransmit_stream_data_blocked(
-    ngtcp2_strm *strm, ngtcp2_stream_data_blocked *fr);
+  const ngtcp2_strm *strm, const ngtcp2_stream_data_blocked *fr);
 
-#endif /* NGTCP2_STRM_H */
+/*
+ * ngtcp2_strm_discard_ordered_data discards the ordered data starting
+ * at |rx_offset|.  It stops when it finds a gap, which means that a
+ * portion of the data has not been received yet.  It returns the size
+ * of the buffered bytes discarded.
+ */
+uint64_t ngtcp2_strm_discard_ordered_data(ngtcp2_strm *strm,
+                                          uint64_t rx_offset);
+
+/*
+ * ngtcp2_strm_stop_buffering_reordered_data discards the buffered
+ * reordered data, and stops buffering data any further.
+ */
+void ngtcp2_strm_stop_buffering_reordered_data(ngtcp2_strm *strm);
+
+#endif /* !defined(NGTCP2_STRM_H) */

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <optional>
 #include <sstream>
 
 #include "debug-helper-internal.h"
@@ -18,9 +19,7 @@
 
 namespace i = v8::internal;
 
-namespace v8 {
-namespace internal {
-namespace debug_helper_internal {
+namespace v8::internal::debug_helper_internal {
 
 constexpr char kTaggedValue[] = "v8::internal::TaggedValue";
 constexpr char kSmi[] = "v8::internal::Smi";
@@ -93,9 +92,8 @@ TypedObject GetTypedObjectForString(uintptr_t address, i::InstanceType type,
     }
   };
 
-  return i::StringShape(type)
-      .DispatchToSpecificTypeWithoutCast<StringGetDispatcher, TypedObject>(
-          address, type_source);
+  return String::DispatchToSpecificTypeWithoutCast<StringGetDispatcher>(
+      type, address, type_source);
 }
 
 TypedObject GetTypedObjectByInstanceType(uintptr_t address,
@@ -216,7 +214,7 @@ TypedObject GetTypedHeapObject(uintptr_t address, d::MemoryAccessor accessor,
 class ReadStringVisitor : public TqObjectVisitor {
  public:
   struct Result {
-    v8::base::Optional<std::string> maybe_truncated_string;
+    std::optional<std::string> maybe_truncated_string;
     std::unique_ptr<ObjectProperty> maybe_raw_characters_property;
   };
   static Result Visit(d::MemoryAccessor accessor,
@@ -228,7 +226,7 @@ class ReadStringVisitor : public TqObjectVisitor {
   }
 
   // Returns the result as UTF-8 once visiting is complete.
-  v8::base::Optional<std::string> GetString() {
+  std::optional<std::string> GetString() {
     if (failed_) return {};
     std::vector<char> result(
         string_.size() * unibrow::Utf16::kMaxExtraUtf8BytesForOneUtf16CodeUnit);
@@ -364,18 +362,36 @@ class ReadStringVisitor : public TqObjectVisitor {
 
   template <typename TChar>
   void ReadExternalString(const TqExternalString* object) {
-    // Cached external strings are easy to read; uncached external strings
-    // require knowledge of the embedder. For now, we only read cached external
-    // strings.
+    // Uncached external strings require knowledge of the embedder. For now, we
+    // only read cached external strings.
     if (IsExternalStringCached(object)) {
       ExternalPointer_t resource_data =
           GetOrFinish(object->GetResourceDataValue(accessor_));
 #ifdef V8_ENABLE_SANDBOX
       Address memory_chunk =
-          BasicMemoryChunk::BaseAddress(object->GetMapAddress());
-      Address heap = GetOrFinish(
-          ReadValue<Address>(memory_chunk + BasicMemoryChunk::kHeapOffset));
-      Isolate* isolate = Isolate::FromHeap(reinterpret_cast<Heap*>(heap));
+          MemoryChunk::FromAddress(object->GetMapAddress())->address();
+      uint32_t metadata_index = GetOrFinish(ReadValue<uint32_t>(
+          memory_chunk + MemoryChunk::MetadataIndexOffset()));
+      auto metadata_entry =
+          GetOrFinish(ReadValue<IsolateGroup::BasePageTableEntry>(
+              heap_addresses_.metadata_pointer_table, metadata_index));
+      Address heap = GetOrFinish(ReadValue<Address>(
+          reinterpret_cast<uintptr_t>(metadata_entry.metadata()) +
+          BasePage::HeapOffset()));
+      // Get the Isolate pointer from the Heap object. The Heap class has a
+      // field "Isolate* isolate_" that points to the owning Isolate. The offset
+      // of this field is provided by the debugger (from PDB symbols). If the
+      // offset is not available (zero), fall back to using Isolate::FromHeap()
+      // which may fail if the offset differs between builds.
+      Isolate* isolate;
+      if (heap_addresses_.isolate_heap_member_offset != 0) {
+        // Read the Isolate* pointer from Heap::isolate_ field.
+        Address isolate_address = GetOrFinish(ReadValue<Address>(
+            heap + heap_addresses_.isolate_heap_member_offset));
+        isolate = reinterpret_cast<Isolate*>(isolate_address);
+      } else {
+        isolate = Isolate::FromHeap(reinterpret_cast<Heap*>(heap));
+      }
       Address external_pointer_table_address_address =
           isolate->shared_external_pointer_table_address_address();
       Address external_pointer_table_address = GetOrFinish(
@@ -386,7 +402,8 @@ class ReadStringVisitor : public TqObjectVisitor {
           static_cast<int32_t>(resource_data >> kExternalPointerIndexShift);
       Address tagged_data =
           GetOrFinish(ReadValue<Address>(external_pointer_table, index));
-      Address data_address = tagged_data & ~kExternalStringResourceDataTag;
+      // We don't really need to perform the type check here.
+      Address data_address = tagged_data & kExternalPointerPayloadMask;
 #else
       uintptr_t data_address = static_cast<uintptr_t>(resource_data);
 #endif  // V8_ENABLE_SANDBOX
@@ -794,19 +811,12 @@ std::unique_ptr<StackFrameResult> GetStackFrame(
               position_info_struct_field_list.push_back(
                   std::make_unique<StructProperty>("end", kObjectAsStoredInHeap,
                                                    4, 0, 0));
-              auto indexed_field_slice_position_info =
-                  TqDebugFieldSliceScopeInfoPositionInfo(memory_accessor,
-                                                         scope_info_address);
-              if (indexed_field_slice_position_info.validity ==
-                  d::MemoryAccessResult::kOk) {
-                props.push_back(std::make_unique<ObjectProperty>(
-                    "function_character_offset", "",
-                    scope_info_address - i::kHeapObjectTag +
-                        std::get<1>(indexed_field_slice_position_info.value),
-                    std::get<2>(indexed_field_slice_position_info.value),
-                    i::kTaggedSize, std::move(position_info_struct_field_list),
-                    d::PropertyKind::kSingle));
-              }
+              TqScopeInfo scope_info(scope_info_address);
+              props.push_back(std::make_unique<ObjectProperty>(
+                  "function_character_offset", "",
+                  scope_info.GetPositionInfoAddress(), 1, 2 * i::kTaggedSize,
+                  std::move(position_info_struct_field_list),
+                  d::PropertyKind::kSingle));
             }
           }
         }
@@ -817,9 +827,7 @@ std::unique_ptr<StackFrameResult> GetStackFrame(
   return std::make_unique<StackFrameResult>(std::move(props));
 }
 
-}  // namespace debug_helper_internal
-}  // namespace internal
-}  // namespace v8
+}  // namespace v8::internal::debug_helper_internal
 
 namespace di = v8::internal::debug_helper_internal;
 

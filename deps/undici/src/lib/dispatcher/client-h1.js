@@ -10,6 +10,7 @@ const {
   RequestContentLengthMismatchError,
   ResponseContentLengthMismatchError,
   RequestAbortedError,
+  InvalidArgumentError,
   HeadersTimeoutError,
   HeadersOverflowError,
   SocketError,
@@ -47,119 +48,184 @@ const {
   kMaxRequests,
   kCounter,
   kMaxResponseSize,
-  kListeners,
   kOnError,
   kResume,
-  kHTTPContext
+  kHTTPContext,
+  kClosed
 } = require('../core/symbols.js')
 
 const constants = require('../llhttp/constants.js')
 const EMPTY_BUF = Buffer.alloc(0)
 const FastBuffer = Buffer[Symbol.species]
+const removeAllListeners = util.removeAllListeners
+const kIdleSocketValidation = Symbol('kIdleSocketValidation')
+const kIdleSocketValidationTimeout = Symbol('kIdleSocketValidationTimeout')
+const kSocketUsed = Symbol('kSocketUsed')
+const kTypeOfService = Symbol('kTypeOfService')
 
 let extractBody
 
-function addListener (obj, name, listener) {
-  const listeners = (obj[kListeners] ??= [])
-  listeners.push([name, listener])
-  obj.on(name, listener)
-  return obj
-}
-
-function removeAllListeners (obj) {
-  for (const [name, listener] of obj[kListeners] ?? []) {
-    obj.removeListener(name, listener)
-  }
-  obj[kListeners] = null
-}
-
-async function lazyllhttp () {
+function lazyllhttp () {
   const llhttpWasmData = process.env.JEST_WORKER_ID ? require('../llhttp/llhttp-wasm.js') : undefined
 
   let mod
-  try {
-    mod = await WebAssembly.compile(require('../llhttp/llhttp_simd-wasm.js'))
-  } catch (e) {
-    /* istanbul ignore next */
 
+  // We disable wasm SIMD on ppc64 as it seems to be broken on Power 9 architectures.
+  let useWasmSIMD = process.arch !== 'ppc64'
+  // The Env Variable UNDICI_NO_WASM_SIMD allows explicitly overriding the default behavior
+  if (process.env.UNDICI_NO_WASM_SIMD === '1') {
+    useWasmSIMD = false
+  } else if (process.env.UNDICI_NO_WASM_SIMD === '0') {
+    useWasmSIMD = true
+  }
+
+  if (useWasmSIMD) {
+    try {
+      mod = new WebAssembly.Module(require('../llhttp/llhttp_simd-wasm.js'))
+    } catch {
+    }
+  }
+
+  if (!mod) {
     // We could check if the error was caused by the simd option not
     // being enabled, but the occurring of this other error
     // * https://github.com/emscripten-core/emscripten/issues/11495
     // got me to remove that check to avoid breaking Node 12.
-    mod = await WebAssembly.compile(llhttpWasmData || require('../llhttp/llhttp-wasm.js'))
+    mod = new WebAssembly.Module(llhttpWasmData || require('../llhttp/llhttp-wasm.js'))
   }
 
-  return await WebAssembly.instantiate(mod, {
+  return new WebAssembly.Instance(mod, {
     env: {
-      /* eslint-disable camelcase */
-
+      /**
+       * @param {number} p
+       * @param {number} at
+       * @param {number} len
+       * @returns {number}
+       */
       wasm_on_url: (p, at, len) => {
-        /* istanbul ignore next */
         return 0
       },
+      /**
+       * @param {number} p
+       * @param {number} at
+       * @param {number} len
+       * @returns {number}
+       */
       wasm_on_status: (p, at, len) => {
-        assert.strictEqual(currentParser.ptr, p)
+        assert(currentParser.ptr === p)
         const start = at - currentBufferPtr + currentBufferRef.byteOffset
-        return currentParser.onStatus(new FastBuffer(currentBufferRef.buffer, start, len)) || 0
+        return currentParser.onStatus(new FastBuffer(currentBufferRef.buffer, start, len))
       },
+      /**
+       * @param {number} p
+       * @returns {number}
+       */
       wasm_on_message_begin: (p) => {
-        assert.strictEqual(currentParser.ptr, p)
-        return currentParser.onMessageBegin() || 0
+        assert(currentParser.ptr === p)
+        return currentParser.onMessageBegin()
       },
+      /**
+       * @param {number} p
+       * @param {number} at
+       * @param {number} len
+       * @returns {number}
+       */
       wasm_on_header_field: (p, at, len) => {
-        assert.strictEqual(currentParser.ptr, p)
+        assert(currentParser.ptr === p)
         const start = at - currentBufferPtr + currentBufferRef.byteOffset
-        return currentParser.onHeaderField(new FastBuffer(currentBufferRef.buffer, start, len)) || 0
+        return currentParser.onHeaderField(new FastBuffer(currentBufferRef.buffer, start, len))
       },
+      /**
+       * @param {number} p
+       * @param {number} at
+       * @param {number} len
+       * @returns {number}
+       */
       wasm_on_header_value: (p, at, len) => {
-        assert.strictEqual(currentParser.ptr, p)
+        assert(currentParser.ptr === p)
         const start = at - currentBufferPtr + currentBufferRef.byteOffset
-        return currentParser.onHeaderValue(new FastBuffer(currentBufferRef.buffer, start, len)) || 0
+        return currentParser.onHeaderValue(new FastBuffer(currentBufferRef.buffer, start, len))
       },
+      /**
+       * @param {number} p
+       * @param {number} statusCode
+       * @param {0|1} upgrade
+       * @param {0|1} shouldKeepAlive
+       * @returns {number}
+       */
       wasm_on_headers_complete: (p, statusCode, upgrade, shouldKeepAlive) => {
-        assert.strictEqual(currentParser.ptr, p)
-        return currentParser.onHeadersComplete(statusCode, Boolean(upgrade), Boolean(shouldKeepAlive)) || 0
+        assert(currentParser.ptr === p)
+        return currentParser.onHeadersComplete(statusCode, upgrade === 1, shouldKeepAlive === 1)
       },
+      /**
+       * @param {number} p
+       * @param {number} at
+       * @param {number} len
+       * @returns {number}
+       */
       wasm_on_body: (p, at, len) => {
-        assert.strictEqual(currentParser.ptr, p)
+        assert(currentParser.ptr === p)
         const start = at - currentBufferPtr + currentBufferRef.byteOffset
-        return currentParser.onBody(new FastBuffer(currentBufferRef.buffer, start, len)) || 0
+        return currentParser.onBody(new FastBuffer(currentBufferRef.buffer, start, len))
       },
+      /**
+       * @param {number} p
+       * @returns {number}
+       */
       wasm_on_message_complete: (p) => {
-        assert.strictEqual(currentParser.ptr, p)
-        return currentParser.onMessageComplete() || 0
+        assert(currentParser.ptr === p)
+        return currentParser.onMessageComplete()
       }
 
-      /* eslint-enable camelcase */
     }
   })
 }
 
 let llhttpInstance = null
-let llhttpPromise = lazyllhttp()
-llhttpPromise.catch()
 
+/**
+ * @type {Parser|null}
+ */
 let currentParser = null
 let currentBufferRef = null
+/**
+ * @type {number}
+ */
 let currentBufferSize = 0
 let currentBufferPtr = null
+let currentBuffer = null
 
-const TIMEOUT_HEADERS = 1
-const TIMEOUT_BODY = 2
-const TIMEOUT_IDLE = 3
+const USE_NATIVE_TIMER = 0
+const USE_FAST_TIMER = 1
+
+// Use fast timers for headers and body to take eventual event loop
+// latency into account.
+const TIMEOUT_HEADERS = 2 | USE_FAST_TIMER
+const TIMEOUT_BODY = 4 | USE_FAST_TIMER
+
+// Use native timers to ignore event loop latency for keep-alive
+// handling.
+const TIMEOUT_KEEP_ALIVE = 8 | USE_NATIVE_TIMER
 
 class Parser {
+  /**
+     * @param {import('./client.js')} client
+     * @param {import('net').Socket} socket
+     * @param {*} llhttp
+     */
   constructor (client, socket, { exports }) {
-    assert(Number.isFinite(client[kMaxHeadersSize]) && client[kMaxHeadersSize] > 0)
-
     this.llhttp = exports
     this.ptr = this.llhttp.llhttp_alloc(constants.TYPE.RESPONSE)
     this.client = client
+    /**
+     * @type {import('net').Socket}
+     */
     this.socket = socket
     this.timeout = null
+    this.timeoutWeakRef = new WeakRef(this)
     this.timeoutValue = null
     this.timeoutType = null
-    this.statusCode = null
+    this.statusCode = 0
     this.statusText = ''
     this.upgrade = false
     this.headers = []
@@ -172,31 +238,43 @@ class Parser {
     this.bytesRead = 0
 
     this.keepAlive = ''
-    this.contentLength = ''
-    this.connection = ''
+    this.contentLength = -1
+    this.connectionKeepAlive = false
     this.maxResponseSize = client[kMaxResponseSize]
   }
 
-  setTimeout (value, type) {
-    this.timeoutType = type
-    if (value !== this.timeoutValue) {
-      timers.clearTimeout(this.timeout)
-      if (value) {
-        this.timeout = timers.setTimeout(onParserTimeout, value, this)
-        // istanbul ignore else: only for jest
-        if (this.timeout.unref) {
-          this.timeout.unref()
-        }
-      } else {
+  setTimeout (delay, type) {
+    // If the existing timer and the new timer are of different timer type
+    // (fast or native) or have different delay, we need to clear the existing
+    // timer and set a new one.
+    if (
+      delay !== this.timeoutValue ||
+      (type & USE_FAST_TIMER) ^ (this.timeoutType & USE_FAST_TIMER)
+    ) {
+      // If a timeout is already set, clear it with clearTimeout of the fast
+      // timer implementation, as it can clear fast and native timers.
+      if (this.timeout) {
+        timers.clearTimeout(this.timeout)
         this.timeout = null
       }
-      this.timeoutValue = value
+
+      if (delay) {
+        if (type & USE_FAST_TIMER) {
+          this.timeout = timers.setFastTimeout(onParserTimeout, delay, this.timeoutWeakRef)
+        } else {
+          this.timeout = setTimeout(onParserTimeout, delay, this.timeoutWeakRef)
+          this.timeout?.unref()
+        }
+      }
+
+      this.timeoutValue = delay
     } else if (this.timeout) {
-      // istanbul ignore else: only for jest
       if (this.timeout.refresh) {
         this.timeout.refresh()
       }
     }
+
+    this.timeoutType = type
   }
 
   resume () {
@@ -205,13 +283,12 @@ class Parser {
     }
 
     assert(this.ptr != null)
-    assert(currentParser == null)
+    assert(currentParser === null)
 
     this.llhttp.llhttp_resume(this.ptr)
 
     assert(this.timeoutType === TIMEOUT_BODY)
     if (this.timeout) {
-      // istanbul ignore else: only for jest
       if (this.timeout.refresh) {
         this.timeout.refresh()
       }
@@ -232,22 +309,36 @@ class Parser {
     }
   }
 
-  execute (data) {
+  /**
+   * @param {Buffer} chunk
+   */
+  execute (chunk) {
+    assert(currentParser === null)
     assert(this.ptr != null)
-    assert(currentParser == null)
     assert(!this.paused)
 
     const { socket, llhttp } = this
 
-    if (data.length > currentBufferSize) {
+    // Allocate a new buffer if the current buffer is too small.
+    if (chunk.length > currentBufferSize) {
       if (currentBufferPtr) {
         llhttp.free(currentBufferPtr)
       }
-      currentBufferSize = Math.ceil(data.length / 4096) * 4096
+      // Allocate a buffer that is a multiple of 4096 bytes.
+      currentBufferSize = Math.ceil(chunk.length / 4096) * 4096
       currentBufferPtr = llhttp.malloc(currentBufferSize)
     }
 
-    new Uint8Array(llhttp.memory.buffer, currentBufferPtr, currentBufferSize).set(data)
+    if (
+      currentBuffer === null ||
+      currentBuffer.buffer !== llhttp.memory.buffer ||
+      currentBuffer.byteOffset !== currentBufferPtr ||
+      currentBuffer.byteLength !== currentBufferSize
+    ) {
+      currentBuffer = new Uint8Array(llhttp.memory.buffer, currentBufferPtr, currentBufferSize)
+    }
+
+    currentBuffer.set(chunk)
 
     // Call `execute` on the wasm parser.
     // We pass the `llhttp_parser` pointer address, the pointer address of buffer view data,
@@ -257,51 +348,109 @@ class Parser {
       let ret
 
       try {
-        currentBufferRef = data
+        currentBufferRef = chunk
         currentParser = this
-        ret = llhttp.llhttp_execute(this.ptr, currentBufferPtr, data.length)
-        /* eslint-disable-next-line no-useless-catch */
-      } catch (err) {
-        /* istanbul ignore next: difficult to make a test case for */
-        throw err
+        ret = llhttp.llhttp_execute(this.ptr, currentBufferPtr, chunk.length)
       } finally {
         currentParser = null
         currentBufferRef = null
       }
 
-      const offset = llhttp.llhttp_get_error_pos(this.ptr) - currentBufferPtr
+      if (ret !== constants.ERROR.OK) {
+        const data = chunk.subarray(llhttp.llhttp_get_error_pos(this.ptr) - currentBufferPtr)
 
-      if (ret === constants.ERROR.PAUSED_UPGRADE) {
-        this.onUpgrade(data.slice(offset))
-      } else if (ret === constants.ERROR.PAUSED) {
-        this.paused = true
-        socket.unshift(data.slice(offset))
-      } else if (ret !== constants.ERROR.OK) {
-        const ptr = llhttp.llhttp_get_error_reason(this.ptr)
-        let message = ''
-        /* istanbul ignore else: difficult to make a test case for */
-        if (ptr) {
-          const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0)
-          message =
-            'Response does not match the HTTP/1.1 protocol (' +
-            Buffer.from(llhttp.memory.buffer, ptr, len).toString() +
-            ')'
+        if (ret === constants.ERROR.PAUSED_UPGRADE) {
+          this.onUpgrade(data)
+        } else if (ret === constants.ERROR.PAUSED) {
+          this.paused = true
+          socket.unshift(data)
+        } else {
+          throw this.createError(ret, data)
         }
-        throw new HTTPParserError(message, constants.ERROR[ret], data.slice(offset))
       }
     } catch (err) {
       util.destroy(socket, err)
     }
   }
 
-  destroy () {
+  finish () {
+    assert(currentParser === null)
     assert(this.ptr != null)
-    assert(currentParser == null)
+
+    const { llhttp } = this
+
+    // The peer closed the connection. If the body parser was paused by
+    // backpressure we must finish parsing before signalling EOF, otherwise
+    // llhttp_finish() would crash (it used to assert !paused) or report a
+    // half-parsed message. Backpressure is advisory here: onData keeps buffering
+    // delivered bytes into the response stream, so resume across pauses and
+    // drain whatever is still buffered on the socket. A Content-Length/chunked
+    // body reaches on_message_complete during execute(); an EOF-delimited body
+    // stays paused (its length is unknown) and is completed by llhttp_finish().
+    if (this.paused) {
+      let data
+      do {
+        llhttp.llhttp_resume(this.ptr)
+        this.paused = false
+        data = this.socket.read() || EMPTY_BUF
+        this.execute(data)
+      } while (this.paused && data.length > 0)
+
+      if (this.paused) {
+        llhttp.llhttp_resume(this.ptr)
+        this.paused = false
+      }
+    }
+
+    let ret
+
+    try {
+      currentParser = this
+      ret = llhttp.llhttp_finish(this.ptr)
+    } finally {
+      currentParser = null
+    }
+
+    if (ret === constants.ERROR.OK) {
+      return null
+    }
+
+    if (ret === constants.ERROR.PAUSED || ret === constants.ERROR.PAUSED_UPGRADE) {
+      this.paused = true
+      return null
+    }
+
+    return this.createError(ret, EMPTY_BUF)
+  }
+
+  createError (ret, data) {
+    const { llhttp, contentLength, bytesRead } = this
+
+    if (contentLength !== -1 && bytesRead !== contentLength) {
+      return new ResponseContentLengthMismatchError()
+    }
+
+    const ptr = llhttp.llhttp_get_error_reason(this.ptr)
+    let message = ''
+    if (ptr) {
+      const len = new Uint8Array(llhttp.memory.buffer, ptr).indexOf(0)
+      message =
+        'Response does not match the HTTP/1.1 protocol (' +
+        Buffer.from(llhttp.memory.buffer, ptr, len).toString() +
+        ')'
+    }
+
+    return new HTTPParserError(message, constants.ERROR[ret], data)
+  }
+
+  destroy () {
+    assert(currentParser === null)
+    assert(this.ptr != null)
 
     this.llhttp.llhttp_free(this.ptr)
     this.ptr = null
 
-    timers.clearTimeout(this.timeout)
+    this.timeout && timers.clearTimeout(this.timeout)
     this.timeout = null
     this.timeoutValue = null
     this.timeoutType = null
@@ -309,15 +458,27 @@ class Parser {
     this.paused = false
   }
 
+  /**
+   * @param {Buffer} buf
+   * @returns {0}
+   */
   onStatus (buf) {
     this.statusText = buf.toString()
+    return 0
   }
 
+  /**
+   * @returns {0|-1}
+   */
   onMessageBegin () {
     const { socket, client } = this
 
-    /* istanbul ignore next: difficult to make a test case for */
     if (socket.destroyed) {
+      return -1
+    }
+
+    if (client[kRunning] === 0) {
+      util.destroy(socket, new SocketError('bad response', util.getSocketInfo(socket)))
       return -1
     }
 
@@ -326,8 +487,14 @@ class Parser {
       return -1
     }
     request.onResponseStarted()
+
+    return 0
   }
 
+  /**
+   * @param {Buffer} buf
+   * @returns {number}
+   */
   onHeaderField (buf) {
     const len = this.headers.length
 
@@ -338,8 +505,14 @@ class Parser {
     }
 
     this.trackHeader(buf.length)
+
+    return 0
   }
 
+  /**
+   * @param {Buffer} buf
+   * @returns {number}
+   */
   onHeaderValue (buf) {
     let len = this.headers.length
 
@@ -356,15 +529,27 @@ class Parser {
       if (headerName === 'keep-alive') {
         this.keepAlive += buf.toString()
       } else if (headerName === 'connection') {
-        this.connection += buf.toString()
+        this.connectionKeepAlive =
+          this.headers[len - 1].length === 10 &&
+          util.bufferToLowerCasedHeaderName(this.headers[len - 1]) === 'keep-alive'
       }
     } else if (key.length === 14 && util.bufferToLowerCasedHeaderName(key) === 'content-length') {
-      this.contentLength += buf.toString()
+      if (this.contentLength === -1) {
+        this.contentLength = 0
+      }
+      for (let i = 0; i < buf.length; i++) {
+        this.contentLength = (this.contentLength * 10) + (buf[i] - 0x30)
+      }
     }
 
     this.trackHeader(buf.length)
+
+    return 0
   }
 
+  /**
+   * @param {number} len
+   */
   trackHeader (len) {
     this.headersSize += len
     if (this.headersSize >= this.headersMaxSize) {
@@ -372,24 +557,26 @@ class Parser {
     }
   }
 
+  /**
+   * @param {Buffer} head
+   */
   onUpgrade (head) {
     const { upgrade, client, socket, headers, statusCode } = this
 
     assert(upgrade)
+    assert(client[kSocket] === socket)
+    assert(!socket.destroyed)
+    assert(!this.paused)
+    assert((headers.length & 1) === 0)
 
     const request = client[kQueue][client[kRunningIdx]]
     assert(request)
-
-    assert(!socket.destroyed)
-    assert(socket === client[kSocket])
-    assert(!this.paused)
     assert(request.upgrade || request.method === 'CONNECT')
 
-    this.statusCode = null
+    this.statusCode = 0
     this.statusText = ''
-    this.shouldKeepAlive = null
+    this.shouldKeepAlive = false
 
-    assert(this.headers.length % 2 === 0)
     this.headers = []
     this.headersSize = 0
 
@@ -409,7 +596,7 @@ class Parser {
     client.emit('disconnect', client[kUrl], [client], new InformationalError('upgrade'))
 
     try {
-      request.onUpgrade(statusCode, headers, socket)
+      request.onRequestUpgrade(statusCode, headers, socket)
     } catch (err) {
       util.destroy(socket, err)
     }
@@ -417,17 +604,26 @@ class Parser {
     client[kResume]()
   }
 
+  /**
+   * @param {number} statusCode
+   * @param {boolean} upgrade
+   * @param {boolean} shouldKeepAlive
+   * @returns {number}
+   */
   onHeadersComplete (statusCode, upgrade, shouldKeepAlive) {
     const { client, socket, headers, statusText } = this
 
-    /* istanbul ignore next: difficult to make a test case for */
     if (socket.destroyed) {
+      return -1
+    }
+
+    if (client[kRunning] === 0) {
+      util.destroy(socket, new SocketError('bad response', util.getSocketInfo(socket)))
       return -1
     }
 
     const request = client[kQueue][client[kRunningIdx]]
 
-    /* istanbul ignore next: difficult to make a test case for */
     if (!request) {
       return -1
     }
@@ -446,13 +642,13 @@ class Parser {
       return -1
     }
 
-    assert.strictEqual(this.timeoutType, TIMEOUT_HEADERS)
+    assert(this.timeoutType === TIMEOUT_HEADERS)
 
     this.statusCode = statusCode
     this.shouldKeepAlive = (
       shouldKeepAlive ||
       // Override llhttp value which does not allow keepAlive for HEAD.
-      (request.method === 'HEAD' && !socket[kReset] && this.connection.toLowerCase() === 'keep-alive')
+      (request.method === 'HEAD' && !socket[kReset] && this.connectionKeepAlive)
     )
 
     if (this.statusCode >= 200) {
@@ -461,7 +657,6 @@ class Parser {
         : client[kBodyTimeout]
       this.setTimeout(bodyTimeout, TIMEOUT_BODY)
     } else if (this.timeout) {
-      // istanbul ignore else: only for jest
       if (this.timeout.refresh) {
         this.timeout.refresh()
       }
@@ -479,7 +674,7 @@ class Parser {
       return 2
     }
 
-    assert(this.headers.length % 2 === 0)
+    assert((this.headers.length & 1) === 0)
     this.headers = []
     this.headersSize = 0
 
@@ -504,7 +699,7 @@ class Parser {
       socket[kReset] = true
     }
 
-    const pause = request.onHeaders(statusCode, headers, this.resume, statusText) === false
+    const pause = request.onResponseStart(statusCode, headers, this.resume, statusText) === false
 
     if (request.aborted) {
       return -1
@@ -526,6 +721,10 @@ class Parser {
     return pause ? constants.ERROR.PAUSED : 0
   }
 
+  /**
+   * @param {Buffer} buf
+   * @returns {number}
+   */
   onBody (buf) {
     const { client, socket, statusCode, maxResponseSize } = this
 
@@ -536,9 +735,8 @@ class Parser {
     const request = client[kQueue][client[kRunningIdx]]
     assert(request)
 
-    assert.strictEqual(this.timeoutType, TIMEOUT_BODY)
+    assert(this.timeoutType === TIMEOUT_BODY)
     if (this.timeout) {
-      // istanbul ignore else: only for jest
       if (this.timeout.refresh) {
         this.timeout.refresh()
       }
@@ -553,11 +751,16 @@ class Parser {
 
     this.bytesRead += buf.length
 
-    if (request.onData(buf) === false) {
+    if (request.onResponseData(buf) === false) {
       return constants.ERROR.PAUSED
     }
+
+    return 0
   }
 
+  /**
+   * @returns {number}
+   */
   onMessageComplete () {
     const { client, socket, statusCode, upgrade, headers, contentLength, bytesRead, shouldKeepAlive } = this
 
@@ -566,41 +769,41 @@ class Parser {
     }
 
     if (upgrade) {
-      return
+      return 0
     }
+
+    assert(statusCode >= 100)
+    assert((this.headers.length & 1) === 0)
 
     const request = client[kQueue][client[kRunningIdx]]
     assert(request)
 
-    assert(statusCode >= 100)
-
-    this.statusCode = null
+    this.statusCode = 0
     this.statusText = ''
     this.bytesRead = 0
-    this.contentLength = ''
+    this.contentLength = -1
     this.keepAlive = ''
-    this.connection = ''
+    this.connectionKeepAlive = false
 
-    assert(this.headers.length % 2 === 0)
     this.headers = []
     this.headersSize = 0
 
     if (statusCode < 200) {
-      return
+      return 0
     }
 
-    /* istanbul ignore next: should be handled by llhttp? */
-    if (request.method !== 'HEAD' && contentLength && bytesRead !== parseInt(contentLength, 10)) {
+    if (request.method !== 'HEAD' && contentLength !== -1 && bytesRead !== contentLength) {
       util.destroy(socket, new ResponseContentLengthMismatchError())
       return -1
     }
 
-    request.onComplete(headers)
+    request.onResponseEnd(headers)
 
     client[kQueue][client[kRunningIdx]++] = null
+    socket[kSocketUsed] = client[kPending] === 0
 
     if (socket[kWriting]) {
-      assert.strictEqual(client[kRunning], 0)
+      assert(client[kRunning] === 0)
       // Response completed before request.
       util.destroy(socket, new InformationalError('reset'))
       return constants.ERROR.PAUSED
@@ -618,152 +821,108 @@ class Parser {
       // We must wait a full event loop cycle to reuse this socket to make sure
       // that non-spec compliant servers are not closing the connection even if they
       // said they won't.
-      setImmediate(() => client[kResume]())
+      setImmediate(client[kResume])
     } else {
       client[kResume]()
     }
+
+    return 0
   }
 }
 
-function onParserTimeout (parser) {
-  const { socket, timeoutType, client } = parser
+function onParserTimeout (parserWeakRef) {
+  const parser = parserWeakRef.deref()
+  if (!parser) {
+    return
+  }
 
-  /* istanbul ignore else */
+  const { socket, timeoutType, client, paused } = parser
+
   if (timeoutType === TIMEOUT_HEADERS) {
     if (!socket[kWriting] || socket.writableNeedDrain || client[kRunning] > 1) {
-      assert(!parser.paused, 'cannot be paused while waiting for headers')
+      assert(!paused, 'cannot be paused while waiting for headers')
       util.destroy(socket, new HeadersTimeoutError())
     }
   } else if (timeoutType === TIMEOUT_BODY) {
-    if (!parser.paused) {
+    if (!paused) {
       util.destroy(socket, new BodyTimeoutError())
     }
-  } else if (timeoutType === TIMEOUT_IDLE) {
+  } else if (timeoutType === TIMEOUT_KEEP_ALIVE) {
     assert(client[kRunning] === 0 && client[kKeepAliveTimeoutValue])
     util.destroy(socket, new InformationalError('socket idle timeout'))
   }
 }
 
-async function connectH1 (client, socket) {
+/**
+ * @param {import ('./client.js')} client
+ * @param {import('net').Socket} socket
+ * @returns
+ */
+function connectH1 (client, socket) {
   client[kSocket] = socket
 
   if (!llhttpInstance) {
-    llhttpInstance = await llhttpPromise
-    llhttpPromise = null
+    llhttpInstance = lazyllhttp()
+  }
+
+  if (socket.errored) {
+    throw socket.errored
+  }
+
+  if (socket.destroyed) {
+    throw new SocketError('destroyed')
   }
 
   socket[kNoRef] = false
   socket[kWriting] = false
   socket[kReset] = false
   socket[kBlocking] = false
+  socket[kIdleSocketValidation] = 0
+  socket[kIdleSocketValidationTimeout] = null
+  socket[kSocketUsed] = false
   socket[kParser] = new Parser(client, socket, llhttpInstance)
 
-  addListener(socket, 'error', function (err) {
-    const parser = this[kParser]
+  util.addListener(socket, 'error', onHttpSocketError)
+  util.addListener(socket, 'readable', onHttpSocketReadable)
+  util.addListener(socket, 'end', onHttpSocketEnd)
+  util.addListener(socket, 'close', onHttpSocketClose)
 
-    assert(err.code !== 'ERR_TLS_CERT_ALTNAME_INVALID')
-
-    // On Mac OS, we get an ECONNRESET even if there is a full body to be forwarded
-    // to the user.
-    if (err.code === 'ECONNRESET' && parser.statusCode && !parser.shouldKeepAlive) {
-      // We treat all incoming data so for as a valid response.
-      parser.onMessageComplete()
-      return
-    }
-
-    this[kError] = err
-
-    this[kClient][kOnError](err)
-  })
-  addListener(socket, 'readable', function () {
-    const parser = this[kParser]
-
-    if (parser) {
-      parser.readMore()
-    }
-  })
-  addListener(socket, 'end', function () {
-    const parser = this[kParser]
-
-    if (parser.statusCode && !parser.shouldKeepAlive) {
-      // We treat all incoming data so far as a valid response.
-      parser.onMessageComplete()
-      return
-    }
-
-    util.destroy(this, new SocketError('other side closed', util.getSocketInfo(this)))
-  })
-  addListener(socket, 'close', function () {
-    const client = this[kClient]
-    const parser = this[kParser]
-
-    if (parser) {
-      if (!this[kError] && parser.statusCode && !parser.shouldKeepAlive) {
-        // We treat all incoming data so far as a valid response.
-        parser.onMessageComplete()
-      }
-
-      this[kParser].destroy()
-      this[kParser] = null
-    }
-
-    const err = this[kError] || new SocketError('closed', util.getSocketInfo(this))
-
-    client[kSocket] = null
-    client[kHTTPContext] = null // TODO (fix): This is hacky...
-
-    if (client.destroyed) {
-      assert(client[kPending] === 0)
-
-      // Fail entire queue.
-      const requests = client[kQueue].splice(client[kRunningIdx])
-      for (let i = 0; i < requests.length; i++) {
-        const request = requests[i]
-        errorRequest(client, request, err)
-      }
-    } else if (client[kRunning] > 0 && err.code !== 'UND_ERR_INFO') {
-      // Fail head of pipeline.
-      const request = client[kQueue][client[kRunningIdx]]
-      client[kQueue][client[kRunningIdx]++] = null
-
-      errorRequest(client, request, err)
-    }
-
-    client[kPendingIdx] = client[kRunningIdx]
-
-    assert(client[kRunning] === 0)
-
-    client.emit('disconnect', client[kUrl], [client], err)
-
-    client[kResume]()
-  })
-
-  let closed = false
-  socket.on('close', () => {
-    closed = true
-  })
+  socket[kClosed] = false
+  socket.on('close', onSocketClose)
 
   return {
     version: 'h1',
     defaultPipelining: 1,
-    write (...args) {
-      return writeH1(client, ...args)
+    write (request) {
+      return writeH1(client, request)
     },
     resume () {
       resumeH1(client)
     },
+    /**
+     * @param {Error|undefined} err
+     * @param {() => void} callback
+     */
     destroy (err, callback) {
-      if (closed) {
+      if (socket[kClosed]) {
         queueMicrotask(callback)
       } else {
-        socket.destroy(err).on('close', callback)
+        socket.on('close', callback)
+        socket.destroy(err)
       }
     },
+    /**
+     * @returns {boolean}
+     */
     get destroyed () {
       return socket.destroyed
     },
+    /**
+     * @param {import('../core/request.js')} request
+     * @returns {boolean}
+     */
     busy (request) {
-      if (socket[kWriting] || socket[kReset] || socket[kBlocking]) {
+      if (socket[kWriting] || socket[kReset] || socket[kBlocking] || socket[kIdleSocketValidation] === 1) {
         return true
       }
 
@@ -801,6 +960,121 @@ async function connectH1 (client, socket) {
   }
 }
 
+function onHttpSocketError (err) {
+  assert(err.code !== 'ERR_TLS_CERT_ALTNAME_INVALID')
+
+  const parser = this[kParser]
+
+  // On Mac OS, we get an ECONNRESET even if there is a full body to be forwarded
+  // to the user.
+  if (err.code === 'ECONNRESET' && parser.statusCode && !parser.shouldKeepAlive) {
+    const parserErr = parser.finish()
+    if (parserErr) {
+      this[kError] = parserErr
+      this[kClient][kOnError](parserErr)
+    }
+    return
+  }
+
+  this[kError] = err
+
+  this[kClient][kOnError](err)
+}
+
+function onHttpSocketReadable () {
+  this[kParser]?.readMore()
+}
+
+function onHttpSocketEnd () {
+  const parser = this[kParser]
+
+  if (parser.statusCode && !parser.shouldKeepAlive) {
+    const parserErr = parser.finish()
+    if (parserErr) {
+      util.destroy(this, parserErr)
+    }
+    return
+  }
+
+  util.destroy(this, new SocketError('other side closed', util.getSocketInfo(this)))
+}
+
+function onHttpSocketClose () {
+  const parser = this[kParser]
+
+  clearIdleSocketValidation(this)
+
+  if (parser) {
+    if (!this[kError] && parser.statusCode && !parser.shouldKeepAlive) {
+      this[kError] = parser.finish() || this[kError]
+    }
+
+    this[kParser].destroy()
+    this[kParser] = null
+  }
+
+  const err = this[kError] || new SocketError('closed', util.getSocketInfo(this))
+
+  const client = this[kClient]
+
+  client[kSocket] = null
+  client[kHTTPContext] = null // TODO (fix): This is hacky...
+
+  if (client.destroyed) {
+    assert(client[kPending] === 0)
+
+    // Fail entire queue.
+    const requests = client[kQueue].splice(client[kRunningIdx])
+    for (let i = 0; i < requests.length; i++) {
+      const request = requests[i]
+      util.errorRequest(client, request, err)
+    }
+  } else if (client[kRunning] > 0 && err.code !== 'UND_ERR_INFO') {
+    // Fail head of pipeline.
+    const request = client[kQueue][client[kRunningIdx]]
+    client[kQueue][client[kRunningIdx]++] = null
+
+    util.errorRequest(client, request, err)
+  }
+
+  client[kPendingIdx] = client[kRunningIdx]
+
+  assert(client[kRunning] === 0)
+
+  client.emit('disconnect', client[kUrl], [client], err)
+
+  client[kResume]()
+}
+
+function onSocketClose () {
+  this[kClosed] = true
+}
+
+function clearIdleSocketValidation (socket) {
+  if (socket[kIdleSocketValidationTimeout]) {
+    clearTimeout(socket[kIdleSocketValidationTimeout])
+    socket[kIdleSocketValidationTimeout] = null
+  }
+
+  socket[kIdleSocketValidation] = 0
+}
+
+function scheduleIdleSocketValidation (client, socket) {
+  socket[kIdleSocketValidation] = 1
+  socket[kIdleSocketValidationTimeout] = setTimeout(() => {
+    socket[kIdleSocketValidationTimeout] = null
+    socket[kIdleSocketValidation] = 2
+
+    if (client[kSocket] === socket && !socket.destroyed) {
+      client[kResume]()
+    }
+  }, 0)
+  socket[kIdleSocketValidationTimeout].unref?.()
+}
+
+/**
+ * @param {import('./client.js')} client
+ */
 function resumeH1 (client) {
   const socket = client[kSocket]
 
@@ -815,9 +1089,35 @@ function resumeH1 (client) {
       socket[kNoRef] = false
     }
 
+    if (client[kRunning] === 0 && client[kPending] > 0 && socket[kSocketUsed]) {
+      if (socket[kIdleSocketValidation] === 0) {
+        scheduleIdleSocketValidation(client, socket)
+        socket[kParser].readMore()
+        if (socket.destroyed) {
+          return
+        }
+        return
+      }
+
+      if (socket[kIdleSocketValidation] === 1) {
+        socket[kParser].readMore()
+        if (socket.destroyed) {
+          return
+        }
+        return
+      }
+    }
+
+    if (client[kRunning] === 0) {
+      socket[kParser].readMore()
+      if (socket.destroyed) {
+        return
+      }
+    }
+
     if (client[kSize] === 0) {
-      if (socket[kParser].timeoutType !== TIMEOUT_IDLE) {
-        socket[kParser].setTimeout(client[kKeepAliveTimeoutValue], TIMEOUT_IDLE)
+      if (socket[kParser].timeoutType !== TIMEOUT_KEEP_ALIVE) {
+        socket[kParser].setTimeout(client[kKeepAliveTimeoutValue], TIMEOUT_KEEP_ALIVE)
       }
     } else if (client[kRunning] > 0 && socket[kParser].statusCode < 200) {
       if (socket[kParser].timeoutType !== TIMEOUT_HEADERS) {
@@ -831,20 +1131,42 @@ function resumeH1 (client) {
   }
 }
 
-function errorRequest (client, request, err) {
-  try {
-    request.onError(err)
-    assert(request.aborted)
-  } catch (err) {
-    client.emit('error', err)
-  }
-}
-
 // https://www.rfc-editor.org/rfc/rfc7230#section-3.3.2
 function shouldSendContentLength (method) {
   return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS' && method !== 'TRACE' && method !== 'CONNECT'
 }
 
+function setTypeOfService (socket, request) {
+  if (typeof socket.setTypeOfService !== 'function') {
+    return
+  }
+
+  const typeOfService = request.typeOfService
+
+  if (typeOfService === undefined) {
+    return
+  }
+
+  const currentTypeOfService = socket[kTypeOfService]
+
+  if (currentTypeOfService === typeOfService) {
+    return
+  }
+
+  try {
+    socket.setTypeOfService(typeOfService)
+    socket[kTypeOfService] = typeOfService
+  } catch {
+    // QoS marking is best-effort. setTypeOfService() can throw synchronously on
+    // some platforms depending on socket state, but that must not abort the request.
+  }
+}
+
+/**
+ * @param {import('./client.js')} client
+ * @param {import('../core/request.js')} request
+ * @returns
+ */
 function writeH1 (client, request) {
   const { method, path, host, upgrade, blocking, reset } = request
 
@@ -862,7 +1184,10 @@ function writeH1 (client, request) {
   const expectsPayload = (
     method === 'PUT' ||
     method === 'POST' ||
-    method === 'PATCH'
+    method === 'PATCH' ||
+    method === 'QUERY' ||
+    method === 'PROPFIND' ||
+    method === 'PROPPATCH'
   )
 
   if (util.isFormDataLike(body)) {
@@ -876,8 +1201,16 @@ function writeH1 (client, request) {
     }
     body = bodyStream.stream
     contentLength = bodyStream.length
-  } else if (util.isBlobLike(body) && request.contentType == null && body.type) {
-    headers.push('content-type', body.type)
+  } else if (util.isBlobLike(body) && request.contentType == null) {
+    const contentType = body.type
+    if (contentType) {
+      const contentTypeValue = `${contentType}`
+      if (!util.isValidHeaderValue(contentTypeValue)) {
+        util.errorRequest(client, request, new InvalidArgumentError('invalid content-type header'))
+        return false
+      }
+      headers.push('content-type', contentTypeValue)
+    }
   }
 
   if (body && typeof body.read === 'function') {
@@ -906,7 +1239,7 @@ function writeH1 (client, request) {
   // A user agent may send a Content-Length header with 0 value, this should be allowed.
   if (shouldSendContentLength(method) && contentLength > 0 && request.contentLength !== null && request.contentLength !== contentLength) {
     if (client[kStrictContentLength]) {
-      errorRequest(client, request, new RequestContentLengthMismatchError())
+      util.errorRequest(client, request, new RequestContentLengthMismatchError())
       return false
     }
 
@@ -914,23 +1247,30 @@ function writeH1 (client, request) {
   }
 
   const socket = client[kSocket]
+  clearIdleSocketValidation(socket)
+
+  /**
+   * @param {Error} [err]
+   * @returns {void}
+   */
+  const abort = (err) => {
+    if (request.aborted || request.completed) {
+      return
+    }
+
+    util.errorRequest(client, request, err || new RequestAbortedError())
+
+    util.destroy(body)
+    util.destroy(socket, new InformationalError('aborted'))
+  }
 
   try {
-    request.onConnect((err) => {
-      if (request.aborted || request.completed) {
-        return
-      }
-
-      errorRequest(client, request, err || new RequestAbortedError())
-
-      util.destroy(socket, new InformationalError('aborted'))
-    })
+    request.onRequestStart(abort, null)
   } catch (err) {
-    errorRequest(client, request, err)
+    util.errorRequest(client, request, err)
   }
 
   if (request.aborted) {
-    util.destroy(body)
     return false
   }
 
@@ -953,13 +1293,15 @@ function writeH1 (client, request) {
     socket[kReset] = reset
   }
 
-  if (client[kMaxRequests] && socket[kCounter]++ >= client[kMaxRequests]) {
+  if (client[kMaxRequests] && ++socket[kCounter] >= client[kMaxRequests]) {
     socket[kReset] = true
   }
 
   if (blocking) {
     socket[kBlocking] = true
   }
+
+  setTypeOfService(socket, request)
 
   let header = `${method} ${path} HTTP/1.1\r\n`
 
@@ -996,37 +1338,20 @@ function writeH1 (client, request) {
     channels.sendHeaders.publish({ request, headers: header, socket })
   }
 
-  /* istanbul ignore else: assertion */
   if (!body || bodyLength === 0) {
-    if (contentLength === 0) {
-      socket.write(`${header}content-length: 0\r\n\r\n`, 'latin1')
-    } else {
-      assert(contentLength === null, 'no body must not have content length')
-      socket.write(`${header}\r\n`, 'latin1')
-    }
-    request.onRequestSent()
+    writeBuffer(abort, null, client, request, socket, contentLength, header, expectsPayload)
   } else if (util.isBuffer(body)) {
-    assert(contentLength === body.byteLength, 'buffer body must have content length')
-
-    socket.cork()
-    socket.write(`${header}content-length: ${contentLength}\r\n\r\n`, 'latin1')
-    socket.write(body)
-    socket.uncork()
-    request.onBodySent(body)
-    request.onRequestSent()
-    if (!expectsPayload) {
-      socket[kReset] = true
-    }
+    writeBuffer(abort, body, client, request, socket, contentLength, header, expectsPayload)
   } else if (util.isBlobLike(body)) {
     if (typeof body.stream === 'function') {
-      writeIterable({ body: body.stream(), client, request, socket, contentLength, header, expectsPayload })
+      writeIterable(abort, body.stream(), client, request, socket, contentLength, header, expectsPayload)
     } else {
-      writeBlob({ body, client, request, socket, contentLength, header, expectsPayload })
+      writeBlob(abort, body, client, request, socket, contentLength, header, expectsPayload)
     }
   } else if (util.isStream(body)) {
-    writeStream({ body, client, request, socket, contentLength, header, expectsPayload })
+    writeStream(abort, body, client, request, socket, contentLength, header, expectsPayload)
   } else if (util.isIterable(body)) {
-    writeIterable({ body, client, request, socket, contentLength, header, expectsPayload })
+    writeIterable(abort, body, client, request, socket, contentLength, header, expectsPayload)
   } else {
     assert(false)
   }
@@ -1034,13 +1359,27 @@ function writeH1 (client, request) {
   return true
 }
 
-function writeStream ({ h2stream, body, client, request, socket, contentLength, header, expectsPayload }) {
+/**
+ * @param {AbortCallback} abort
+ * @param {import('stream').Stream} body
+ * @param {import('./client.js')} client
+ * @param {import('../core/request.js')} request
+ * @param {import('net').Socket} socket
+ * @param {number} contentLength
+ * @param {string} header
+ * @param {boolean} expectsPayload
+ */
+function writeStream (abort, body, client, request, socket, contentLength, header, expectsPayload) {
   assert(contentLength !== 0 || client[kRunning] === 0, 'stream body cannot be pipelined')
 
   let finished = false
 
-  const writer = new AsyncWriter({ socket, request, contentLength, client, expectsPayload, header })
+  const writer = new AsyncWriter({ abort, socket, request, contentLength, client, expectsPayload, header })
 
+  /**
+   * @param {Buffer} chunk
+   * @returns {void}
+   */
   const onData = function (chunk) {
     if (finished) {
       return
@@ -1054,6 +1393,10 @@ function writeStream ({ h2stream, body, client, request, socket, contentLength, 
       util.destroy(this, err)
     }
   }
+
+  /**
+   * @returns {void}
+   */
   const onDrain = function () {
     if (finished) {
       return
@@ -1063,6 +1406,10 @@ function writeStream ({ h2stream, body, client, request, socket, contentLength, 
       body.resume()
     }
   }
+
+  /**
+   * @returns {void}
+   */
   const onClose = function () {
     // 'close' might be emitted *before* 'error' for
     // broken streams. Wait a tick to avoid this case.
@@ -1077,6 +1424,11 @@ function writeStream ({ h2stream, body, client, request, socket, contentLength, 
       queueMicrotask(() => onFinished(err))
     }
   }
+
+  /**
+   * @param {Error} [err]
+   * @returns
+   */
   const onFinished = function (err) {
     if (finished) {
       return
@@ -1127,9 +1479,9 @@ function writeStream ({ h2stream, body, client, request, socket, contentLength, 
     .on('error', onFinished)
 
   if (body.errorEmitted ?? body.errored) {
-    setImmediate(() => onFinished(body.errored))
+    setImmediate(onFinished, body.errored)
   } else if (body.endEmitted ?? body.readableEnded) {
-    setImmediate(() => onFinished(null))
+    setImmediate(onFinished, null)
   }
 
   if (body.closeEmitted ?? body.closed) {
@@ -1137,9 +1489,66 @@ function writeStream ({ h2stream, body, client, request, socket, contentLength, 
   }
 }
 
-async function writeBlob ({ h2stream, body, client, request, socket, contentLength, header, expectsPayload }) {
-  assert(contentLength === body.size, 'blob body must have content length')
+/**
+ * @typedef AbortCallback
+ * @type {Function}
+ * @param {Error} [err]
+ * @returns {void}
+ */
 
+/**
+ * @param {AbortCallback} abort
+ * @param {Uint8Array|null} body
+ * @param {import('./client.js')} client
+ * @param {import('../core/request.js')} request
+ * @param {import('net').Socket} socket
+ * @param {number} contentLength
+ * @param {string} header
+ * @param {boolean} expectsPayload
+ * @returns {void}
+ */
+function writeBuffer (abort, body, client, request, socket, contentLength, header, expectsPayload) {
+  try {
+    if (!body) {
+      if (contentLength === 0) {
+        socket.write(`${header}content-length: 0\r\n\r\n`, 'latin1')
+      } else {
+        assert(contentLength === null, 'no body must not have content length')
+        socket.write(`${header}\r\n`, 'latin1')
+      }
+    } else if (util.isBuffer(body)) {
+      assert(contentLength === body.byteLength, 'buffer body must have content length')
+
+      socket.cork()
+      socket.write(`${header}content-length: ${contentLength}\r\n\r\n`, 'latin1')
+      socket.write(body)
+      socket.uncork()
+      request.onBodySent(body)
+
+      if (!expectsPayload && request.reset !== false) {
+        socket[kReset] = true
+      }
+    }
+    request.onRequestSent()
+
+    client[kResume]()
+  } catch (err) {
+    abort(err)
+  }
+}
+
+/**
+ * @param {AbortCallback} abort
+ * @param {Blob} body
+ * @param {import('./client.js')} client
+ * @param {import('../core/request.js')} request
+ * @param {import('net').Socket} socket
+ * @param {number} contentLength
+ * @param {string} header
+ * @param {boolean} expectsPayload
+ * @returns {Promise<void>}
+ */
+async function writeBlob (abort, body, client, request, socket, contentLength, header, expectsPayload) {
   try {
     if (contentLength != null && contentLength !== body.size) {
       throw new RequestContentLengthMismatchError()
@@ -1155,17 +1564,28 @@ async function writeBlob ({ h2stream, body, client, request, socket, contentLeng
     request.onBodySent(buffer)
     request.onRequestSent()
 
-    if (!expectsPayload) {
+    if (!expectsPayload && request.reset !== false) {
       socket[kReset] = true
     }
 
     client[kResume]()
   } catch (err) {
-    util.destroy(socket, err)
+    abort(err)
   }
 }
 
-async function writeIterable ({ h2stream, body, client, request, socket, contentLength, header, expectsPayload }) {
+/**
+ * @param {AbortCallback} abort
+ * @param {Iterable} body
+ * @param {import('./client.js')} client
+ * @param {import('../core/request.js')} request
+ * @param {import('net').Socket} socket
+ * @param {number} contentLength
+ * @param {string} header
+ * @param {boolean} expectsPayload
+ * @returns {Promise<void>}
+ */
+async function writeIterable (abort, body, client, request, socket, contentLength, header, expectsPayload) {
   assert(contentLength !== 0 || client[kRunning] === 0, 'iterator body cannot be pipelined')
 
   let callback = null
@@ -1191,7 +1611,7 @@ async function writeIterable ({ h2stream, body, client, request, socket, content
     .on('close', onDrain)
     .on('drain', onDrain)
 
-  const writer = new AsyncWriter({ socket, request, contentLength, client, expectsPayload, header })
+  const writer = new AsyncWriter({ abort, socket, request, contentLength, client, expectsPayload, header })
   try {
     // It's up to the user to somehow abort the async iterable.
     for await (const chunk of body) {
@@ -1215,7 +1635,18 @@ async function writeIterable ({ h2stream, body, client, request, socket, content
 }
 
 class AsyncWriter {
-  constructor ({ socket, request, contentLength, client, expectsPayload, header }) {
+  /**
+   *
+   * @param {object} arg
+   * @param {AbortCallback} arg.abort
+   * @param {import('net').Socket} arg.socket
+   * @param {import('../core/request.js')} arg.request
+   * @param {number} arg.contentLength
+   * @param {import('./client.js')} arg.client
+   * @param {boolean} arg.expectsPayload
+   * @param {string} arg.header
+   */
+  constructor ({ abort, socket, request, contentLength, client, expectsPayload, header }) {
     this.socket = socket
     this.request = request
     this.contentLength = contentLength
@@ -1223,10 +1654,15 @@ class AsyncWriter {
     this.bytesWritten = 0
     this.expectsPayload = expectsPayload
     this.header = header
+    this.abort = abort
 
     socket[kWriting] = true
   }
 
+  /**
+   * @param {string|Uint8Array} chunk
+   * @returns
+   */
   write (chunk) {
     const { socket, request, contentLength, client, bytesWritten, expectsPayload, header } = this
 
@@ -1238,7 +1674,7 @@ class AsyncWriter {
       return false
     }
 
-    const len = Buffer.byteLength(chunk)
+    const len = chunk instanceof Uint8Array ? chunk.byteLength : Buffer.byteLength(chunk)
     if (!len) {
       return true
     }
@@ -1255,7 +1691,7 @@ class AsyncWriter {
     socket.cork()
 
     if (bytesWritten === 0) {
-      if (!expectsPayload) {
+      if (!expectsPayload && request.reset !== false) {
         socket[kReset] = true
       }
 
@@ -1280,7 +1716,6 @@ class AsyncWriter {
 
     if (!ret) {
       if (socket[kParser].timeout && socket[kParser].timeoutType === TIMEOUT_HEADERS) {
-        // istanbul ignore else: only for jest
         if (socket[kParser].timeout.refresh) {
           socket[kParser].timeout.refresh()
         }
@@ -1290,6 +1725,9 @@ class AsyncWriter {
     return ret
   }
 
+  /**
+   * @returns {void}
+   */
   end () {
     const { socket, contentLength, client, bytesWritten, expectsPayload, header, request } = this
     request.onRequestSent()
@@ -1328,7 +1766,6 @@ class AsyncWriter {
     }
 
     if (socket[kParser].timeout && socket[kParser].timeoutType === TIMEOUT_HEADERS) {
-      // istanbul ignore else: only for jest
       if (socket[kParser].timeout.refresh) {
         socket[kParser].timeout.refresh()
       }
@@ -1337,14 +1774,18 @@ class AsyncWriter {
     client[kResume]()
   }
 
+  /**
+   * @param {Error} [err]
+   * @returns {void}
+   */
   destroy (err) {
-    const { socket, client } = this
+    const { socket, client, abort } = this
 
     socket[kWriting] = false
 
     if (err) {
       assert(client[kRunning] <= 1, 'pipeline should only contain this request')
-      util.destroy(socket, err)
+      abort(err)
     }
   }
 }

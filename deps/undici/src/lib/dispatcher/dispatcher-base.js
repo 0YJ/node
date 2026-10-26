@@ -6,47 +6,51 @@ const {
   ClientClosedError,
   InvalidArgumentError
 } = require('../core/errors')
-const { kDestroy, kClose, kDispatch, kInterceptors } = require('../core/symbols')
+const { kDestroy, kClose, kClosed, kDestroyed, kDispatch } = require('../core/symbols')
 
-const kDestroyed = Symbol('destroyed')
-const kClosed = Symbol('closed')
 const kOnDestroyed = Symbol('onDestroyed')
 const kOnClosed = Symbol('onClosed')
-const kInterceptedDispatch = Symbol('Intercepted Dispatch')
+const kWebSocketOptions = Symbol('webSocketOptions')
 
 class DispatcherBase extends Dispatcher {
-  constructor () {
-    super()
+  /** @type {boolean} */
+  [kDestroyed] = false;
 
-    this[kDestroyed] = false
-    this[kOnDestroyed] = null
-    this[kClosed] = false
-    this[kOnClosed] = []
+  /** @type {Array<Function|null} */
+  [kOnDestroyed] = null;
+
+  /** @type {boolean} */
+  [kClosed] = false;
+
+  /** @type {Array<Function>|null} */
+  [kOnClosed] = null
+
+  /**
+   * @param {import('../../types/dispatcher').DispatcherOptions} [opts]
+   */
+  constructor (opts) {
+    super()
+    this[kWebSocketOptions] = opts?.webSocket ?? {}
   }
 
+  /**
+   * @returns {import('../../types/dispatcher').WebSocketOptions}
+   */
+  get webSocketOptions () {
+    return {
+      maxFragments: this[kWebSocketOptions].maxFragments ?? 131072,
+      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024 // 128 MB default
+    }
+  }
+
+  /** @returns {boolean} */
   get destroyed () {
     return this[kDestroyed]
   }
 
+  /** @returns {boolean} */
   get closed () {
     return this[kClosed]
-  }
-
-  get interceptors () {
-    return this[kInterceptors]
-  }
-
-  set interceptors (newInterceptors) {
-    if (newInterceptors) {
-      for (let i = newInterceptors.length - 1; i >= 0; i--) {
-        const interceptor = this[kInterceptors][i]
-        if (typeof interceptor !== 'function') {
-          throw new InvalidArgumentError('interceptor must be an function')
-        }
-      }
-    }
-
-    this[kInterceptors] = newInterceptors
   }
 
   close (callback) {
@@ -63,7 +67,8 @@ class DispatcherBase extends Dispatcher {
     }
 
     if (this[kDestroyed]) {
-      queueMicrotask(() => callback(new ClientDestroyedError(), null))
+      const err = new ClientDestroyedError()
+      queueMicrotask(() => callback(err, null))
       return
     }
 
@@ -77,6 +82,7 @@ class DispatcherBase extends Dispatcher {
     }
 
     this[kClosed] = true
+    this[kOnClosed] ??= []
     this[kOnClosed].push(callback)
 
     const onClosed = () => {
@@ -90,9 +96,7 @@ class DispatcherBase extends Dispatcher {
     // Should not error.
     this[kClose]()
       .then(() => this.destroy())
-      .then(() => {
-        queueMicrotask(onClosed)
-      })
+      .then(() => queueMicrotask(onClosed))
   }
 
   destroy (err, callback) {
@@ -104,7 +108,7 @@ class DispatcherBase extends Dispatcher {
     if (callback === undefined) {
       return new Promise((resolve, reject) => {
         this.destroy(err, (err, data) => {
-          return err ? /* istanbul ignore next: should never error */ reject(err) : resolve(data)
+          return err ? reject(err) : resolve(data)
         })
       })
     }
@@ -127,7 +131,7 @@ class DispatcherBase extends Dispatcher {
     }
 
     this[kDestroyed] = true
-    this[kOnDestroyed] = this[kOnDestroyed] || []
+    this[kOnDestroyed] ??= []
     this[kOnDestroyed].push(callback)
 
     const onDestroyed = () => {
@@ -139,23 +143,8 @@ class DispatcherBase extends Dispatcher {
     }
 
     // Should not error.
-    this[kDestroy](err).then(() => {
-      queueMicrotask(onDestroyed)
-    })
-  }
-
-  [kInterceptedDispatch] (opts, handler) {
-    if (!this[kInterceptors] || this[kInterceptors].length === 0) {
-      this[kInterceptedDispatch] = this[kDispatch]
-      return this[kDispatch](opts, handler)
-    }
-
-    let dispatch = this[kDispatch].bind(this)
-    for (let i = this[kInterceptors].length - 1; i >= 0; i--) {
-      dispatch = this[kInterceptors][i](dispatch)
-    }
-    this[kInterceptedDispatch] = dispatch
-    return dispatch(opts, handler)
+    this[kDestroy](err)
+      .then(() => queueMicrotask(onDestroyed))
   }
 
   dispatch (opts, handler) {
@@ -168,6 +157,10 @@ class DispatcherBase extends Dispatcher {
         throw new InvalidArgumentError('opts must be an object.')
       }
 
+      if (opts.dispatcher) {
+        throw new InvalidArgumentError('opts.dispatcher is not supported by instance methods. Pass opts.dispatcher to the top-level undici functions or call the dispatcher instance method directly.')
+      }
+
       if (this[kDestroyed] || this[kOnDestroyed]) {
         throw new ClientDestroyedError()
       }
@@ -176,13 +169,13 @@ class DispatcherBase extends Dispatcher {
         throw new ClientClosedError()
       }
 
-      return this[kInterceptedDispatch](opts, handler)
+      return this[kDispatch](opts, handler)
     } catch (err) {
-      if (typeof handler.onError !== 'function') {
-        throw new InvalidArgumentError('invalid onError method')
+      if (typeof handler.onResponseError !== 'function') {
+        throw err
       }
 
-      handler.onError(err)
+      handler.onResponseError(null, err)
 
       return false
     }

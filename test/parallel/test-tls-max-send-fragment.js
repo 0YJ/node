@@ -20,7 +20,9 @@
 // USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 'use strict';
+
 const common = require('../common');
+const { isBoringSSL } = require('../common/crypto');
 const fixtures = require('../common/fixtures');
 
 if (!common.hasCrypto)
@@ -41,7 +43,7 @@ const invalidArgumentError = {
 const server = tls.createServer({
   key: fixtures.readKey('agent1-key.pem'),
   cert: fixtures.readKey('agent1-cert.pem')
-}, function(c) {
+}, common.mustCall((c) => {
 
   // No size is passed.
   assert.throws(() => c.setMaxSendFragment(), invalidArgumentError);
@@ -60,22 +62,28 @@ const server = tls.createServer({
 
   assert.throws(() => c.setMaxSendFragment(Symbol()), { name: 'TypeError' });
 
-  // Lower and upper limits.
-  assert(!c.setMaxSendFragment(511));
-  assert(!c.setMaxSendFragment(16385));
+  // OpenSSL enforces Node's documented fragment size range. BoringSSL accepts
+  // both out-of-range values and reports success, so assert that difference
+  // explicitly instead of using a truthiness shortcut.
+  const acceptsOutOfRangeFragmentSize =
+    isBoringSSL;
+  assert.strictEqual(c.setMaxSendFragment(511),
+                     acceptsOutOfRangeFragmentSize);
+  assert.strictEqual(c.setMaxSendFragment(16385),
+                     acceptsOutOfRangeFragmentSize);
 
   // Correct fragment size.
   assert(c.setMaxSendFragment(maxChunk));
 
   c.end(buf);
-}).listen(0, common.mustCall(function() {
+})).listen(0, common.mustCall(function() {
   const c = tls.connect(this.address().port, {
     rejectUnauthorized: false
   }, common.mustCall(function() {
-    c.on('data', function(chunk) {
+    c.on('data', common.mustCallAtLeast((chunk) => {
       assert(chunk.length <= maxChunk);
       received += chunk.length;
-    });
+    }));
 
     // Ensure that we receive 'end' event anyway
     c.on('end', common.mustCall(function() {

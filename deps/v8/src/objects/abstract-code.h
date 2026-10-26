@@ -24,16 +24,16 @@ class Code;
 // class?
 class AbstractCode : public HeapObject {
  public:
-  int SourcePosition(PtrComprCageBase cage_base, int offset);
-  int SourceStatementPosition(PtrComprCageBase cage_base, int offset);
+  int SourcePosition(Isolate* isolate, int offset);
+  int SourceStatementPosition(Isolate* isolate, int offset);
 
   inline Address InstructionStart(PtrComprCageBase cage_base);
   inline Address InstructionEnd(PtrComprCageBase cage_base);
   inline int InstructionSize(PtrComprCageBase cage_base);
 
   // Return the source position table for interpreter code.
-  inline Tagged<ByteArray> SourcePositionTable(Isolate* isolate,
-                                               Tagged<SharedFunctionInfo> sfi);
+  inline Tagged<TrustedByteArray> SourcePositionTable(
+      Isolate* isolate, Tagged<SharedFunctionInfo> sfi);
 
   void DropStackFrameCache(PtrComprCageBase cage_base);
 
@@ -50,15 +50,13 @@ class AbstractCode : public HeapObject {
 
   inline bool has_instruction_stream(PtrComprCageBase cage_base);
 
-  DECL_CAST(AbstractCode)
+  bool is_context_specialized(PtrComprCageBase cage_base);
+  BytecodeOffset osr_offset(PtrComprCageBase cage_base);
 
   inline Tagged<Code> GetCode();
   inline Tagged<BytecodeArray> GetBytecodeArray();
 
  private:
-  inline Tagged<ByteArray> SourcePositionTableInternal(
-      PtrComprCageBase cage_base);
-
   OBJECT_CONSTRUCTORS(AbstractCode, HeapObject);
 };
 

@@ -7,6 +7,8 @@ const cp = require('child_process');
 const fs = require('fs');
 const tmpdir = require('../common/tmpdir');
 
+common.skipIfPerfettoEnabled();
+
 // This tests the emission of node.environment trace events
 
 const names = new Set([
@@ -46,13 +48,12 @@ if (process.argv[2] === 'child') {
 
     assert(fs.existsSync(file));
     const data = await fs.promises.readFile(file);
-    JSON.parse(data.toString()).traceEvents
-      .filter((trace) => trace.cat !== '__metadata')
-      .forEach((trace) => {
-        assert.strictEqual(trace.pid, proc.pid);
-        assert(names.has(trace.name));
-        checkSet.add(trace.name);
-      });
+    for (const trace of JSON.parse(data.toString()).traceEvents
+      .filter((trace) => trace.cat !== '__metadata')) {
+      assert.strictEqual(trace.pid, proc.pid);
+      assert(names.has(trace.name));
+      checkSet.add(trace.name);
+    }
 
     assert.deepStrictEqual(names, checkSet);
   }));

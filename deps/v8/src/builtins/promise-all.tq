@@ -41,15 +41,13 @@ macro CreatePromiseAllResolveElementContext(
 macro CreatePromiseAllResolveElementFunction(
     implicit context: Context)(
     resolveElementContext: PromiseAllResolveElementContext, index: Smi,
-    nativeContext: NativeContext,
-    resolveFunction: SharedFunctionInfo): JSFunction {
+    resolveFunction: constexpr intptr): JSFunction {
   dcheck(index > 0);
   dcheck(index < kPropertyArrayHashFieldMax);
 
-  const map = *ContextSlot(
-      nativeContext, ContextSlot::STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX);
-  const resolve = AllocateFunctionWithMapAndContext(
-      map, resolveFunction, resolveElementContext);
+  const resolve = AllocateRootFunctionWithContext(
+      resolveFunction, resolveElementContext,
+      LoadNativeContext(resolveElementContext));
 
   dcheck(kPropertyArrayNoHashSentinel == 0);
   resolve.properties_or_hash = index;
@@ -65,17 +63,14 @@ macro CreatePromiseResolvingFunctionsContext(
           nativeContext,
           PromiseResolvingFunctionContextSlot::kPromiseContextLength));
   InitContextSlot(
-      resolveContext, PromiseResolvingFunctionContextSlot::kPromiseSlot,
-      promise);
-  InitContextSlot(
-      resolveContext, PromiseResolvingFunctionContextSlot::kAlreadyResolvedSlot,
-      False);
+      resolveContext,
+      PromiseResolvingFunctionContextSlot::kPromiseIfNotResolvedSlot, promise);
   InitContextSlot(
       resolveContext, PromiseResolvingFunctionContextSlot::kDebugEventSlot,
       debugEvent);
   static_assert(
       PromiseResolvingFunctionContextSlot::kPromiseContextLength ==
-      ContextSlot::MIN_CONTEXT_SLOTS + 3);
+      ContextSlot::MIN_CONTEXT_SLOTS + 2);
   return resolveContext;
 }
 
@@ -91,15 +86,18 @@ macro IsPromiseThenLookupChainIntact(
   return !IsPromiseThenProtectorCellInvalid();
 }
 
+const kPromiseAllResolveElementClosureSharedFun: constexpr intptr
+    generates 'static_cast<intptr_t>(RootIndex::kPromiseAllResolveElementClosureSharedFun)'
+    ;
 struct PromiseAllResolveElementFunctor {
   macro Call(
       implicit context: Context)(
       resolveElementContext: PromiseAllResolveElementContext,
-      nativeContext: NativeContext, index: Smi,
+      _nativeContext: NativeContext, index: Smi,
       _capability: PromiseCapability): Callable {
     return CreatePromiseAllResolveElementFunction(
-        resolveElementContext, index, nativeContext,
-        PromiseAllResolveElementSharedFunConstant());
+        resolveElementContext, index,
+        kPromiseAllResolveElementClosureSharedFun);
   }
 }
 
@@ -113,27 +111,33 @@ struct PromiseAllRejectElementFunctor {
   }
 }
 
+const kPromiseAllSettledResolveElementClosureSharedFun: constexpr intptr
+    generates 'static_cast<intptr_t>(RootIndex::kPromiseAllSettledResolveElementClosureSharedFun)'
+    ;
 struct PromiseAllSettledResolveElementFunctor {
   macro Call(
       implicit context: Context)(
       resolveElementContext: PromiseAllResolveElementContext,
-      nativeContext: NativeContext, index: Smi,
+      _nativeContext: NativeContext, index: Smi,
       _capability: PromiseCapability): Callable {
     return CreatePromiseAllResolveElementFunction(
-        resolveElementContext, index, nativeContext,
-        PromiseAllSettledResolveElementSharedFunConstant());
+        resolveElementContext, index,
+        kPromiseAllSettledResolveElementClosureSharedFun);
   }
 }
 
+const kPromiseAllSettledRejectElementClosureSharedFun: constexpr intptr
+    generates 'static_cast<intptr_t>(RootIndex::kPromiseAllSettledRejectElementClosureSharedFun)'
+    ;
 struct PromiseAllSettledRejectElementFunctor {
   macro Call(
       implicit context: Context)(
       resolveElementContext: PromiseAllResolveElementContext,
-      nativeContext: NativeContext, index: Smi,
+      _nativeContext: NativeContext, index: Smi,
       _capability: PromiseCapability): Callable {
     return CreatePromiseAllResolveElementFunction(
-        resolveElementContext, index, nativeContext,
-        PromiseAllSettledRejectElementSharedFunConstant());
+        resolveElementContext, index,
+        kPromiseAllSettledRejectElementClosureSharedFun);
   }
 }
 
@@ -267,7 +271,7 @@ Reject(JSAny) {
       index += 1;
     }
   } catch (e, _message) deferred {
-    iterator::IteratorCloseOnException(iter);
+    iterator::IteratorCloseOnException(iter.object);
     goto Reject(e);
   } label Done {}
 
@@ -384,12 +388,6 @@ transitioning javascript builtin PromiseAllSettled(
       receiver, iterable, PromiseAllSettledResolveElementFunctor{},
       PromiseAllSettledRejectElementFunctor{}, 'Promise.allSettled');
 }
-
-extern macro PromiseAllResolveElementSharedFunConstant(): SharedFunctionInfo;
-extern macro PromiseAllSettledRejectElementSharedFunConstant():
-    SharedFunctionInfo;
-extern macro PromiseAllSettledResolveElementSharedFunConstant():
-    SharedFunctionInfo;
 
 extern macro MakeFixedArrayCOW(FixedArray): void;
 }
