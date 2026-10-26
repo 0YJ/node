@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // Rename behaviour: overwrite, type mismatches, same-parent rename.

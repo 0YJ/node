@@ -1,6 +1,5 @@
 'use strict'
 
-const buffer = require('node:buffer')
 const Dispatcher = require('./dispatcher')
 const {
   ClientDestroyedError,
@@ -8,12 +7,10 @@ const {
   InvalidArgumentError
 } = require('../core/errors')
 const { kDestroy, kClose, kClosed, kDestroyed, kDispatch } = require('../core/symbols')
-const { defaultWebSocketMaxFragments, defaultWebSocketMaxPayloadSize } = require('../core/constants')
 
 const kOnDestroyed = Symbol('onDestroyed')
 const kOnClosed = Symbol('onClosed')
 const kWebSocketOptions = Symbol('webSocketOptions')
-const kEventSourceOptions = Symbol('eventSourceOptions')
 
 class DispatcherBase extends Dispatcher {
   /** @type {boolean} */
@@ -34,25 +31,15 @@ class DispatcherBase extends Dispatcher {
   constructor (opts) {
     super()
     this[kWebSocketOptions] = opts?.webSocket ?? {}
-    this[kEventSourceOptions] = opts?.eventSource ?? {}
   }
 
   /**
-   * @returns {import('../../types/client').Client.WebSocketOptions}
+   * @returns {import('../../types/dispatcher').WebSocketOptions}
    */
   get webSocketOptions () {
     return {
-      maxFragments: this[kWebSocketOptions].maxFragments ?? defaultWebSocketMaxFragments,
-      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? defaultWebSocketMaxPayloadSize
-    }
-  }
-
-  /**
-   * @returns {import('../../types/client').Client.EventSourceOptions}
-   */
-  get eventSourceOptions () {
-    return {
-      maxEventSize: this[kEventSourceOptions].maxEventSize ?? buffer.kStringMaxLength
+      maxFragments: this[kWebSocketOptions].maxFragments ?? 131072,
+      maxPayloadSize: this[kWebSocketOptions].maxPayloadSize ?? 128 * 1024 * 1024 // 128 MB default
     }
   }
 

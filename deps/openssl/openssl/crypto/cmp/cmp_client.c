@@ -9,10 +9,16 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <stdio.h>
-
 #include "cmp_local.h"
-#include <inttypes.h>
+#include "internal/cryptlib.h"
+
+/* explicit #includes not strictly needed since implied by the above: */
+#include <openssl/bio.h>
+#include <openssl/cmp.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/x509v3.h>
+#include <openssl/cmp_util.h>
 
 #define IS_CREP(t) ((t) == OSSL_CMP_PKIBODY_IP || (t) == OSSL_CMP_PKIBODY_CP \
     || (t) == OSSL_CMP_PKIBODY_KUP)
@@ -233,7 +239,7 @@ static int send_receive_check(OSSL_CMP_CTX *ctx, const OSSL_CMP_MSG *req,
                 != NULL)
             ERR_add_error_data(1, buf);
         if (emc->errorCode != NULL
-            && snprintf(buf, sizeof(buf), "; errorCode: %08lX",
+            && BIO_snprintf(buf, sizeof(buf), "; errorCode: %08lX",
                    ASN1_INTEGER_get(emc->errorCode))
                 > 0)
             ERR_add_error_data(1, buf);
@@ -312,7 +318,7 @@ static int poll_for_response(OSSL_CMP_CTX *ctx, int sleep, int rid,
             }
             if (check_after < 0 || (uint64_t)check_after > (sleep ? ULONG_MAX / 1000 : INT_MAX)) {
                 ERR_raise(ERR_LIB_CMP, CMP_R_CHECKAFTER_OUT_OF_RANGE);
-                if (snprintf(str, OSSL_CMP_PKISI_BUFLEN, "value = %" PRId64,
+                if (BIO_snprintf(str, OSSL_CMP_PKISI_BUFLEN, "value = %jd",
                         check_after)
                     >= 0)
                     ERR_add_error_data(1, str);
@@ -320,21 +326,18 @@ static int poll_for_response(OSSL_CMP_CTX *ctx, int sleep, int rid,
             }
 
             if (pollRep->reason == NULL
-                || (len = snprintf(str, OSSL_CMP_PKISI_BUFLEN,
+                || (len = BIO_snprintf(str, OSSL_CMP_PKISI_BUFLEN,
                         " with reason = '"))
-                    < 0
-                || (size_t)len >= OSSL_CMP_PKISI_BUFLEN) {
+                    < 0) {
                 *str = '\0';
             } else {
                 char *text = ossl_sk_ASN1_UTF8STRING2text(pollRep->reason, ", ",
                     sizeof(str) - len - 2);
-                int n;
 
                 if (text == NULL
-                    || (n = snprintf(str + len, sizeof(str) - len,
-                            "%s'", text))
-                        < 0
-                    || (size_t)n >= sizeof(str) - len)
+                    || BIO_snprintf(str + len, sizeof(str) - len,
+                           "%s'", text)
+                        < 0)
                     *str = '\0';
                 OPENSSL_free(text);
             }
@@ -996,23 +999,16 @@ int OSSL_CMP_exec_RR_ses(OSSL_CMP_CTX *ctx)
             ret = 0;
             goto err;
         }
-        /*
-         * The issuer and serial number are absent if the certificate to be
-         * revoked was given as a PKCS#10 CSR, in which case there is nothing
-         * to check the CertId of the response against.
-         */
-        if (issuer != NULL
-            && X509_NAME_cmp(issuer, OSSL_CRMF_CERTID_get0_issuer(cid)) != 0) {
+        if (X509_NAME_cmp(issuer, OSSL_CRMF_CERTID_get0_issuer(cid)) != 0) {
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
             ERR_raise(ERR_LIB_CMP, CMP_R_WRONG_CERTID_IN_RP);
             ret = 0;
             goto err;
 #endif
         }
-        if (serial != NULL
-            && ASN1_INTEGER_cmp(serial,
-                   OSSL_CRMF_CERTID_get0_serialNumber(cid))
-                != 0) {
+        if (ASN1_INTEGER_cmp(serial,
+                OSSL_CRMF_CERTID_get0_serialNumber(cid))
+            != 0) {
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
             ERR_raise(ERR_LIB_CMP, CMP_R_WRONG_SERIAL_IN_RP);
             ret = 0;

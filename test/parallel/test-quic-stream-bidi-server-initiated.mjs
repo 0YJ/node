@@ -7,7 +7,6 @@
 
 import { hasQuic, skip, mustCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -30,7 +29,8 @@ const serverEndpoint = await listen(mustCall(async (serverSession) => {
     body: encoder.encode(message),
   });
 
-  await dump(stream);
+  // Drain the client's write side (client sends FIN with no data).
+  for await (const batch of stream) { /* drain */ } // eslint-disable-line no-unused-vars
   await stream.closed;
 }));
 

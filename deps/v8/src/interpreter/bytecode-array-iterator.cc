@@ -4,11 +4,9 @@
 
 #include "src/interpreter/bytecode-array-iterator.h"
 
-#include "include/v8config.h"
 #include "src/codegen/bailout-reason.h"
 #include "src/interpreter/bytecode-decoder.h"
 #include "src/interpreter/interpreter-intrinsics.h"
-#include "src/objects/feedback-vector-inl.h"
 #include "src/objects/feedback-vector.h"
 #include "src/objects/objects-inl.h"
 
@@ -37,7 +35,7 @@ BytecodeArrayIterator::BytecodeArrayIterator(
 
 BytecodeArrayIterator::BytecodeArrayIterator(
     Handle<BytecodeArray> bytecode_array, int initial_offset,
-    DisallowGarbageCollection& no_gc V8_LIFETIME_BOUND)
+    DisallowGarbageCollection& no_gc)
     : bytecode_array_(bytecode_array),
       start_(reinterpret_cast<uint8_t*>(
           bytecode_array_->GetFirstBytecodeAddress())),
@@ -267,8 +265,7 @@ RegisterList BytecodeArrayIterator::GetRegisterListOperand(
   return RegisterList(first.index(), count);
 }
 
-uint32_t BytecodeArrayIterator::GetRegisterOperandRange(
-    int operand_index) const {
+int BytecodeArrayIterator::GetRegisterOperandRange(int operand_index) const {
   DCHECK_LE(operand_index, Bytecodes::NumberOfOperands(current_bytecode()));
   const OperandType* operand_types =
       Bytecodes::GetOperandTypes(current_bytecode());
@@ -320,9 +317,8 @@ AbortReason BytecodeArrayIterator::GetAbortReasonOperand(
 
 Tagged<Object> BytecodeArrayIterator::GetConstantAtIndex(int index) const {
   Tagged<TrustedFixedArray> constant_pool = bytecode_array()->constant_pool();
-  CHECK_WITH_MSG(
-      base::IsInHalfOpenRange(index, 0u, constant_pool->ulength().value()),
-      "Constant pool index out of bounds");
+  CHECK_WITH_MSG(base::IsInHalfOpenRange(index, 0, constant_pool->length()),
+                 "Constant pool index out of bounds");
   return constant_pool->get(index);
 }
 
@@ -416,7 +412,7 @@ void BytecodeArrayIterator::UpdatePointers() {
   }
 }
 
-uint8_t BytecodeArrayIterator::GetEmbeddedFeedback(int operand_index) const {
+uint32_t BytecodeArrayIterator::GetEmbeddedFeedback(int operand_index) const {
   DCHECK_GE(operand_index, 0);
   DCHECK_LT(operand_index, Bytecodes::NumberOfOperands(current_bytecode()));
   DCHECK_EQ(OperandType::kEmbeddedFeedback,
@@ -426,37 +422,11 @@ uint8_t BytecodeArrayIterator::GetEmbeddedFeedback(int operand_index) const {
   return BytecodeDecoder::RacyDecodeEmbeddedFeedback(embedded_feedback_start);
 }
 
-// static
-CompareOperationHint EmbeddedFeedbackHintTraits<
-    CompareOperationFeedback>::FromFeedback(uint32_t feedback_value) {
-  return v8::internal::CompareOperationHintFromFeedback(feedback_value);
+CompareOperationHint BytecodeArrayIterator::GetEmbeddedCompareOperationHint() {
+  DCHECK(Bytecodes::IsCompareWithEmbeddedFeedback(current_bytecode()));
+  uint32_t type_feedback = GetEmbeddedFeedback(1);
+  return v8::internal::CompareOperationHintFromFeedback(type_feedback);
 }
-
-// static
-BinaryOperationHint EmbeddedFeedbackHintTraits<
-    BinaryOperationFeedback>::FromFeedback(uint32_t feedback_value) {
-  return v8::internal::BinaryOperationHintFromFeedback(feedback_value);
-}
-
-template <typename Feedback>
-typename EmbeddedFeedbackHintTraits<Feedback>::Hint
-BytecodeArrayIterator::GetEmbeddedOperationHint() {
-  using Traits = EmbeddedFeedbackHintTraits<Feedback>;
-  DCHECK(Traits::IsWithEmbeddedFeedbackOp(current_bytecode()));
-  int operand_index =
-      Bytecodes::IsUnaryOpWithEmbeddedFeedback(current_bytecode())
-          ? kUnaryEmbeddedFeedbackOperandIndex
-          : kEmbeddedFeedbackOperandIndex;
-  uint32_t type_feedback =
-      Feedback::DecodeTypeIndex(static_cast<typename Feedback::TypeIndex>(
-          GetEmbeddedFeedback(operand_index)));
-  return Traits::FromFeedback(type_feedback);
-}
-
-template CompareOperationHint
-BytecodeArrayIterator::GetEmbeddedOperationHint<CompareOperationFeedback>();
-template BinaryOperationHint
-BytecodeArrayIterator::GetEmbeddedOperationHint<BinaryOperationFeedback>();
 
 int BytecodeArrayIterator::GetEmbeddedFeedbackOffset(int operand_index) const {
   DCHECK_EQ(Bytecodes::GetOperandType(current_bytecode(), operand_index),

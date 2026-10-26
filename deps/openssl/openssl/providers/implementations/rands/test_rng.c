@@ -16,14 +16,11 @@
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/proverr.h>
-#include <openssl/randerr.h>
-#include "internal/common.h"
 #include "prov/securitycheck.h"
 #include "prov/providercommon.h"
 #include "prov/provider_ctx.h"
 #include "prov/provider_util.h"
 #include "prov/implementations.h"
-#include "providers/implementations/rands/test_rng.inc"
 
 static OSSL_FUNC_rand_newctx_fn test_rng_new;
 static OSSL_FUNC_rand_freectx_fn test_rng_free;
@@ -170,9 +167,8 @@ static size_t test_rng_nonce(void *vtest, unsigned char *out,
         return 0;
 
     if (t->generate) {
-        if (out != NULL)
-            for (i = 0; i < min_noncelen; i++)
-                out[i] = gen_byte(t);
+        for (i = 0; i < min_noncelen; i++)
+            out[i] = gen_byte(t);
         return min_noncelen;
     }
 
@@ -187,52 +183,63 @@ static size_t test_rng_nonce(void *vtest, unsigned char *out,
 static int test_rng_get_ctx_params(void *vtest, OSSL_PARAM params[])
 {
     PROV_TEST_RNG *t = (PROV_TEST_RNG *)vtest;
-    struct test_rng_get_ctx_params_st p;
+    OSSL_PARAM *p;
 
-    if (t == NULL || !test_rng_get_ctx_params_decoder(params, &p))
+    p = OSSL_PARAM_locate(params, OSSL_RAND_PARAM_STATE);
+    if (p != NULL && !OSSL_PARAM_set_int(p, t->state))
         return 0;
 
-    if (p.state != NULL && !OSSL_PARAM_set_int(p.state, t->state))
+    p = OSSL_PARAM_locate(params, OSSL_RAND_PARAM_STRENGTH);
+    if (p != NULL && !OSSL_PARAM_set_int(p, t->strength))
         return 0;
 
-    if (p.str != NULL && !OSSL_PARAM_set_uint(p.str, t->strength))
+    p = OSSL_PARAM_locate(params, OSSL_RAND_PARAM_MAX_REQUEST);
+    if (p != NULL && !OSSL_PARAM_set_size_t(p, t->max_request))
         return 0;
 
-    if (p.maxreq != NULL && !OSSL_PARAM_set_size_t(p.maxreq, t->max_request))
-        return 0;
-
-    if (p.gen != NULL && !OSSL_PARAM_set_uint(p.gen, t->generate))
+    p = OSSL_PARAM_locate(params, OSSL_RAND_PARAM_GENERATE);
+    if (p != NULL && !OSSL_PARAM_set_uint(p, t->generate))
         return 0;
 
 #ifdef FIPS_MODULE
-    if (p.ind != NULL && !OSSL_PARAM_set_int(p.ind, 0))
+    p = OSSL_PARAM_locate(params, OSSL_RAND_PARAM_FIPS_APPROVED_INDICATOR);
+    if (p != NULL && !OSSL_PARAM_set_int(p, 0))
         return 0;
 #endif /* FIPS_MODULE */
-
     return 1;
 }
 
 static const OSSL_PARAM *test_rng_gettable_ctx_params(ossl_unused void *vtest,
     ossl_unused void *provctx)
 {
-    return test_rng_get_ctx_params_list;
+    static const OSSL_PARAM known_gettable_ctx_params[] = {
+        OSSL_PARAM_int(OSSL_RAND_PARAM_STATE, NULL),
+        OSSL_PARAM_uint(OSSL_RAND_PARAM_STRENGTH, NULL),
+        OSSL_PARAM_size_t(OSSL_RAND_PARAM_MAX_REQUEST, NULL),
+        OSSL_PARAM_uint(OSSL_RAND_PARAM_GENERATE, NULL),
+        OSSL_FIPS_IND_GETTABLE_CTX_PARAM()
+            OSSL_PARAM_END
+    };
+    return known_gettable_ctx_params;
 }
 
 static int test_rng_set_ctx_params(void *vtest, const OSSL_PARAM params[])
 {
     PROV_TEST_RNG *t = (PROV_TEST_RNG *)vtest;
-    struct test_rng_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     void *ptr = NULL;
     size_t size = 0;
 
-    if (t == NULL || !test_rng_set_ctx_params_decoder(params, &p))
+    if (ossl_param_is_empty(params))
+        return 1;
+
+    p = OSSL_PARAM_locate_const(params, OSSL_RAND_PARAM_STRENGTH);
+    if (p != NULL && !OSSL_PARAM_get_uint(p, &t->strength))
         return 0;
 
-    if (p.str != NULL && !OSSL_PARAM_get_uint(p.str, &t->strength))
-        return 0;
-
-    if (p.ent != NULL) {
-        if (!OSSL_PARAM_get_octet_string(p.ent, &ptr, 0, &size))
+    p = OSSL_PARAM_locate_const(params, OSSL_RAND_PARAM_TEST_ENTROPY);
+    if (p != NULL) {
+        if (!OSSL_PARAM_get_octet_string(p, &ptr, 0, &size))
             return 0;
         OPENSSL_free(t->entropy);
         t->entropy = ptr;
@@ -241,18 +248,21 @@ static int test_rng_set_ctx_params(void *vtest, const OSSL_PARAM params[])
         ptr = NULL;
     }
 
-    if (p.nonce != NULL) {
-        if (!OSSL_PARAM_get_octet_string(p.nonce, &ptr, 0, &size))
+    p = OSSL_PARAM_locate_const(params, OSSL_RAND_PARAM_TEST_NONCE);
+    if (p != NULL) {
+        if (!OSSL_PARAM_get_octet_string(p, &ptr, 0, &size))
             return 0;
         OPENSSL_free(t->nonce);
         t->nonce = ptr;
         t->nonce_len = size;
     }
 
-    if (p.maxreq != NULL && !OSSL_PARAM_get_size_t(p.maxreq, &t->max_request))
+    p = OSSL_PARAM_locate_const(params, OSSL_RAND_PARAM_MAX_REQUEST);
+    if (p != NULL && !OSSL_PARAM_get_size_t(p, &t->max_request))
         return 0;
 
-    if (p.gen != NULL && !OSSL_PARAM_get_uint(p.gen, &t->generate))
+    p = OSSL_PARAM_locate_const(params, OSSL_RAND_PARAM_GENERATE);
+    if (p != NULL && !OSSL_PARAM_get_uint(p, &t->generate))
         return 0;
     return 1;
 }
@@ -260,7 +270,15 @@ static int test_rng_set_ctx_params(void *vtest, const OSSL_PARAM params[])
 static const OSSL_PARAM *test_rng_settable_ctx_params(ossl_unused void *vtest,
     ossl_unused void *provctx)
 {
-    return test_rng_set_ctx_params_list;
+    static const OSSL_PARAM known_settable_ctx_params[] = {
+        OSSL_PARAM_octet_string(OSSL_RAND_PARAM_TEST_ENTROPY, NULL, 0),
+        OSSL_PARAM_octet_string(OSSL_RAND_PARAM_TEST_NONCE, NULL, 0),
+        OSSL_PARAM_uint(OSSL_RAND_PARAM_STRENGTH, NULL),
+        OSSL_PARAM_size_t(OSSL_RAND_PARAM_MAX_REQUEST, NULL),
+        OSSL_PARAM_uint(OSSL_RAND_PARAM_GENERATE, NULL),
+        OSSL_PARAM_END
+    };
+    return known_settable_ctx_params;
 }
 
 static int test_rng_verify_zeroization(ossl_unused void *vtest)

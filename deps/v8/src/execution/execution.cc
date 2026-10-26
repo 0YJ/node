@@ -4,7 +4,6 @@
 
 #include "src/execution/execution.h"
 
-#include "include/cppgc/macros.h"
 #include "src/api/api-inl.h"
 #include "src/debug/debug.h"
 #include "src/execution/frames.h"
@@ -13,10 +12,9 @@
 #include "src/logging/runtime-call-stats-scope.h"
 
 #if V8_ENABLE_WEBASSEMBLY
+#include "src/compiler/wasm-compiler.h"  // Only for static asserts.
 #include "src/wasm/code-space-access.h"
-#include "src/wasm/wasm-code-manager.h"
-#include "src/wasm/wasm-constants.h"
-#include "src/wasm/wasm-engine-globals.h"
+#include "src/wasm/wasm-engine.h"
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 namespace v8 {
@@ -37,9 +35,6 @@ DirectHandle<Object> NormalizeReceiver(Isolate* isolate,
 }
 
 struct InvokeParams {
-  CPPGC_STACK_ALLOCATED();
-
- public:
   static InvokeParams SetUpForNew(
       Isolate* isolate, DirectHandle<Object> constructor,
       DirectHandle<Object> new_target,
@@ -207,43 +202,32 @@ MaybeDirectHandle<Context> NewScriptContext(
   Handle<ScriptContextTable> script_context(
       native_context->script_context_table(), isolate);
 
-  // Returns true, with a pending exception, if declaring `name` with `mode`
-  // would be a disallowed redeclaration of a variable already present in
-  // `script_context`. Reads `script_context`, so callers must keep it pointing
-  // at the current table.
-  auto has_lexical_clash = [&](DirectHandle<String> name,
-                               VariableMode mode) -> bool {
-    VariableLookupResult lookup;
-    if (!script_context->Lookup(name, &lookup)) return false;
-    if (!IsLexicalVariableMode(mode) && !IsLexicalVariableMode(lookup.mode)) {
-      return false;
-    }
-    DirectHandle<Context> context(script_context->get(lookup.context_index),
-                                  isolate);
-    // If we are trying to redeclare a REPL-mode let as a let, REPL-mode const
-    // as a const, REPL-mode using as a using and REPL-mode await using as an
-    // await using allow it.
-    if ((mode == lookup.mode && IsLexicalVariableMode(mode)) &&
-        scope_info->IsReplModeScope() &&
-        context->scope_info()->IsReplModeScope()) {
-      return false;
-    }
-    // https://tc39.es/ecma262/#sec-globaldeclarationinstantiation:
-    // If envRec.HasLexicalDeclaration(name) is true, throw a SyntaxError
-    // exception.
-    MessageLocation location(script, 0, 1);
-    isolate->ThrowAt(isolate->factory()->NewSyntaxError(
-                         MessageTemplate::kVarRedeclaration, name),
-                     &location);
-    return true;
-  };
-
   // Find name clashes.
-  const uint32_t initial_length = script_context->length(kAcquireLoad).value();
   for (auto name_it : ScopeInfo::IterateLocalNames(scope_info)) {
     Handle<String> name(name_it->name(), isolate);
     VariableMode mode = scope_info->ContextLocalMode(name_it->index());
-    if (has_lexical_clash(name, mode)) return MaybeDirectHandle<Context>();
+    VariableLookupResult lookup;
+    if (script_context->Lookup(name, &lookup)) {
+      if (IsLexicalVariableMode(mode) || IsLexicalVariableMode(lookup.mode)) {
+        DirectHandle<Context> context(script_context->get(lookup.context_index),
+                                      isolate);
+        // If we are trying to redeclare a REPL-mode let as a let, REPL-mode
+        // const as a const, REPL-mode using as a using and REPL-mode await
+        // using as an await using allow it.
+        if (!((mode == lookup.mode && IsLexicalVariableMode(mode)) &&
+              scope_info->IsReplModeScope() &&
+              context->scope_info()->IsReplModeScope())) {
+          // ES#sec-globaldeclarationinstantiation 5.b:
+          // If envRec.HasLexicalDeclaration(name) is true, throw a SyntaxError
+          // exception.
+          MessageLocation location(script, 0, 1);
+          isolate->ThrowAt(isolate->factory()->NewSyntaxError(
+                               MessageTemplate::kVarRedeclaration, name),
+                           &location);
+          return MaybeDirectHandle<Context>();
+        }
+      }
+    }
 
     if (IsLexicalVariableMode(mode)) {
       Maybe<bool> has_restricted = JSGlobalObject::HasRestrictedGlobalProperty(
@@ -263,27 +247,6 @@ MaybeDirectHandle<Context> NewScriptContext(
       }
 
       JSGlobalObject::InvalidatePropertyCell(global_object, name);
-
-      // HasRestrictedGlobalProperty can run user code via a global-object
-      // property interceptor, which may re-entrantly add script contexts and
-      // replace the table. Reload it so the clash checks above on later
-      // iterations (and the extension below) observe those additions instead
-      // of clobbering them. PatchValue reuses the handle rather than allocating
-      // one per iteration.
-      script_context.PatchValue(native_context->script_context_table());
-    }
-  }
-
-  // The per-name check above runs before that name's interceptor, so a
-  // re-entrant declaration clashing with the current or an already-checked
-  // name goes unnoticed there and ScriptContextTable::Add below would silently
-  // add a duplicate. If an interceptor grew the table, re-check every name
-  // against the now-final table, which contains all re-entrant additions.
-  if (script_context->length(kAcquireLoad).value() != initial_length) {
-    for (auto name_it : ScopeInfo::IterateLocalNames(scope_info)) {
-      Handle<String> name(name_it->name(), isolate);
-      VariableMode mode = scope_info->ContextLocalMode(name_it->index());
-      if (has_lexical_clash(name, mode)) return MaybeDirectHandle<Context>();
     }
   }
 
@@ -344,7 +307,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       DCHECK(IsJSGlobalObject(function->context()->global_object()));
 
       DirectHandle<Object> receiver = params.is_construct
-                                          ? isolate->factory()->tdz_hole_value()
+                                          ? isolate->factory()->the_hole_value()
                                           : params.receiver;
       DirectHandle<FunctionTemplateInfo> fun_data(
           function->shared()->api_func_data(), isolate);
@@ -410,7 +373,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
 
   if (params.execution_target == Execution::Target::kCallable) {
     DirectHandle<NativeContext> context = isolate->native_context();
-    if (!IsUndefined(context->script_execution_callback())) {
+    if (!IsUndefined(context->script_execution_callback(), isolate)) {
       v8::Context::AbortScriptExecutionCallback callback =
           v8::ToCData<v8::Context::AbortScriptExecutionCallback,
                       kApiAbortScriptExecutionCallbackTag>(
@@ -419,23 +382,6 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
       v8::Local<v8::Context> api_context = v8::Utils::ToLocal(context);
       callback(api_isolate, api_context);
       DCHECK(!isolate->has_exception());
-      // TODO(http://crbug.com/486958027): temporary measure for figuring out
-      // who tries to throw exceptions in C++ microtasks.
-      {
-        Tagged<Object> maybe_microtask =
-            *isolate->factory()->current_microtask();
-        if (IsCallbackTask(maybe_microtask)) {
-          Tagged<Map> maybe_microtask_map;
-          if (IsHeapObject(maybe_microtask)) {
-            maybe_microtask_map = Cast<HeapObject>(maybe_microtask)->map();
-          }
-          isolate->PushStackTraceAndContinue(
-              reinterpret_cast<void*>((*params.target).ptr()),
-              reinterpret_cast<void*>(maybe_microtask.ptr()),
-              reinterpret_cast<void*>(maybe_microtask_map.ptr()),
-              reinterpret_cast<void*>(callback));
-        }
-      }
       // Always throw an exception to abort execution, if callback exists.
       isolate->ThrowIllegalOperation();
       return MaybeHandle<Object>();
@@ -519,7 +465,7 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> Invoke(Isolate* isolate,
 #endif
 
   // Update the pending exception flag and return the value.
-  bool has_exception = IsExceptionHole(value);
+  bool has_exception = IsExceptionHole(value, isolate);
   DCHECK_EQ(has_exception, isolate->has_exception());
   if (has_exception) {
     isolate->ReportPendingMessages(params.message_handling ==
@@ -548,7 +494,6 @@ MaybeDirectHandle<Object> InvokeWithTryCatch(Isolate* isolate,
   v8::TryCatch catcher(reinterpret_cast<v8::Isolate*>(isolate));
   catcher.SetVerbose(false);
   catcher.SetCaptureMessage(false);
-  Isolate::MarkTryCatchInternal(&catcher);
 
   maybe_result = Invoke(isolate, params);
 
@@ -677,7 +622,7 @@ void Execution::CallWasm(Isolate* isolate, DirectHandle<Code> wrapper_code,
   DCHECK_EQ(isolate, Isolate::TryGetCurrent());
 
   using WasmEntryStub = GeneratedCode<Address(
-      uint32_t target, Address object_ref, Address argv, Address c_entry_fp)>;
+      Address target, Address object_ref, Address argv, Address c_entry_fp)>;
   WasmEntryStub stub_entry =
       WasmEntryStub::FromAddress(isolate, wrapper_code->instruction_start());
 
@@ -703,10 +648,10 @@ void Execution::CallWasm(Isolate* isolate, DirectHandle<Code> wrapper_code,
 
   {
     RCS_SCOPE(isolate, RuntimeCallCounterId::kJS_Execution);
-    static_assert(wasm::CWasmEntryParameters::kCodeEntry == 0);
-    static_assert(wasm::CWasmEntryParameters::kObjectRef == 1);
-    static_assert(wasm::CWasmEntryParameters::kArgumentsBuffer == 2);
-    static_assert(wasm::CWasmEntryParameters::kCEntryFp == 3);
+    static_assert(compiler::CWasmEntryParameters::kCodeEntry == 0);
+    static_assert(compiler::CWasmEntryParameters::kObjectRef == 1);
+    static_assert(compiler::CWasmEntryParameters::kArgumentsBuffer == 2);
+    static_assert(compiler::CWasmEntryParameters::kCEntryFp == 3);
     Address result =
         stub_entry.CallSandboxed(wasm_call_target.value(), (*object_ref).ptr(),
                                  packed_args, saved_c_entry_fp);

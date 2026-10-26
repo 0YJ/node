@@ -58,9 +58,9 @@ bytecodes: [
   /*   28 S> */ B(GetNamedProperty), R(arg0), U8(0:"func"), FBV(0),
                 B(Star0),
                 B(Ldar), R(arg1),
-  /*   35 E> */ B(Add), R(arg1), EmbeddedFeedback(),
+  /*   35 E> */ B(Add), R(arg1), FBV(2),
                 B(Star2),
-  /*   28 E> */ B(CallProperty2), R(0), R(arg0), R(2), R(arg1), FBV(2),
+  /*   28 E> */ B(CallProperty2), R(0), R(arg0), R(2), R(arg1), FBV(3),
   /*   43 S> */ B(Return),
 ]
 constant pool: [

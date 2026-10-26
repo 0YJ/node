@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@
 #include "LIEF/DEX/Method.hpp"
 #include "LIEF/DEX/Prototype.hpp"
 
-
-namespace LIEF::DEX {
+namespace LIEF {
+namespace DEX {
 
 Hash::~Hash() = default;
 
@@ -39,9 +39,10 @@ void Hash::visit(const File& file) {
   process(file.location());
   process(file.header());
 
-  process(file.classes().begin(), file.classes().end());
-  process(file.methods().begin(), file.methods().end());
-  process(file.strings().begin(), file.strings().end());
+  process(std::begin(file.classes()), std::end(file.classes()));
+  process(std::begin(file.methods()), std::end(file.methods()));
+  process(std::begin(file.strings()), std::end(file.strings()));
+
 }
 
 void Hash::visit(const Header& header) {
@@ -61,7 +62,8 @@ void Hash::visit(const Header& header) {
   process(header.data());
 }
 
-void Hash::visit(const CodeInfo& /*code_info*/) {}
+void Hash::visit(const CodeInfo& /*code_info*/) {
+}
 
 void Hash::visit(const Class& cls) {
 
@@ -71,8 +73,8 @@ void Hash::visit(const Class& cls) {
   process(cls.source_filename());
   process(cls.access_flags());
 
-  process(fields.begin(), fields.end());
-  process(methods.begin(), methods.end());
+  process(std::begin(fields), std::end(fields));
+  process(std::begin(methods), std::end(methods));
 }
 
 void Hash::visit(const Field& field) {
@@ -94,29 +96,29 @@ void Hash::visit(const Method& method) {
 void Hash::visit(const Type& type) {
   switch (type.type()) {
     case Type::TYPES::ARRAY:
-    {
-      process(type.dim());
-      process(type.underlying_array_type());
-      break;
-    }
+      {
+        process(type.dim());
+        process(type.underlying_array_type());
+        break;
+      }
 
     case Type::TYPES::PRIMITIVE:
-    {
-      process(type.primitive());
-      break;
-    }
+      {
+        process(type.primitive());
+        break;
+      }
 
     case Type::TYPES::CLASS:
-    {
-      process(type.cls().fullname());
-      break;
-    }
+      {
+        process(type.cls().fullname());
+        break;
+      }
 
     case Type::TYPES::UNKNOWN:
     default:
-    {
-      process(Type::TYPES::UNKNOWN);
-    }
+      {
+        process(Type::TYPES::UNKNOWN);
+      }
   }
 }
 
@@ -124,7 +126,8 @@ void Hash::visit(const Prototype& type) {
   if (const auto* rty = type.return_type()) {
     process(*rty);
   }
-  process(type.parameters_type().begin(), type.parameters_type().end());
+  process(std::begin(type.parameters_type()),
+          std::end(type.parameters_type()));
 }
 
 void Hash::visit(const MapItem& item) {
@@ -135,8 +138,10 @@ void Hash::visit(const MapItem& item) {
 }
 
 void Hash::visit(const MapList& list) {
-  process(list.items().begin(), list.items().end());
+  process(std::begin(list.items()), std::end(list.items()));
 }
 
 
-} // namespace LIEF::DEX
+} // namespace DEX
+} // namespace LIEF
+

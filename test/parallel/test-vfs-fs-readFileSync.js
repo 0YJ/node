@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.readFileSync dispatches to VFS for both string paths and VFS-owned fds.

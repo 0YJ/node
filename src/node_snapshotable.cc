@@ -11,7 +11,6 @@
 #include "embedded_data.h"
 #include "encoding_binding.h"
 #include "env-inl.h"
-#include "glob/node_glob.h"
 #include "node_blob.h"
 #include "node_builtins.h"
 #include "node_contextify.h"
@@ -159,30 +158,6 @@ class SnapshotDeserializer : public BlobDeserializer<SnapshotDeserializer> {
   template <typename T>
     requires(!std::is_arithmetic_v<T> && !std::same_as<T, std::string>)
   T Read();
-
-  v8::StartupData ReadV8StartupData(SnapshotData::DataOwnership ownership) {
-    Debug("Read<v8::StartupData>()\n");
-
-    int raw_size = ReadArithmetic<int>();
-    Debug("size=%d\n", raw_size);
-
-    if (raw_size <= 0 ||
-        static_cast<size_t>(raw_size) > sink.size() - read_total) {
-      ok = false;
-      return v8::StartupData{nullptr, 0};
-    }
-    if (ownership == SnapshotData::DataOwnership::kOwned) {
-      // The data pointer of v8::StartupData would be deleted so it must be
-      // new'ed.
-      char* buf = new char[raw_size];
-      ReadArithmetic<char>(buf, raw_size);
-      return v8::StartupData{buf, raw_size};
-    }
-
-    const char* data = sink.data() + read_total;
-    read_total += raw_size;
-    return v8::StartupData{data, raw_size};
-  }
 };
 
 class SnapshotSerializer : public BlobSerializer<SnapshotSerializer> {
@@ -206,7 +181,17 @@ class SnapshotSerializer : public BlobSerializer<SnapshotSerializer> {
 // [ |raw_size| bytes ] contents
 template <>
 v8::StartupData SnapshotDeserializer::Read() {
-  return ReadV8StartupData(SnapshotData::DataOwnership::kOwned);
+  Debug("Read<v8::StartupData>()\n");
+
+  int raw_size = ReadArithmetic<int>();
+  Debug("size=%d\n", raw_size);
+
+  CHECK_GT(raw_size, 0);  // There should be no startup data of size 0.
+  // The data pointer of v8::StartupData would be deleted so it must be new'ed.
+  std::unique_ptr<char> buf = std::unique_ptr<char>(new char[raw_size]);
+  ReadArithmetic<char>(buf.get(), raw_size);
+
+  return v8::StartupData{buf.release(), raw_size};
 }
 
 template <>
@@ -407,8 +392,6 @@ size_t SnapshotSerializer::Write(const ImmediateInfo::SerializeInfo& data) {
 // [ 4/8 bytes ]  snapshot index of root
 // [ 4/8 bytes ]  snapshot index of milestones
 // [ 4/8 bytes ]  snapshot index of observers
-// [ 4/8 bytes ]  snapshot index of uv_metrics
-// [ 4/8 bytes ]  snapshot index of uv_metrics_bigint
 template <>
 performance::PerformanceState::SerializeInfo SnapshotDeserializer::Read() {
   Debug("Read<PerformanceState::SerializeInfo>()\n");
@@ -417,8 +400,6 @@ performance::PerformanceState::SerializeInfo SnapshotDeserializer::Read() {
   result.root = ReadArithmetic<AliasedBufferIndex>();
   result.milestones = ReadArithmetic<AliasedBufferIndex>();
   result.observers = ReadArithmetic<AliasedBufferIndex>();
-  result.uv_metrics = ReadArithmetic<AliasedBufferIndex>();
-  result.uv_metrics_bigint = ReadArithmetic<AliasedBufferIndex>();
   if (is_debug) {
     std::string str = ToStr(result);
     Debug("Read<PerformanceState::SerializeInfo>() %s\n", str);
@@ -437,8 +418,6 @@ size_t SnapshotSerializer::Write(
   size_t written_total = WriteArithmetic<AliasedBufferIndex>(data.root);
   written_total += WriteArithmetic<AliasedBufferIndex>(data.milestones);
   written_total += WriteArithmetic<AliasedBufferIndex>(data.observers);
-  written_total += WriteArithmetic<AliasedBufferIndex>(data.uv_metrics);
-  written_total += WriteArithmetic<AliasedBufferIndex>(data.uv_metrics_bigint);
 
   Debug("Write<PerformanceState::SerializeInfo>() wrote %d bytes\n",
         written_total);
@@ -649,6 +628,10 @@ const SnapshotData* SnapshotData::FromEmbedderWrapper(
   return data != nullptr ? data->impl_ : nullptr;
 }
 
+EmbedderSnapshotData::Pointer SnapshotData::AsEmbedderWrapper() const {
+  return EmbedderSnapshotData::Pointer{new EmbedderSnapshotData(this, false)};
+}
+
 bool SnapshotData::FromFile(SnapshotData* out, FILE* in) {
   return FromBlob(out, ReadFileSync(in));
 }
@@ -657,9 +640,7 @@ bool SnapshotData::FromBlob(SnapshotData* out, const std::vector<char>& in) {
   return FromBlob(out, std::string_view(in.data(), in.size()));
 }
 
-bool SnapshotData::FromBlob(SnapshotData* out,
-                            std::string_view in,
-                            DataOwnership v8_snapshot_blob_data_ownership) {
+bool SnapshotData::FromBlob(SnapshotData* out, std::string_view in) {
   SnapshotDeserializer r(in);
   r.Debug("SnapshotData::FromBlob()\n");
 
@@ -668,20 +649,14 @@ bool SnapshotData::FromBlob(SnapshotData* out,
   // Metadata
   uint32_t magic = r.ReadArithmetic<uint32_t>();
   r.Debug("Read magic %" PRIx32 "\n", magic);
-  if (!r.ok || magic != kMagic) {
-    fprintf(stderr, "The startup snapshot is not a Node.js snapshot blob.\n");
-    return false;
-  }
+  CHECK_EQ(magic, kMagic);
   out->metadata = r.Read<SnapshotMetadata>();
   r.Debug("Read metadata\n");
-  if (!r.ok || !out->Check()) {
-    if (!r.ok) fprintf(stderr, "The startup snapshot is truncated.\n");
+  if (!out->Check()) {
     return false;
   }
 
-  out->v8_snapshot_blob_data =
-      r.ReadV8StartupData(v8_snapshot_blob_data_ownership);
-  out->v8_snapshot_blob_data_ownership = v8_snapshot_blob_data_ownership;
+  out->v8_snapshot_blob_data = r.Read<v8::StartupData>();
   r.Debug("Read isolate_data_info\n");
   out->isolate_data_info = r.Read<IsolateDataSerializeInfo>();
   out->env_info = r.Read<EnvSerializeInfo>();
@@ -689,17 +664,13 @@ bool SnapshotData::FromBlob(SnapshotData* out,
   out->code_cache = r.ReadVector<builtins::CodeCacheInfo>();
 
   r.Debug("SnapshotData::FromBlob() read %d bytes\n", r.read_total);
-  if (!r.ok) {
-    fprintf(stderr, "The startup snapshot is truncated.\n");
-    return false;
-  }
   return true;
 }
 
 bool SnapshotData::Check() const {
   if (metadata.node_version != per_process::metadata.versions.node) {
     fprintf(stderr,
-            "Failed to load the startup snapshot because it was built with "
+            "Failed to load the startup snapshot because it was built with"
             "Node.js version %s and the current Node.js version is %s.\n",
             metadata.node_version.c_str(),
             NODE_VERSION);
@@ -708,7 +679,7 @@ bool SnapshotData::Check() const {
 
   if (metadata.node_arch != per_process::metadata.arch) {
     fprintf(stderr,
-            "Failed to load the startup snapshot because it was built with "
+            "Failed to load the startup snapshot because it was built with"
             "architecture %s and the architecture is %s.\n",
             metadata.node_arch.c_str(),
             NODE_ARCH);
@@ -717,7 +688,7 @@ bool SnapshotData::Check() const {
 
   if (metadata.node_platform != per_process::metadata.platform) {
     fprintf(stderr,
-            "Failed to load the startup snapshot because it was built with "
+            "Failed to load the startup snapshot because it was built with"
             "platform %s and the current platform is %s.\n",
             metadata.node_platform.c_str(),
             NODE_PLATFORM);
@@ -730,9 +701,7 @@ bool SnapshotData::Check() const {
 
 SnapshotData::~SnapshotData() {
   if (data_ownership == DataOwnership::kOwned &&
-      v8_snapshot_blob_data_ownership == DataOwnership::kOwned &&
-      v8_snapshot_blob_data.data != nullptr &&
-      !IsFirstSnapshotBlob(v8_snapshot_blob_data.data)) {
+      v8_snapshot_blob_data.data != nullptr) {
     delete[] v8_snapshot_blob_data.data;
   }
 }
@@ -853,9 +822,6 @@ namespace node {
   // -- v8_snapshot_blob_data begins --
   { v8_snapshot_blob_data, v8_snapshot_blob_size },
   // -- v8_snapshot_blob_data ends --
-  // -- v8_snapshot_blob_data_ownership begins --
-  SnapshotData::DataOwnership::kNotOwned,
-  // -- v8_snapshot_blob_data_ownership ends --
   // -- isolate_data_info begins --
 )" << data->isolate_data_info
      << R"(
@@ -895,9 +861,7 @@ static void ResetContextSettingsBeforeSnapshot(Local<Context> context) {
 
 const std::vector<intptr_t>& SnapshotBuilder::CollectExternalReferences() {
   static auto registry = std::make_unique<ExternalReferenceRegistry>();
-  static const std::vector<intptr_t>& references =
-      registry->external_references();
-  return references;
+  return registry->external_references();
 }
 
 void SnapshotBuilder::InitializeIsolateParams(const SnapshotData* data,

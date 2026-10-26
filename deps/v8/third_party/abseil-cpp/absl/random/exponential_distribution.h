@@ -17,10 +17,8 @@
 
 #include <cassert>
 #include <cmath>
-#include <cstdint>
 #include <istream>
 #include <limits>
-#include <ostream>
 #include <type_traits>
 
 #include "absl/base/config.h"
@@ -66,7 +64,7 @@ class exponential_distribution {
     result_type neg_inv_lambda_;
 
     static_assert(
-        std::is_floating_point_v<RealType>,
+        std::is_floating_point<RealType>::value,
         "Class-template absl::exponential_distribution<> must be parameterized "
         "using a floating-point type.");
   };
@@ -126,7 +124,7 @@ exponential_distribution<RealType>::operator()(
   using random_internal::GenerateNegativeTag;
   using random_internal::GenerateRealFromBits;
   using real_type =
-      std::conditional_t<std::is_same_v<RealType, float>, float, double>;
+      absl::conditional_t<std::is_same<RealType, float>::value, float, double>;
 
   const result_type u = GenerateRealFromBits<real_type, GenerateNegativeTag,
                                              false>(fast_u64_(g));  // U(-1, 0)

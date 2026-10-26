@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // Tests for VFS copyFile mode support:

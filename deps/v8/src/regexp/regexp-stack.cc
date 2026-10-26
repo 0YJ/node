@@ -9,47 +9,46 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-StackScope::StackScope(Isolate* isolate)
+RegExpStackScope::RegExpStackScope(Isolate* isolate)
     : regexp_stack_(isolate->regexp_stack()),
       old_sp_top_delta_(regexp_stack_->sp_top_delta()) {
   DCHECK(regexp_stack_->IsValid());
 }
 
-StackScope::~StackScope() {
+RegExpStackScope::~RegExpStackScope() {
   CHECK_EQ(old_sp_top_delta_, regexp_stack_->sp_top_delta());
   regexp_stack_->ResetIfEmpty();
 }
 
-Stack::Stack() : thread_local_(this) {}
+RegExpStack::RegExpStack() : thread_local_(this) {}
 
-Stack::~Stack() { thread_local_.FreeAndInvalidate(); }
+RegExpStack::~RegExpStack() { thread_local_.FreeAndInvalidate(); }
 
 // static
-Stack* Stack::New() {
+RegExpStack* RegExpStack::New() {
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  // TODO(426514762): Stack objects must currently be accessible to
+  // TODO(426514762): RegExpStack objects must currently be accessible to
   // sandboxed code (which is unsafe). As such we need to register them as
   // sandbox extension memory, which requires allocating them on full OS pages.
   VirtualAddressSpace* vas = GetPlatformVirtualAddressSpace();
-  CHECK_LT(sizeof(Stack), vas->allocation_granularity());
+  CHECK_LT(sizeof(RegExpStack), vas->allocation_granularity());
   Address regexp_stack_memory = vas->AllocatePages(
       VirtualAddressSpace::kNoHint, vas->allocation_granularity(),
       vas->allocation_granularity(), PagePermissions::kReadWrite);
   SandboxHardwareSupport::RegisterUnsafeSandboxExtensionMemory(
       regexp_stack_memory, vas->allocation_granularity());
-  return new (reinterpret_cast<void*>(regexp_stack_memory)) Stack();
+  return new (reinterpret_cast<void*>(regexp_stack_memory)) RegExpStack();
 #else
-  return new Stack();
+  return new RegExpStack();
 #endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
 }
 
 // static
-void Stack::Delete(Stack* instance) {
+void RegExpStack::Delete(RegExpStack* instance) {
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
-  // TODO(426514762): we currently allocate Stack objects on full pages.
-  instance->~Stack();
+  // TODO(426514762): we currently allocate RegExpStack objects on full pages.
+  instance->~RegExpStack();
   VirtualAddressSpace* vas = GetPlatformVirtualAddressSpace();
   Address page = reinterpret_cast<Address>(instance);
   DCHECK(IsAligned(page, vas->allocation_granularity()));
@@ -59,12 +58,12 @@ void Stack::Delete(Stack* instance) {
 #endif
 }
 
-char* Stack::ArchiveStack(char* to) {
+char* RegExpStack::ArchiveStack(char* to) {
   if (!thread_local_.owns_memory_) {
     // Force dynamic stacks prior to archiving. Any growth will do. A dynamic
     // stack is needed because stack archival & restoration rely on `memory_`
     // pointing at a fixed-location backing store, whereas the static stack is
-    // tied to a Stack instance.
+    // tied to a RegExpStack instance.
     EnsureCapacity(thread_local_.memory_size_ + 1);
     DCHECK(thread_local_.owns_memory_);
   }
@@ -74,12 +73,13 @@ char* Stack::ArchiveStack(char* to) {
   return to + kThreadLocalSize;
 }
 
-char* Stack::RestoreStack(char* from) {
+
+char* RegExpStack::RestoreStack(char* from) {
   MemCopy(&thread_local_, reinterpret_cast<void*>(from), kThreadLocalSize);
   return from + kThreadLocalSize;
 }
 
-void Stack::ThreadLocal::ResetToStaticStack(Stack* regexp_stack) {
+void RegExpStack::ThreadLocal::ResetToStaticStack(RegExpStack* regexp_stack) {
   DeleteDynamicStack();
 
   memory_ = regexp_stack->static_stack_;
@@ -91,7 +91,7 @@ void Stack::ThreadLocal::ResetToStaticStack(Stack* regexp_stack) {
   owns_memory_ = false;
 }
 
-void Stack::ThreadLocal::FreeAndInvalidate() {
+void RegExpStack::ThreadLocal::FreeAndInvalidate() {
   DeleteDynamicStack();
 
   // This stack may not be used after being freed. Just reset to invalid values
@@ -104,7 +104,7 @@ void Stack::ThreadLocal::FreeAndInvalidate() {
 }
 
 // static
-uint8_t* Stack::ThreadLocal::NewDynamicStack(size_t size) {
+uint8_t* RegExpStack::ThreadLocal::NewDynamicStack(size_t size) {
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
   // Stack memory must be accessible to sandboxed code, so we must register it
   // as sandbox extension memory. As such, we need to allocate full OS pages.
@@ -126,7 +126,7 @@ uint8_t* Stack::ThreadLocal::NewDynamicStack(size_t size) {
   return new_memory;
 }
 
-void Stack::ThreadLocal::DeleteDynamicStack() {
+void RegExpStack::ThreadLocal::DeleteDynamicStack() {
   if (owns_memory_) {
 #ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
     VirtualAddressSpace* vas = GetPlatformVirtualAddressSpace();
@@ -139,7 +139,7 @@ void Stack::ThreadLocal::DeleteDynamicStack() {
   }
 }
 
-Address Stack::EnsureCapacity(size_t size) {
+Address RegExpStack::EnsureCapacity(size_t size) {
   if (size > kMaximumStackSize) return kNullAddress;
   if (thread_local_.memory_size_ < size) {
     if (size < kMinimumDynamicStackSize) size = kMinimumDynamicStackSize;
@@ -162,6 +162,6 @@ Address Stack::EnsureCapacity(size_t size) {
   return reinterpret_cast<Address>(thread_local_.memory_top_);
 }
 
-}  // namespace regexp
+
 }  // namespace internal
 }  // namespace v8

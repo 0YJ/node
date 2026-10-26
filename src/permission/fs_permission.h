@@ -5,7 +5,6 @@
 
 #include <memory>
 #include <vector>
-#include "node_mutex.h"
 #include "permission/permission_base.h"
 #include "util.h"
 
@@ -19,8 +18,6 @@ class FSPermission final : public PermissionBase {
   void Drop(Environment* env,
             PermissionScope scope,
             std::string_view param) override;
-  // Safe to call from any thread: Drop() rewrites the trees on the
-  // thread that owns `env`, which this waits out.
   bool is_granted(Environment* env,
                   PermissionScope perm,
                   std::string_view param) const override;
@@ -129,8 +126,8 @@ class FSPermission final : public PermissionBase {
         }
         // match prefix
         size_t prefix_len = child->prefix.length();
-        for (size_t i = 0; i < prefix_len; ++i) {
-          if (child->prefix[i] == '*') {
+        for (size_t i = 0; i < path.length(); ++i) {
+          if (i >= prefix_len || child->prefix[i] == '*') {
             return child;
           }
 
@@ -186,8 +183,6 @@ class FSPermission final : public PermissionBase {
   void GrantAccess(PermissionScope scope, const std::string& param);
   void RevokeAccess(PermissionScope scope, const std::string& param);
   void RebuildTree(PermissionScope scope);
-  // Guards everything below: Apply() and Drop() write, is_granted() reads.
-  RwLock lock_;
   // fs granted on startup
   RadixTree granted_in_fs_;
   RadixTree granted_out_fs_;

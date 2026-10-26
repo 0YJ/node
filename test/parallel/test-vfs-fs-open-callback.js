@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.open / fs.fstat / fs.read / fs.write / fs.close / fs.ftruncate callbacks

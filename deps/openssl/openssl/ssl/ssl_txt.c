@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2005 Nokia. All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -35,12 +35,11 @@ int SSL_SESSION_print(BIO *bp, const SSL_SESSION *x)
 {
     size_t i;
     const char *s;
-    int isversion13;
+    int istls13;
 
     if (x == NULL)
         goto err;
-    isversion13 = (x->ssl_version == TLS1_3_VERSION)
-        || (x->ssl_version == DTLS1_3_VERSION);
+    istls13 = (x->ssl_version == TLS1_3_VERSION);
     if (BIO_puts(bp, "SSL-Session:\n") <= 0)
         goto err;
     s = ssl_protocol_to_string(x->ssl_version);
@@ -78,7 +77,7 @@ int SSL_SESSION_print(BIO *bp, const SSL_SESSION *x)
         if (BIO_printf(bp, "%02X", x->sid_ctx[i]) <= 0)
             goto err;
     }
-    if (isversion13) {
+    if (istls13) {
         if (BIO_puts(bp, "\n    Resumption PSK: ") <= 0)
             goto err;
     } else if (BIO_puts(bp, "\n    Master-Key: ") <= 0)
@@ -105,7 +104,7 @@ int SSL_SESSION_print(BIO *bp, const SSL_SESSION *x)
 #endif
     if (x->ext.tick_lifetime_hint) {
         if (BIO_printf(bp,
-                "\n    TLS session ticket lifetime hint: %lu (seconds)",
+                "\n    TLS session ticket lifetime hint: %ld (seconds)",
                 x->ext.tick_lifetime_hint)
             <= 0)
             goto err;
@@ -121,10 +120,10 @@ int SSL_SESSION_print(BIO *bp, const SSL_SESSION *x)
     if (x->compress_meth != 0) {
         SSL_COMP *comp = NULL;
 
-        if (!ssl_cipher_get_evp(NULL, x, NULL, NULL, NULL, NULL, NULL, &comp, 0))
+        if (!ssl_cipher_get_evp(NULL, x, NULL, NULL, NULL, NULL, &comp, 0))
             goto err;
         if (comp == NULL) {
-            if (BIO_printf(bp, "\n    Compression: %u", x->compress_meth) <= 0)
+            if (BIO_printf(bp, "\n    Compression: %d", x->compress_meth) <= 0)
                 goto err;
         } else {
             if (BIO_printf(bp, "\n    Compression: %d (%s)", comp->id,
@@ -161,7 +160,7 @@ int SSL_SESSION_print(BIO *bp, const SSL_SESSION *x)
         <= 0)
         goto err;
 
-    if (isversion13) {
+    if (istls13) {
         if (BIO_printf(bp, "    Max Early Data: %u\n",
                 (unsigned int)x->ext.max_early_data)
             <= 0)

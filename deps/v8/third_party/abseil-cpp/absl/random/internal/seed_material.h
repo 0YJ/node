@@ -18,7 +18,6 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -96,7 +95,7 @@ void MixIntoSeedMaterial(absl::Span<const uint32_t> sequence,
 // Salt is obtained only once and stored in static variable.
 //
 // May return empty value if obtaining the salt was not possible.
-std::optional<uint32_t> GetSaltMaterial();
+absl::optional<uint32_t> GetSaltMaterial();
 
 }  // namespace random_internal
 ABSL_NAMESPACE_END

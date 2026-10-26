@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // The promise-based fs methods that accept `encoding: 'buffer'` must convert

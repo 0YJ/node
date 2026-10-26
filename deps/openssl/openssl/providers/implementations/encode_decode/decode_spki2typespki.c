@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2020-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -12,17 +12,14 @@
 #include <openssl/core_names.h>
 #include <openssl/core_object.h>
 #include <openssl/params.h>
-#include <openssl/proverr.h>
 #include <openssl/x509.h>
-#include "internal/cryptlib.h"
 #include "internal/sizes.h"
 #include "crypto/x509.h"
 #include "crypto/ec.h"
 #include "prov/bio.h"
 #include "prov/decoders.h"
 #include "prov/implementations.h"
-#include "prov/endecoder_local.h"
-#include "providers/implementations/encode_decode/decode_spki2typespki.inc"
+#include "endecoder_local.h"
 
 static OSSL_FUNC_decoder_newctx_fn spki2typespki_newctx;
 static OSSL_FUNC_decoder_freectx_fn spki2typespki_freectx;
@@ -57,21 +54,21 @@ static void spki2typespki_freectx(void *vctx)
 
 static const OSSL_PARAM *spki2typespki_settable_ctx_params(ossl_unused void *provctx)
 {
-    return spki2typespki_set_ctx_params_list;
+    static const OSSL_PARAM settables[] = {
+        OSSL_PARAM_utf8_string(OSSL_DECODER_PARAM_PROPERTIES, NULL, 0),
+        OSSL_PARAM_END
+    };
+    return settables;
 }
 
 static int spki2typespki_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     struct spki2typespki_ctx_st *ctx = vctx;
-    struct spki2typespki_set_ctx_params_st p;
-    char *str;
+    const OSSL_PARAM *p;
+    char *str = ctx->propq;
 
-    if (ctx == NULL || !spki2typespki_set_ctx_params_decoder(params, &p))
-        return 0;
-
-    str = ctx->propq;
-    if (p.propq != NULL
-        && !OSSL_PARAM_get_utf8_string(p.propq, &str, sizeof(ctx->propq)))
+    p = OSSL_PARAM_locate_const(params, OSSL_DECODER_PARAM_PROPERTIES);
+    if (p != NULL && !OSSL_PARAM_get_utf8_string(p, &str, sizeof(ctx->propq)))
         return 0;
 
     return 1;
@@ -122,29 +119,14 @@ int ossl_spki2typespki_der_decode(unsigned char *der, long len, int selection,
         goto end;
     X509_ALGOR_get0(&oid, NULL, NULL, algor);
 
-    /*
-     * Resolve the SPKI AlgorithmIdentifier OID to the key type name expected
-     * by the downstream provider decoder.  Most OIDs map one-to-one to a key
-     * type via OBJ_obj2txt(), but a few need special handling:
-     *
-     *   - SM2 abuses id-ecPublicKey, so the EC parameters must be inspected
-     *     to tell EC and SM2 apart.
-     *   - TPM 1.2 Endorsement Key certificates use NID_rsaesOaep with a
-     *     plain RSAPublicKey body per TCG Credential Profiles V1.2 section
-     *     3.2.7; the OAEP AlgorithmIdentifier parameters are not interpreted
-     *     here.  Keep this in sync with x509_pubkey_decode() and
-     *     x509_pubkey_ex_d2i_ex() in crypto/x509/x_pubkey.c.
-     */
-    dataname[0] = '\0';
 #ifndef OPENSSL_NO_EC
+    /* SM2 abuses the EC oid, so this could actually be SM2 */
     if (OBJ_obj2nid(oid) == NID_X9_62_id_ecPublicKey
         && ossl_x509_algor_is_sm2(algor))
-        OPENSSL_strlcpy(dataname, "SM2", sizeof(dataname));
+        strcpy(dataname, "SM2");
+    else
 #endif
-    if (dataname[0] == '\0' && OBJ_obj2nid(oid) == NID_rsaesOaep)
-        OPENSSL_strlcpy(dataname, "RSA", sizeof(dataname));
-    if (dataname[0] == '\0'
-        && OBJ_obj2txt(dataname, sizeof(dataname), oid, 0) <= 0)
+        if (OBJ_obj2txt(dataname, sizeof(dataname), oid, 0) <= 0)
         goto end;
 
     ossl_X509_PUBKEY_INTERNAL_free(xpub);

@@ -1,9 +1,11 @@
+// Flags: --expose-internals
 'use strict';
 
 const common = require('../common');
 const { spawnSyncAndExitWithoutError } = require('../common/child_process');
 const { isMainThread } = require('worker_threads');
 
+common.skipIfPerfettoEnabled();
 if (!isMainThread) {
   common.skip('This test only works on a main thread');
 }
@@ -11,7 +13,6 @@ if (!isMainThread) {
 const assert = require('assert');
 const fs = require('fs');
 const tmpdir = require('../common/tmpdir');
-const { defaultTraceFileName } = require('../common/trace_events');
 
 try {
   require('trace_events');
@@ -55,7 +56,7 @@ assert.throws(() => {
 }, common.expectsError({
   code: 'ERR_ACCESS_DENIED',
   permission: 'FileSystemWrite',
-  resource: defaultTraceFileName,
+  resource: 'node_trace.1.log',
 }));
 
-assert.strictEqual(fs.existsSync(defaultTraceFileName), false);
+assert.strictEqual(fs.existsSync('node_trace.1.log'), false);

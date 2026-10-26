@@ -1,55 +1,62 @@
-import { hasOpenSSL } from '../../common/crypto.js';
-import { generateNamedKeyPair, X25519 } from './supports-level-2.mjs';
+import { hasOpenSSL, isBoringSSL } from '../../common/crypto.js'
 
 const supportsContext = hasOpenSSL(3, 2);
-export const X448 = generateNamedKeyPair('X448');
-export const Ed448 = generateNamedKeyPair('Ed448');
-const hasX448 = X448 !== undefined;
-const hasEd448 = Ed448 !== undefined;
+
+const { subtle } = globalThis.crypto;
+
+const boringSSL = isBoringSSL;
+
+const X25519 = await subtle.generateKey('X25519', false, ['deriveBits', 'deriveKey']);
+let X448;
+let Ed448;
+if (!boringSSL) {
+  X448 = await subtle.generateKey('X448', false, ['deriveBits', 'deriveKey'])
+  Ed448 = await subtle.generateKey('Ed448', false, ['sign', 'verify'])
+}
 
 export const vectors = {
   'sign': [
-    [hasEd448, 'Ed448'],
-    [hasEd448, { name: 'Ed448', context: Buffer.alloc(0) }],
-    [hasEd448 && supportsContext, { name: 'Ed448', context: Buffer.alloc(32) }],
-    [hasEd448 && supportsContext, { name: 'Ed448', context: Buffer.alloc(255) }],
+    [!boringSSL, 'Ed448'],
+    [!boringSSL, { name: 'Ed448', context: Buffer.alloc(0) }],
+    [!boringSSL && supportsContext, { name: 'Ed448', context: Buffer.alloc(32) }],
+    [!boringSSL && supportsContext, { name: 'Ed448', context: Buffer.alloc(255) }],
     [false, { name: 'Ed448', context: Buffer.alloc(256) }],
   ],
   'generateKey': [
-    [hasX448, 'X448'],
-    [hasEd448, 'Ed448'],
+    [!boringSSL, 'X448'],
+    [!boringSSL, 'Ed448'],
   ],
   'deriveKey': [
-    [hasX448,
+    [!boringSSL,
      { name: 'X448', public: X448?.publicKey },
      { name: 'AES-CBC', length: 128 }],
     [false,
      { name: 'X448', public: X448?.publicKey },
      { name: 'HMAC', hash: 'SHA-256' }],
-    [hasX448,
+    [!boringSSL,
      { name: 'X448', public: X448?.publicKey },
      { name: 'HMAC', hash: 'SHA-256', length: 448 }],
     [false,
      { name: 'X448', public: X448?.publicKey },
      { name: 'HMAC', hash: 'SHA-256', length: 449 }],
-    [hasX448,
+    [!boringSSL,
      { name: 'X448', public: X448?.publicKey },
      'HKDF'],
   ],
   'deriveBits': [
-    [hasX448, { name: 'X448', public: X448?.publicKey }],
-    [hasX448, { name: 'X448', public: X448?.publicKey }, 448],
+    [!boringSSL, { name: 'X448', public: X448?.publicKey }],
+    [!boringSSL, { name: 'X448', public: X448?.publicKey }, 448],
     [false, { name: 'X448', public: X448?.publicKey }, 449],
-    [false, { name: 'X448', public: X25519?.publicKey }],
+    [false, { name: 'X448', public: X25519.publicKey }],
     [false, { name: 'X448', public: X448?.privateKey }],
     [false, 'X448'],
   ],
   'importKey': [
-    [hasX448, 'X448'],
-    [hasEd448, 'Ed448'],
+    [!boringSSL, 'X448'],
+    [!boringSSL, 'Ed448'],
   ],
   'exportKey': [
-    [hasEd448, 'Ed448'],
-    [hasX448, 'X448'],
+    [!boringSSL, 'Ed448'],
+    [!boringSSL, 'X448'],
   ],
 };

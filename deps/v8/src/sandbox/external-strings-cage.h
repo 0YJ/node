@@ -21,9 +21,8 @@ namespace v8::internal {
 #if defined(V8_ENABLE_SANDBOX) && defined(V8_ENABLE_MEMORY_CORRUPTION_API)
 
 // A singleton object that manages a virtual memory range for hosting external
-// string contents, with extra reservations at the beginning and the end in
-// order to fit any read before a string's buffer start or past a string's
-// buffer end using a corrupted offset or length.
+// string contents, with an extra reservation at the end in order to fit any
+// read past a string's buffer end using a corrupted length.
 //
 // Currently only used in memory_corruption_api-enabled builds, in order to
 // distinguish external string OOB reads from other issues.
@@ -37,10 +36,9 @@ class V8_EXPORT_PRIVATE ExternalStringsCage final {
   // amount of extra space; increase this if it turns out to be insufficient for
   // testing of important use cases.
   static constexpr size_t kMaxContentsSize = (size_t{1} << 33) + GB;
-  // The size of the guard regions at the beginning and the end of the cage.
-  // Chosen to cover a sum of arbitrary 32-bit offset and length for a UTF-16
-  // string.
-  static constexpr size_t kGuardRegionSize = size_t{1} << 34;
+  // The size of the guard region at the end of the cage. Chosen to cover an
+  // arbitrary 32-bit offset for a UTF-16 string.
+  static constexpr size_t kGuardRegionSize = size_t{1} << 33;
 
   template <typename T>
   class Deleter final {
@@ -79,7 +77,7 @@ class V8_EXPORT_PRIVATE ExternalStringsCage final {
   }
 
   // Makes the memory pages read-only.
-  void Seal(void* ptr, size_t size);
+  V8_EXPORT_PRIVATE void Seal(void* ptr, size_t size);
 
   base::AddressRegion reservation_region() const {
     CHECK(vm_cage_.IsReserved());
@@ -91,14 +89,13 @@ class V8_EXPORT_PRIVATE ExternalStringsCage final {
   ~ExternalStringsCage();
 
   size_t GetAllocSize(size_t string_size) const;
-  void* AllocateRaw(size_t size);
-  void Free(void* ptr, size_t size);
+  V8_EXPORT_PRIVATE void* AllocateRaw(size_t size);
+  V8_EXPORT_PRIVATE void Free(void* ptr, size_t size);
 
   static ExternalStringsCage* instance_;
 
   const size_t page_size_;
   VirtualMemoryCage vm_cage_;
-  base::AddressRegion allocation_region_;
 };
 
 #endif  // defined(V8_ENABLE_SANDBOX) &&

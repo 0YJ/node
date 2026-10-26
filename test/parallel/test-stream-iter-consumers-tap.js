@@ -4,7 +4,6 @@
 const common = require('../common');
 const assert = require('assert');
 const {
-  dump,
   from,
   fromSync,
   pull,
@@ -86,7 +85,8 @@ async function testTapInPipeline() {
 async function testTapAsyncErrorPropagation() {
   const badTap = tap(() => { throw new Error('tap error'); });
   await assert.rejects(async () => {
-    await dump(pull(from('hello'), badTap));
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of pull(from('hello'), badTap)) { /* consume */ }
   }, { message: 'tap error' });
 }
 

@@ -23,7 +23,6 @@ const assert = require('node:assert')
 const { isomorphicEncode, serializeJavascriptValueToJSONString } = require('../infra')
 
 const textEncoder = new TextEncoder('utf-8')
-let getResponseHeaders, setResponseHeaders, getResponseState, setResponseState
 
 // https://fetch.spec.whatwg.org/#response-class
 class Response {
@@ -146,7 +145,7 @@ class Response {
 
   // Returns response’s type, e.g., "cors".
   get type () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The type getter steps are to return this’s response’s type.
     return this.#state.type
@@ -154,7 +153,7 @@ class Response {
 
   // Returns response’s URL, if it has one; otherwise the empty string.
   get url () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     const urlList = this.#state.urlList
 
@@ -172,7 +171,7 @@ class Response {
 
   // Returns whether response was obtained through a redirect.
   get redirected () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The redirected getter steps are to return true if this’s response’s URL
     // list has more than one item; otherwise false.
@@ -181,7 +180,7 @@ class Response {
 
   // Returns response’s status.
   get status () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The status getter steps are to return this’s response’s status.
     return this.#state.status
@@ -189,7 +188,7 @@ class Response {
 
   // Returns whether response’s status is an ok status.
   get ok () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The ok getter steps are to return true if this’s response’s status is an
     // ok status; otherwise false.
@@ -198,7 +197,7 @@ class Response {
 
   // Returns response’s status message.
   get statusText () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The statusText getter steps are to return this’s response’s status
     // message.
@@ -207,27 +206,27 @@ class Response {
 
   // Returns response’s headers as Headers.
   get headers () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // The headers getter steps are to return this’s headers.
     return this.#headers
   }
 
   get body () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     return this.#state.body ? this.#state.body.stream : null
   }
 
   get bodyUsed () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     return !!this.#state.body && util.isDisturbed(this.#state.body.stream)
   }
 
   // Returns a clone of response.
   clone () {
-    webidl.brandCheck(this, webidl.is.Response)
+    webidl.brandCheck(this, Response)
 
     // 1. If this is unusable, then throw a TypeError.
     if (bodyUnusable(this.#state)) {
@@ -273,44 +272,44 @@ class Response {
     return `Response ${nodeUtil.formatWithOptions(options, properties)}`
   }
 
-  static {
-    /**
-     * @param {Response} response
-     */
-    getResponseHeaders = (response) => {
-      return response.#headers
-    }
+  /**
+   * @param {Response} response
+   */
+  static getResponseHeaders (response) {
+    return response.#headers
+  }
 
-    /**
-     * @param {Response} response
-     * @param {Headers} newHeaders
-     */
-    setResponseHeaders = (response, newHeaders) => {
-      response.#headers = newHeaders
-    }
+  /**
+   * @param {Response} response
+   * @param {Headers} newHeaders
+   */
+  static setResponseHeaders (response, newHeaders) {
+    response.#headers = newHeaders
+  }
 
-    /**
-     * @param {Response} response
-     */
-    getResponseState = (response) => {
-      return response.#state
-    }
+  /**
+   * @param {Response} response
+   */
+  static getResponseState (response) {
+    return response.#state
+  }
 
-    /**
-     * @param {Response} response
-     * @param {any} newState
-     */
-    setResponseState = (response, newState) => {
-      response.#state = newState
-    }
-
-    webidl.is.Response = (arg) => {
-      return arg != null && typeof arg === 'object' && #state in arg
-    }
+  /**
+   * @param {Response} response
+   * @param {any} newState
+   */
+  static setResponseState (response, newState) {
+    response.#state = newState
   }
 }
 
-mixinBody(Response, getResponseState, webidl.is.Response)
+const { getResponseHeaders, setResponseHeaders, getResponseState, setResponseState } = Response
+Reflect.deleteProperty(Response, 'getResponseHeaders')
+Reflect.deleteProperty(Response, 'setResponseHeaders')
+Reflect.deleteProperty(Response, 'getResponseState')
+Reflect.deleteProperty(Response, 'setResponseState')
+
+mixinBody(Response, getResponseState)
 
 Object.defineProperties(Response.prototype, {
   type: kEnumerableProperty,
@@ -624,6 +623,8 @@ webidl.converters.ResponseInit = webidl.dictionaryConverter([
     converter: webidl.converters.HeadersInit
   }
 ])
+
+webidl.is.Response = webidl.util.MakeTypeAssertion(Response)
 
 module.exports = {
   isNetworkError,

@@ -30,13 +30,14 @@ T* SandboxAlloc() {
   // best-effort attempt to catch such cases, but it doesn't work for all
   // unsafe cases, for example raw pointer fields or Address values.
   // TODO(427464384): this is a little too strict, e.g. for std::atomic.
-  static_assert(std::is_trivial_v<T>,
+  static_assert(std::is_trivial<T>::value,
                 "Must only allocate trivial C++ types inside the sandbox");
 
   size_t size = sizeof(T);
 
 #ifdef V8_ENABLE_SANDBOX
-  auto* allocator = IsolateGroup::current()->GetInSandboxAllocator();
+  auto allocator =
+      IsolateGroup::GetDefault()->GetSandboxedArrayBufferAllocator();
   void* raw_memory = allocator->Allocate(size);
 #else
   void* raw_memory = base::Malloc(size);
@@ -53,13 +54,14 @@ T* SandboxAllocArray(size_t num_elements) {
   // best-effort attempt to catch such cases, but it doesn't work for all
   // unsafe cases, for example raw pointer fields or Address values.
   // TODO(427464384): this is a little too strict, e.g. for std::atomic.
-  static_assert(std::is_trivial_v<T>,
+  static_assert(std::is_trivial<T>::value,
                 "Must only allocate trivial C++ types inside the sandbox");
 
   size_t size = base::CheckMul(num_elements, sizeof(T)).ValueOrDie();
 
 #ifdef V8_ENABLE_SANDBOX
-  auto* allocator = IsolateGroup::current()->GetInSandboxAllocator();
+  auto allocator =
+      IsolateGroup::GetDefault()->GetSandboxedArrayBufferAllocator();
   void* raw_memory = allocator->Allocate(size);
 #else
   void* raw_memory = base::Malloc(size);
@@ -71,7 +73,8 @@ T* SandboxAllocArray(size_t num_elements) {
 
 inline void SandboxFree(void* ptr) {
 #ifdef V8_ENABLE_SANDBOX
-  auto* allocator = IsolateGroup::current()->GetInSandboxAllocator();
+  auto allocator =
+      IsolateGroup::GetDefault()->GetSandboxedArrayBufferAllocator();
   allocator->Free(ptr);
 #else
   return base::Free(ptr);

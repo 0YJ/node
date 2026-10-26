@@ -4,7 +4,6 @@
 
 #include <fstream>
 
-#include "src/base/strong-alias.h"
 #include "src/builtins/builtins-effects-analyzer.h"
 #include "src/builtins/builtins-inl.h"
 #include "src/builtins/profile-data-reader.h"
@@ -108,10 +107,6 @@ AssemblerOptions BuiltinAssemblerOptions(Isolate* isolate, Builtin builtin) {
   if (wasm::BuiltinLookup::IsWasmBuiltinId(builtin) ||
       builtin == Builtin::kJSToWasmWrapper ||
       builtin == Builtin::kJSToWasmHandleReturns ||
-#ifdef V8_ENABLE_DRUMBRAKE
-      builtin == Builtin::kJSToWasmInterpreterHandleReturns ||
-      builtin == Builtin::kJSToWasmInterpreterWrapper ||
-#endif  // V8_ENABLE_DRUMBRAKE
       builtin == Builtin::kWasmToJsWrapperCSA) {
     options.is_wasm = true;
   }
@@ -161,7 +156,7 @@ using CodeAssemblerInstaller = compiler::Pipeline::CodeAssemblerInstaller;
 DirectHandle<Code> BuildPlaceholder(Isolate* isolate, Builtin builtin) {
   HandleScope scope(isolate);
   uint8_t buffer[kBufferSize];
-  MacroAssembler masm(isolate, CodeObjectRequired{true},
+  MacroAssembler masm(isolate, CodeObjectRequired::kYes,
                       ExternalAssemblerBuffer(buffer, kBufferSize));
   DCHECK(!masm.has_frame());
   {
@@ -187,7 +182,7 @@ V8_NOINLINE Tagged<Code> BuildWithMacroAssembler(
   uint8_t buffer[kBufferSize];
 
   MacroAssembler masm(isolate, BuiltinAssemblerOptions(isolate, builtin),
-                      CodeObjectRequired{true},
+                      CodeObjectRequired::kYes,
                       ExternalAssemblerBuffer(buffer, kBufferSize));
   masm.set_builtin(builtin);
   DCHECK(!masm.has_frame());
@@ -227,18 +222,10 @@ V8_NOINLINE Tagged<Code> BuildWithMacroAssembler(
   masm.GetCode(isolate->main_thread_local_isolate(), &desc,
                MacroAssembler::kNoSafepointTable, handler_table_offset);
 
-  int parameter_count = 0;
-#if V8_ENABLE_WEBASSEMBLY
-  if (builtin == Builtin::kWasmResume || builtin == Builtin::kWasmReject) {
-    parameter_count = Builtins::GetFormalParameterCount(builtin);
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY
-
   DirectHandle<Code> code =
       Factory::CodeBuilder(isolate, desc, CodeKind::BUILTIN)
           .set_self_reference(masm.CodeObject())
           .set_builtin(builtin)
-          .set_parameter_count(parameter_count)
           .Build();
 #if defined(V8_OS_WIN64)
   isolate->SetBuiltinUnwindData(builtin, masm.GetUnwindInfo());
@@ -251,7 +238,7 @@ Tagged<Code> BuildAdaptor(Isolate* isolate, Builtin builtin,
   HandleScope scope(isolate);
   uint8_t buffer[kBufferSize];
   MacroAssembler masm(isolate, BuiltinAssemblerOptions(isolate, builtin),
-                      CodeObjectRequired{true},
+                      CodeObjectRequired::kYes,
                       ExternalAssemblerBuffer(buffer, kBufferSize));
   masm.set_builtin(builtin);
   DCHECK(!masm.has_frame());
@@ -422,6 +409,7 @@ void SetupIsolateDelegate::ReplacePlaceholders(Isolate* isolate) {
       RelocInfo::ModeMask(RelocInfo::FULL_EMBEDDED_OBJECT) |
       RelocInfo::ModeMask(RelocInfo::COMPRESSED_EMBEDDED_OBJECT) |
       RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET);
+  PtrComprCageBase cage_base(isolate);
   for (Builtin builtin = Builtins::kFirst; builtin <= Builtins::kLast;
        ++builtin) {
     Tagged<Code> code = builtins->code(builtin);
@@ -446,9 +434,9 @@ void SetupIsolateDelegate::ReplacePlaceholders(Isolate* isolate) {
                                   UPDATE_WRITE_BARRIER, SKIP_ICACHE_FLUSH);
       } else {
         DCHECK(RelocInfo::IsEmbeddedObjectMode(rinfo->rmode()));
-        Tagged<Object> object = rinfo->target_object();
-        if (!Is<Code>(object)) continue;
-        Tagged<Code> target = TrustedCast<Code>(object);
+        Tagged<Object> object = rinfo->target_object(cage_base);
+        Tagged<Code> target;
+        if (!TryCast(object, &target)) continue;
         if (!target->is_builtin()) continue;
         Tagged<Code> new_target = builtins->code(target->builtin_id());
         rinfo->set_target_object(istream, new_target, UPDATE_WRITE_BARRIER,

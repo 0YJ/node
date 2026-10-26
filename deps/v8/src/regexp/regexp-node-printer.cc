@@ -11,22 +11,22 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-void NodePrinter<Node>::PrintNodeLabel(const Node* node, const char* name) {
-  set_color(PrinterBase::Color::kBlue);
+void RegExpNodePrinter<RegExpNode>::PrintNodeLabel(const RegExpNode* node,
+                                                   const char* name) {
+  set_color(RegExpPrinterBase::Color::kBlue);
   PrintNodeLabel(node);
   os() << ": " << name << " ";
 }
 
-void NodePrinter<Node>::PrintSuccess(const SeqNode* node) {
-  set_color(PrinterBase::Color::kGreen);
+void RegExpNodePrinter<RegExpNode>::PrintSuccess(const SeqRegExpNode* node) {
+  set_color(RegExpPrinterBase::Color::kGreen);
   os() << " ⇝ ";
   PrintNodeLabel(node->on_success());
-  set_color(PrinterBase::Color::kDefault);
+  set_color(RegExpPrinterBase::Color::kDefault);
 }
 
-void NodePrinter<Node>::VisitEnd(EndNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitEnd(EndNode* node) {
   PrintNodeLabel(node, "End");
   switch (node->action()) {
     case EndNode::ACCEPT:
@@ -50,7 +50,7 @@ void NodePrinter<Node>::VisitEnd(EndNode* node) {
   }
 }
 
-void NodePrinter<Node>::VisitAction(ActionNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitAction(ActionNode* node) {
   PrintNodeLabel(node, "Action");
   switch (node->action_type()) {
     case ActionNode::SET_REGISTER_FOR_LOOP:
@@ -103,6 +103,9 @@ void NodePrinter<Node>::VisitAction(ActionNode* node) {
       os() << "clear captures " << node->register_from() << " -- "
            << node->register_to();
       break;
+    case ActionNode::MODIFY_FLAGS:
+      os() << "modify flags " << RegExpFlags(node->data_.u_modify_flags.flags);
+      break;
     case ActionNode::EATS_AT_LEAST:
       os() << "eats at least " << node->data_.u_eats_at_least.characters;
       break;
@@ -110,13 +113,7 @@ void NodePrinter<Node>::VisitAction(ActionNode* node) {
   PrintSuccess(node);
 }
 
-void NodePrinter<Node>::VisitUnanchoredAdvance(UnanchoredAdvanceNode* node) {
-  PrintNodeLabel(node, "UnanchoredAdvance");
-  os() << "unanchored advance";
-  PrintSuccess(node);
-}
-
-void NodePrinter<Node>::PrintGuard(const Guard* guard) {
+void RegExpNodePrinter<RegExpNode>::PrintGuard(const Guard* guard) {
   os() << guard->reg() << " ";
   switch (guard->op()) {
     case Guard::LT:
@@ -129,7 +126,7 @@ void NodePrinter<Node>::PrintGuard(const Guard* guard) {
   os() << " " << guard->value();
 }
 
-void NodePrinter<Node>::VisitChoice(ChoiceNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitChoice(ChoiceNode* node) {
   PrintNodeLabel(node, "Choice");
   if (node->not_at_start()) {
     os() << "!^ ";
@@ -147,7 +144,7 @@ void NodePrinter<Node>::VisitChoice(ChoiceNode* node) {
   }
 }
 
-void NodePrinter<Node>::VisitLoopChoice(LoopChoiceNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitLoopChoice(LoopChoiceNode* node) {
   PrintNodeLabel(node, "LoopChoice");
   if (node->read_backward()) {
     os() << "↩ ";
@@ -159,13 +156,13 @@ void NodePrinter<Node>::VisitLoopChoice(LoopChoiceNode* node) {
        << (node->alternatives()->at(0).node() == node->loop_node());
   os() << "; body can be empty: " << node->body_can_be_zero_length();
   os() << "]";
-  set_color(PrinterBase::Color::kGreen);
+  set_color(RegExpPrinterBase::Color::kGreen);
   os() << " ⇝ ";
   PrintNodeLabel(node->continue_node());
-  set_color(PrinterBase::Color::kDefault);
+  set_color(RegExpPrinterBase::Color::kDefault);
 }
 
-void NodePrinter<Node>::VisitNegativeLookaroundChoice(
+void RegExpNodePrinter<RegExpNode>::VisitNegativeLookaroundChoice(
     NegativeLookaroundChoiceNode* node) {
   PrintNodeLabel(node, "NegativeLookaroundChoice");
   if (node->not_at_start()) {
@@ -184,7 +181,8 @@ void NodePrinter<Node>::VisitNegativeLookaroundChoice(
   }
 }
 
-void NodePrinter<Node>::VisitBackReference(BackReferenceNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitBackReference(
+    BackReferenceNode* node) {
   PrintNodeLabel(node, "BackReference");
   if (node->read_backward()) {
     os() << "↩ ";
@@ -193,7 +191,7 @@ void NodePrinter<Node>::VisitBackReference(BackReferenceNode* node) {
   PrintSuccess(node);
 }
 
-void NodePrinter<Node>::VisitAssertion(AssertionNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitAssertion(AssertionNode* node) {
   PrintNodeLabel(node, "Assertion");
   switch (node->assertion_type()) {
     case AssertionNode::AT_END:
@@ -215,7 +213,7 @@ void NodePrinter<Node>::VisitAssertion(AssertionNode* node) {
   PrintSuccess(node);
 }
 
-void NodePrinter<Node>::VisitText(TextNode* node) {
+void RegExpNodePrinter<RegExpNode>::VisitText(TextNode* node) {
   PrintNodeLabel(node, "Text");
   if (node->read_backward()) {
     os() << "↩ ";
@@ -223,7 +221,7 @@ void NodePrinter<Node>::VisitText(TextNode* node) {
   for (int i = 0; i < node->elements()->length(); i++) {
     const TextElement& elm = node->elements()->at(i);
     if (i != 0) os() << " ";
-    AstNodePrinter tree_printer(*this, nullptr);
+    RegExpAstNodePrinter tree_printer(*this, nullptr);
     tree_printer.Print(elm.tree());
   }
   os() << "; Eats: " << node->EatsAtLeast(false) << "/"
@@ -231,7 +229,6 @@ void NodePrinter<Node>::VisitText(TextNode* node) {
   PrintSuccess(node);
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

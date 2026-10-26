@@ -1,6 +1,7 @@
 'use strict';
 
 const common = require('../common.js');
+const _checkIsHttpToken = require('_http_common')._checkIsHttpToken;
 
 const bench = common.createBenchmark(main, {
   key: [
@@ -37,16 +38,12 @@ const bench = common.createBenchmark(main, {
     'alternate-protocol:', // slow bailout
   ],
   n: [1e6],
-}, {
-  flags: ['--expose-internals', '--no-warnings'],
 });
 
 function main({ n, key }) {
-  const checkIsHttpToken = require('internal/http/common')._checkIsHttpToken;
-
   bench.start();
   for (let i = 0; i < n; i++) {
-    checkIsHttpToken(key);
+    _checkIsHttpToken(key);
   }
   bench.end(n);
 }

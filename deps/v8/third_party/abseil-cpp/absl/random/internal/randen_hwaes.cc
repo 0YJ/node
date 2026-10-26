@@ -19,9 +19,10 @@
 
 #include "absl/random/internal/randen_hwaes.h"
 
+#include <cstdint>
 #include <cstring>
 
-#include "absl/base/config.h"
+#include "absl/base/attributes.h"
 #include "absl/numeric/int128.h"
 #include "absl/random/internal/platform.h"
 #include "absl/random/internal/randen_traits.h"
@@ -219,11 +220,11 @@ namespace {
 class Vector128 {
  public:
   // Convert from/to intrinsics.
-  explicit Vector128(const __m128i& v) : data_(v) {}
+  inline explicit Vector128(const __m128i& v) : data_(v) {}
 
-  __m128i data() const { return data_; }
+  inline __m128i data() const { return data_; }
 
-  Vector128& operator^=(const Vector128& other) {
+  inline Vector128& operator^=(const Vector128& other) {
     data_ = _mm_xor_si128(data_, other.data());
     return *this;
   }

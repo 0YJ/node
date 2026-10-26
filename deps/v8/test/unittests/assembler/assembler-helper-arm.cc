@@ -12,7 +12,7 @@ namespace internal {
 
 Handle<Code> AssembleCodeImpl(Isolate* isolate,
                               std::function<void(MacroAssembler&)> assemble) {
-  MacroAssembler assm(isolate, CodeObjectRequired{true});
+  MacroAssembler assm(isolate, CodeObjectRequired::kYes);
 
   assemble(assm);
   assm.bx(lr);

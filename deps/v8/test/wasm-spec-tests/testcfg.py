@@ -7,16 +7,25 @@ from testrunner.objects import testcase
 
 # We use the 'wasm-3.0' branch on the main spec repo, so enable all proposals
 # that were merged into that branch.
-default_flags = []
+default_flags = ['--experimental-wasm-exnref']
 
 proposal_flags = [
+    {
+        'name': 'js-types',
+        'flags': ['--experimental-wasm-type-reflection']
+    },
     {
         'name': 'tail-call',
         'flags': []
     },
     {
-        'name': 'memory64',
-        'flags': []
+        'name':
+            'memory64',
+        'flags': [
+            # The memory64 repository is rebased on the upstream 'wasm-3.0'
+            # branch, which contains exnref.
+            '--experimental-wasm-exnref'
+        ]
     },
     {
         'name': 'extended-const',
@@ -32,28 +41,32 @@ proposal_flags = [
     },
     {
         'name': 'multi-memory',
-        'flags': []
+        'flags': ['--experimental-wasm-multi-memory']
     },
     {
         'name': 'exception-handling',
-        'flags': []
+        # This flag enables the *new* exception handling proposal. The legacy
+        # proposal is enabled by default.
+        'flags': ['--experimental-wasm-exnref']
     },
     {
-        'name': 'js-promise-integration',
-        'flags': []
+        'name':
+            'js-promise-integration',
+        'flags': [
+            '--experimental-wasm-jspi',
+            # The jspi repository is rebased on the upstream 'wasm-3.0'
+            # branch, which contains exnref.
+            '--experimental-wasm-exnref'
+        ]
     },
     {
         'name': 'stack-switching',
-        'flags': ['--wasm-wasmfx']
+        'flags': ['--experimental-wasm-wasmfx']
     },
     {
         'name': 'custom-descriptors',
-        'flags': ['--wasm-custom-descriptors']
-    },
-    {
-        'name': 'wide-arithmetic',
-        'flags': ['--wasm-wide-arithmetic']
-    },
+        'flags': ['--experimental-wasm-custom-descriptors']
+    }
 ]
 
 

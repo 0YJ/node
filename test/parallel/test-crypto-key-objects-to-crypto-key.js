@@ -12,15 +12,14 @@ const {
   randomBytes,
   generateKeyPairSync,
 } = require('crypto');
-const { hasFIPS, isBoringSSL } = require('../common/crypto');
+const { hasFIPS } = require('../common/crypto');
 const { kSupportedAlgorithms } = require('internal/crypto/util');
+const fips = hasFIPS();
 const rejectsXCurves = hasFIPS(3, 5);
 
 const hashes = Object.keys(kSupportedAlgorithms.digest).filter((name) => {
   return name.startsWith('SHA-') || name.startsWith('SHA3-');
 });
-const unsupportedKeyHashes = isBoringSSL ? ['SHA3-256', 'SHA3-384', 'SHA3-512'] : [];
-const keyHashes = hashes.filter((hash) => !unsupportedKeyHashes.includes(hash));
 const namedCurves = ['P-256', 'P-384', 'P-521'];
 
 const signingUsages = {
@@ -107,17 +106,6 @@ function runVector(vector) {
   assertVector(vector, false);
 }
 
-function assertUnsupportedKeyHashes(keyObject, name, usages) {
-  for (const hash of unsupportedKeyHashes) {
-    for (const extractable of [true, false]) {
-      assert.throws(() => keyObject.toCryptoKey({ name, hash }, extractable, usages), {
-        name: 'NotSupportedError',
-        message: 'SHA-3 is only supported for digest operations',
-      });
-    }
-  }
-}
-
 function symmetricVectors(name, usages) {
   const vectors = [];
   for (const length of [128, 192, 256]) {
@@ -151,11 +139,19 @@ function genericSecretVectors(name) {
   ];
 }
 
-function macInvalid(algorithm, invalidLengthMessage, isKmac = false) {
+function macInvalid(algorithm, invalidLengthMessage, allowZeroKey = false) {
   const key = createSecretKey(randomBytes(32));
   const usages = ['sign', 'verify'];
 
-  if (isKmac) {
+  if (allowZeroKey && !fips) {
+    const zeroKey = createSecretKey(Buffer.alloc(0))
+      .toCryptoKey(algorithm, true, usages);
+    assert.strictEqual(zeroKey.algorithm.length, 0);
+
+    const explicitZeroKey = createSecretKey(Buffer.alloc(0))
+      .toCryptoKey({ ...algorithm, length: 0 }, true, usages);
+    assert.strictEqual(explicitZeroKey.algorithm.length, 0);
+  } else if (allowZeroKey) {
     for (const zeroAlgorithm of [algorithm, { ...algorithm, length: 0 }]) {
       assert.throws(() => {
         createSecretKey(Buffer.alloc(0))
@@ -181,7 +177,7 @@ function macInvalid(algorithm, invalidLengthMessage, isKmac = false) {
 
   assert.throws(
     () => key.toCryptoKey({ ...algorithm, length: 0 }, true, usages),
-    isKmac ? {
+    allowZeroKey && fips ? {
       name: 'NotSupportedError',
       message: 'Invalid key length',
     } : {
@@ -194,8 +190,7 @@ function hmacVectors() {
   const vectors = [];
   for (const length of [128, 192, 256]) {
     const key = secretKey(length);
-    assertUnsupportedKeyHashes(key, 'HMAC', ['sign', 'verify']);
-    for (const hash of keyHashes) {
+    for (const hash of hashes) {
       vectors.push(vector(
         key,
         { name: 'HMAC', hash },
@@ -233,8 +228,7 @@ function rsaVectors(name, usagesByType) {
   const keyPair = generateKeyPairSync('rsa', { modulusLength: 2048 });
   const vectors = [];
   for (const keyObject of [keyPair.publicKey, keyPair.privateKey]) {
-    assertUnsupportedKeyHashes(keyObject, name, getUsages(keyObject, usagesByType));
-    for (const hash of keyHashes) {
+    for (const hash of hashes) {
       vectors.push(vector(
         keyObject,
         { name, hash },
@@ -263,7 +257,7 @@ function ecVectors(name, usagesByType) {
 function cfrgVectors(name, usagesByType) {
   if (rejectsXCurves && name.startsWith('X')) {
     assert.throws(() => generateKeyPairSync(name.toLowerCase()), {
-      code: 'ERR_INVALID_ARG_VALUE',
+      code: 'ERR_OSSL_EVP_UNSUPPORTED',
     });
     return [];
   }
@@ -319,12 +313,9 @@ function invalidAsymmetricKeyType(name, invalidAlgorithm) {
   const { publicKey } = generateKeyPairSync(name.toLowerCase());
   assert.throws(() => {
     publicKey.toCryptoKey(invalidAlgorithm, true, []);
-  }, invalidAlgorithm in kSupportedAlgorithms.importKey ? {
+  }, {
     name: 'DataError',
     message: 'Invalid key type'
-  } : {
-    name: 'NotSupportedError',
-    message: 'Unrecognized algorithm name',
   });
 }
 

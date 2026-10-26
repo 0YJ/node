@@ -35,6 +35,8 @@ class V8_EXPORT_PRIVATE BaseSpace : public Malloced {
   // memory and page headers.
   virtual size_t CommittedMemory() const { return committed_; }
 
+  virtual size_t MaximumCommittedMemory() const { return max_committed_; }
+
   // Approximate amount of physical memory committed for this space.
   virtual size_t CommittedPhysicalMemory() const = 0;
 
@@ -54,6 +56,9 @@ class V8_EXPORT_PRIVATE BaseSpace : public Malloced {
   void AccountCommitted(size_t bytes) {
     DCHECK_GE(committed_ + bytes, committed_);
     committed_ += bytes;
+    if (committed_ > max_committed_) {
+      max_committed_ = committed_;
+    }
   }
 
   void AccountUncommitted(size_t bytes) {
@@ -67,6 +72,7 @@ class V8_EXPORT_PRIVATE BaseSpace : public Malloced {
 
   // Keeps track of committed memory in a space.
   std::atomic<size_t> committed_{0};
+  size_t max_committed_ = 0;
 };
 
 }  // namespace internal

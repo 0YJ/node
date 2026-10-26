@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2013-2014 Timo Teräs <timo.teras@gmail.com>
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -168,7 +168,7 @@ static int add_entry(enum Type type, unsigned int hash, const char *filename,
         if (ep->filename == NULL) {
             OPENSSL_free(ep);
             ep = NULL;
-            BIO_puts(bio_err, "out of memory\n");
+            BIO_printf(bio_err, "out of memory\n");
             return 1;
         }
         if (bp->last_entry)
@@ -235,12 +235,12 @@ static int handle_symlink(const char *filename, const char *fullpath)
 static int do_file(const char *filename, const char *fullpath, enum Hash h)
 {
     STACK_OF(X509_INFO) *inf = NULL;
-    X509_INFO *x = NULL, *tmp;
+    X509_INFO *x;
     const X509_NAME *name = NULL;
     BIO *b;
     const char *ext;
     unsigned char digest[EVP_MAX_MD_SIZE];
-    int type, j, num = 0, errs = 0;
+    int type, errs = 0;
     size_t i;
 
     /* Does it end with a recognized extension? */
@@ -265,42 +265,34 @@ static int do_file(const char *filename, const char *fullpath, enum Hash h)
     if (inf == NULL)
         goto end;
 
-    /* Count the number of certs and CRLs and make x point to the last X509_INFO */
-    for (j = 0; j < sk_X509_INFO_num(inf); j++) {
-        tmp = sk_X509_INFO_value(inf, j);
-        if (tmp->x509 != NULL) {
-            x = tmp;
-            num++;
-        }
-        if (tmp->crl != NULL) {
-            x = tmp;
-            num++;
-        }
-    }
-    if (num != 1) {
+    if (sk_X509_INFO_num(inf) != 1) {
         BIO_printf(bio_err,
             "%s: warning: skipping %s, "
-            "it does not contain exactly one certificate or CRL in PEM format\n",
+            "it does not contain exactly one certificate or CRL\n",
             opt_getprog(), filename);
         /* This is not an error. */
         goto end;
     }
+    x = sk_X509_INFO_value(inf, 0);
     if (x->x509 != NULL) {
         type = TYPE_CERT;
         name = X509_get_subject_name(x->x509);
         if (!X509_digest(x->x509, evpmd, digest, NULL)) {
-            BIO_puts(bio_err, "out of memory\n");
+            BIO_printf(bio_err, "out of memory\n");
+            ++errs;
+            goto end;
+        }
+    } else if (x->crl != NULL) {
+        type = TYPE_CRL;
+        name = X509_CRL_get_issuer(x->crl);
+        if (!X509_CRL_digest(x->crl, evpmd, digest, NULL)) {
+            BIO_printf(bio_err, "out of memory\n");
             ++errs;
             goto end;
         }
     } else {
-        type = TYPE_CRL;
-        name = X509_CRL_get_issuer(x->crl);
-        if (!X509_CRL_digest(x->crl, evpmd, digest, NULL)) {
-            BIO_puts(bio_err, "out of memory\n");
-            ++errs;
-            goto end;
-        }
+        ++errs;
+        goto end;
     }
     if (name != NULL) {
         if (h == HASH_NEW || h == HASH_BOTH) {
@@ -408,7 +400,7 @@ static int do_dir(const char *dirname, enum Hash h)
     numfiles = sk_OPENSSL_STRING_num(files);
     for (n = 0; n < numfiles; ++n) {
         filename = sk_OPENSSL_STRING_value(files, n);
-        if (snprintf(buf, buflen, "%s%s%s",
+        if (BIO_snprintf(buf, buflen, "%s%s%s",
                 dirname, pathsep, filename)
             >= buflen)
             continue;
@@ -432,7 +424,7 @@ static int do_dir(const char *dirname, enum Hash h)
                 nextep = ep->next;
                 if (ep->old_id < bp->num_needed) {
                     /* Link exists, and is used as-is */
-                    snprintf(buf, buflen, "%08x.%s%d", bp->hash,
+                    BIO_snprintf(buf, buflen, "%08x.%s%d", bp->hash,
                         suffixes[bp->type], ep->old_id);
                     if (verbose)
                         BIO_printf(bio_out, "link %s -> %s\n",
@@ -442,7 +434,7 @@ static int do_dir(const char *dirname, enum Hash h)
                     while (bit_isset(idmask, nextid))
                         nextid++;
 
-                    snprintf(buf, buflen, "%s%s%08x.%s%d",
+                    BIO_snprintf(buf, buflen, "%s%s%08x.%s%d",
                         dirname, pathsep, bp->hash,
                         suffixes[bp->type], nextid);
                     if (verbose)
@@ -464,7 +456,7 @@ static int do_dir(const char *dirname, enum Hash h)
                     bit_set(idmask, nextid);
                 } else if (remove_links) {
                     /* Link to be deleted */
-                    snprintf(buf, buflen, "%s%s%08x.%s%d",
+                    BIO_snprintf(buf, buflen, "%s%s%08x.%s%d",
                         dirname, pathsep, bp->hash,
                         suffixes[bp->type], ep->old_id);
                     if (verbose)
@@ -558,6 +550,7 @@ int rehash_main(int argc, char **argv)
     }
 
     /* Optional arguments are directories to scan. */
+    argc = opt_num_rest();
     argv = opt_rest();
 
     evpmd = EVP_sha1();
@@ -595,7 +588,7 @@ const OPTIONS rehash_options[] = {
 
 int rehash_main(int argc, char **argv)
 {
-    BIO_puts(bio_err, "Not available\n");
+    BIO_printf(bio_err, "Not available; use c_rehash script\n");
     return 1;
 }
 

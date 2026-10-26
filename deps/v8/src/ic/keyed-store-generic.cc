@@ -326,7 +326,7 @@ void KeyedStoreGenericAssembler::TryRewriteElements(
   BIND(&perform_transition);
   {
     if (IsDoubleElementsKind(from_kind) != IsDoubleElementsKind(to_kind)) {
-      TNode<IntPtrT> capacity = LoadFixedArrayBaseLength(elements);
+      TNode<IntPtrT> capacity = LoadAndUntagFixedArrayBaseLength(elements);
       GrowElementsCapacity(receiver, elements, from_kind, to_kind, capacity,
                            capacity, bailout);
     }
@@ -393,7 +393,7 @@ void KeyedStoreGenericAssembler::MaybeUpdateLengthAndReturn(
     UpdateLength update_length) {
   if (update_length != kDontChangeLength) {
     TNode<Smi> new_length = SmiTag(Signed(IntPtrAdd(index, IntPtrConstant(1))));
-    StoreObjectFieldNoWriteBarrier(receiver, offsetof(JSArray, length_),
+    StoreObjectFieldNoWriteBarrier(receiver, JSArray::kLengthOffset,
                                    new_length);
   }
   Return(value);
@@ -674,7 +674,7 @@ void KeyedStoreGenericAssembler::EmitGenericElementStore(
   Label if_array(this);
   GotoIf(IsJSArrayInstanceType(instance_type), &if_array);
   {
-    TNode<IntPtrT> capacity = LoadFixedArrayBaseLength(elements);
+    TNode<IntPtrT> capacity = LoadAndUntagFixedArrayBaseLength(elements);
     Branch(UintPtrLessThan(index, capacity), &if_in_bounds, &if_grow);
   }
   BIND(&if_array);
@@ -682,7 +682,7 @@ void KeyedStoreGenericAssembler::EmitGenericElementStore(
     TNode<IntPtrT> length =
         PositiveSmiUntag(LoadFastJSArrayLength(CAST(receiver)));
     GotoIf(UintPtrLessThan(index, length), &if_in_bounds);
-    TNode<IntPtrT> capacity = LoadFixedArrayBaseLength(elements);
+    TNode<IntPtrT> capacity = LoadAndUntagFixedArrayBaseLength(elements);
     GotoIf(UintPtrGreaterThanOrEqual(index, capacity), &if_grow);
     Branch(WordEqual(index, length), &if_increment_length_by_one,
            &if_bump_length_with_gap);
@@ -752,7 +752,7 @@ void KeyedStoreGenericAssembler::EmitGenericElementStore(
 
   BIND(&if_shared_array);
   {
-    TNode<IntPtrT> length = LoadFixedArrayBaseLength(elements);
+    TNode<IntPtrT> length = LoadAndUntagFixedArrayBaseLength(elements);
     GotoIf(UintPtrGreaterThanOrEqual(index, length), slow);
     StoreSharedArrayElement(context, elements, index, value);
   }
@@ -825,10 +825,10 @@ void KeyedStoreGenericAssembler::LookupPropertyOnPrototypeChain(
         TNode<PropertyCell> property_cell =
             CAST(LoadValueByKeyIndex(dictionary, entry));
         TNode<Object> value =
-            LoadObjectField(property_cell, offsetof(PropertyCell, value_));
+            LoadObjectField(property_cell, PropertyCell::kValueOffset);
         GotoIf(TaggedEqual(value, TheHoleConstant()), &next_proto);
         TNode<Uint32T> details = Unsigned(LoadAndUntagToWord32ObjectField(
-            property_cell, offsetof(PropertyCell, property_details_raw_)));
+            property_cell, PropertyCell::kPropertyDetailsRawOffset));
         JumpIfDataProperty(details, &ok_to_write, readonly);
 
         if (accessor != nullptr) {
@@ -860,8 +860,8 @@ TNode<Map> KeyedStoreGenericAssembler::FindCandidateStoreICTransitionMapHandler(
   Label simple_transition(this), transition_array(this),
       found_handler_candidate(this);
 
-  TNode<MaybeObject> maybe_handler = LoadMaybeWeakObjectField(
-      map, offsetof(Map, transitions_or_prototype_info_));
+  TNode<MaybeObject> maybe_handler =
+      LoadMaybeWeakObjectField(map, Map::kTransitionsOrPrototypeInfoOffset);
 
   // Smi -> slow,
   // Cleared weak reference -> slow

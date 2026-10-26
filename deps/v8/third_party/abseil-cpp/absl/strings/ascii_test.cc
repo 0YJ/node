@@ -18,7 +18,6 @@
 #include <cctype>
 #include <clocale>
 #include <cstring>
-#include <iterator>
 #include <string>
 
 #include "gtest/gtest.h"
@@ -363,7 +362,7 @@ TEST(RemoveExtraAsciiWhitespace, InPlace) {
       "",
       "a\nb",
   };
-  const int NUM_TESTS = std::size(inputs);
+  const int NUM_TESTS = ABSL_ARRAYSIZE(inputs);
 
   for (int i = 0; i < NUM_TESTS; i++) {
     std::string s(inputs[i]);

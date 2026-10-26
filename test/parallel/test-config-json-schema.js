@@ -10,10 +10,10 @@ if (!common.hasCrypto) {
   common.skip('missing crypto');
 }
 
-const { isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL } = require('../common/crypto');
 
-if (isBoringSSL) {
-  common.skip('this test is not supported with BoringSSL');
+if (!hasOpenSSL(3)) {
+  common.skip('this test requires OpenSSL 3.x');
 }
 
 if (!common.hasIntl) {
@@ -21,18 +21,15 @@ if (!common.hasIntl) {
   common.skip('missing Intl');
 }
 
+if (!common.hasQuic) {
+  common.skip('this test requires QUIC');
+}
+
 if (process.config.variables.icu_small) {
   common.skip('this test assumes full ICU build');
 }
 
-if (!common.hasFFI) {
-  common.skip('missing FFI');
-}
-
-// The JSON schema is generated from a build with the default configuration
-// options, where these are disabled and their options are not available.
-if (process.config.variables.node_use_quic ||
-    process.config.variables.node_use_dtls || common.hasV8Sandbox) {
+if (process.config.variables.node_quic) {
   common.skip('this test assumes default configuration options');
 }
 
@@ -42,9 +39,7 @@ const {
 const schemaInDoc = require('../../doc/node-config-schema.json');
 const assert = require('assert');
 
-// Round-trip through JSON so that the null-prototype objects returned by
-// generateConfigJsonSchema() show up as plain objects in the diff.
-const schema = JSON.parse(JSON.stringify(generateConfigJsonSchema()));
+const schema = generateConfigJsonSchema();
 
 // This assertion ensures that whenever we add a new env option, we also add it
 // to the JSON schema. The function getEnvOptionsInputType() returns all the available
@@ -53,5 +48,5 @@ const schema = JSON.parse(JSON.stringify(generateConfigJsonSchema()));
 // To regenerate the JSON schema, run:
 // out/Release/node --expose-internals tools/doc/generate-json-schema.mjs
 // And then run make doc to update the out/doc/node-config-schema.json file.
-assert.deepStrictEqual(schema, schemaInDoc, 'JSON schema is outdated. Run ' +
-  '`out/Release/node --expose-internals tools/doc/generate-json-schema.mjs` to update it.');
+assert.strictEqual(JSON.stringify(schema), JSON.stringify(schemaInDoc), 'JSON schema is outdated.' +
+  'Run `out/Release/node --expose-internals tools/doc/generate-json-schema.mjs` to update it.');

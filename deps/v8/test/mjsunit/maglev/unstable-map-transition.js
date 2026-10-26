@@ -13,5 +13,5 @@
   foo({});
   %OptimizeMaglevOnNextCall(foo);
   foo({});
-  assertMaglevved(foo);
+  assertTrue(isMaglevved(foo));
 })();

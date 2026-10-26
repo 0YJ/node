@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 // Flags: --sandbox-testing --allow-natives-syntax
+// Flags: --experimental-wasm-type-reflection
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
@@ -63,8 +64,8 @@ function setField(obj, offset, value) {
 
 const kSmiTagSize = 1;
 
-// Put a function into table1 while it still has type $sig1.
-table1.set(0, new WebAssemblyFunction(
+// Put a WasmJSFunction into table1 while it still has type $sig1.
+table1.set(0, new WebAssembly.Function(
   {parameters: [], results: ['i64']},
   () => 0x414141414141n));
 

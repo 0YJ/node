@@ -26,6 +26,8 @@ namespace wasm {
 class WasmValue;
 }  // namespace wasm
 
+#include "torque-generated/src/debug/debug-wasm-objects-tq.inc"
+
 class ArrayList;
 class WasmFrame;
 class WasmInstanceObject;
@@ -35,9 +37,7 @@ class WasmInterpreterEntryFrame;
 class WasmModuleObject;
 class WasmTableObject;
 
-V8_OBJECT class WasmValueObject : public JSObject {
-  V8_IT_NO_AUTO_DISPATCH;
-
+class WasmValueObject : public JSObject {
  public:
   DECL_ACCESSORS(type, Tagged<String>)
   DECL_ACCESSORS(value, Tagged<Object>)
@@ -54,15 +54,18 @@ V8_OBJECT class WasmValueObject : public JSObject {
   DEFINE_FIELD_OFFSET_CONSTANTS(JSObject::kHeaderSize, WASM_VALUE_FIELDS)
 #undef WASM_VALUE_FIELDS
 
+  // Indices of in-object properties.
+  static constexpr int kTypeIndex = 0;
+  static constexpr int kValueIndex = 1;
+
   static DirectHandle<WasmValueObject> New(Isolate* isolate,
                                            DirectHandle<String> type,
                                            DirectHandle<Object> value);
   static DirectHandle<WasmValueObject> New(Isolate* isolate,
                                            const wasm::WasmValue& value);
 
- private:
-  DISALLOW_IMPLICIT_CONSTRUCTORS(WasmValueObject);
-} V8_OBJECT_END;
+  OBJECT_CONSTRUCTORS(WasmValueObject, JSObject);
+};
 
 DirectHandle<JSObject> GetWasmDebugProxy(WasmFrame* frame);
 

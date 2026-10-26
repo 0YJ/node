@@ -33,4 +33,4 @@ assertSame(Infinity, max2(-Infinity, Infinity));
 assertSame(-Infinity, max2(-Infinity, -Infinity));
 
 // No deopts.
-assertMaglevved(max2);
+assertTrue(isMaglevved(max2));

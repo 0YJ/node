@@ -46,4 +46,4 @@ test();
 test();
 
 // No deopts.
-assertMaglevved(test);
+assertTrue(isMaglevved(test));

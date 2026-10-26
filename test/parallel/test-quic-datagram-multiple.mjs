@@ -10,7 +10,6 @@
 import { hasQuic, skip, mustCall, mustCallAtLeast } from '../common/index.mjs';
 import assert from 'node:assert';
 import * as fixtures from '../common/fixtures.mjs';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -73,7 +72,7 @@ for (let i = 0; i < numDatagrams; i++) {
 }
 
 // Complete the stream.
-await dump(stream);
+for await (const _ of stream) { /* drain */ } // eslint-disable-line no-unused-vars
 await stream.closed;
 
 // At least some datagrams should have arrived.

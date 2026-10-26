@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.copyFileSync dispatches to VFS when both paths are within the same mount.

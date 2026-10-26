@@ -8,8 +8,8 @@
 #include "src/base/logging.h"
 #include "src/common/assert-scope.h"
 #include "src/heap/local-factory-inl.h"
-#include "src/heap/local-heap-inl.h"
 #include "src/objects/objects-inl.h"
+#include "src/objects/objects.h"
 
 namespace v8 {
 namespace internal {
@@ -79,19 +79,16 @@ inline void EncodeInt(ZoneVector<uint8_t>* bytes, T value) {
 }
 
 // Encode a PositionTableEntry.
-void EncodeEntry(ZoneVector<uint8_t>* bytes, const PositionTableEntry& entry,
-                 bool is_absolute_source) {
+void EncodeEntry(ZoneVector<uint8_t>* bytes, const PositionTableEntry& entry) {
   // We only accept ascending code offsets.
   DCHECK_LE(0, entry.code_offset);
   // All but the first entry must be *strictly* ascending (no two entries for
   // the same position).
   // TODO(11496): This DCHECK fails tests.
   // DCHECK_IMPLIES(!bytes->empty(), entry.code_offset > 0);
-  // The least significant bit is used to encode is_statement.
-  // The second least significant bit is used to encode is_breakable.
-  // The third least significant bit is used to encode is_absolute_source.
-  uint32_t encoded_entry = (entry.code_offset << 3) |
-                           (is_absolute_source << 2) |
+  // The least significant bit is used to encode is_breakable.
+  // The second least significant bit is used to encode is_statement.
+  uint32_t encoded_entry = (entry.code_offset << 2) |
                            (entry.is_breakable << 1) | (entry.is_statement);
 
   EncodeUInt(bytes, encoded_entry);
@@ -126,22 +123,19 @@ T DecodeInt(base::Vector<const uint8_t> bytes, int* index) {
 }
 
 void DecodeEntry(base::Vector<const uint8_t> bytes, int* index,
-                 PositionTableEntry* entry, bool* is_absolute_source) {
-  // The least significant bit is used to encode is_statement.
-  // The second least significant bit is used to encode is_breakable.
-  // The third least significant bit is used to encode is_absolute_source.
+                 PositionTableEntry* entry) {
+  // The least significant bit is used to encode is_breakable.
+  // The second least significant bit is used to encode is_statement.
   int tmp = DecodeUInt<int>(bytes, index);
-  entry->code_offset = tmp >> 3;
-  *is_absolute_source = (tmp & 0b100) >> 2;
-  entry->is_breakable = (tmp & 0b010) >> 1;
+  entry->code_offset = tmp >> 2;
+  entry->is_breakable = (tmp & 0b10) >> 1;
   entry->is_statement = tmp & 1;
   entry->source_position = DecodeInt<int64_t>(bytes, index);
 }
 
 base::Vector<const uint8_t> VectorFromByteArray(
     Tagged<TrustedByteArray> byte_array) {
-  return base::Vector<const uint8_t>(byte_array->begin(),
-                                     byte_array->ulength().value());
+  return base::Vector<const uint8_t>(byte_array->begin(), byte_array->length());
 }
 
 #ifdef ENABLE_SLOW_DCHECKS
@@ -186,12 +180,7 @@ V8_INLINE void SourcePositionTableBuilder::AddEntry(
     const PositionTableEntry& entry) {
   PositionTableEntry tmp(entry);
   SubtractFromEntry(&tmp, previous_);
-  bool is_absolute_source =
-      SourcePosition::FromRaw(entry.source_position).IsExternal();
-  if (is_absolute_source) {
-    tmp.source_position = entry.source_position;
-  }
-  EncodeEntry(&bytes_, tmp, is_absolute_source);
+  EncodeEntry(&bytes_, tmp);
   previous_ = entry;
 #ifdef ENABLE_SLOW_DCHECKS
   raw_entries_.push_back(entry);
@@ -204,10 +193,9 @@ Handle<TrustedByteArray> SourcePositionTableBuilder::ToSourcePositionTable(
   if (bytes_.empty()) return isolate->factory()->empty_trusted_byte_array();
   DCHECK(!Omit());
 
-  const uint32_t bytes_size = static_cast<uint32_t>(bytes_.size());
   Handle<TrustedByteArray> table =
-      isolate->factory()->NewTrustedByteArray(bytes_size);
-  MemCopy(table->begin(), bytes_.data(), bytes_size);
+      isolate->factory()->NewTrustedByteArray(static_cast<int>(bytes_.size()));
+  MemCopy(table->begin(), bytes_.data(), bytes_.size());
 
 #ifdef ENABLE_SLOW_DCHECKS
   // Brute force testing: Record all positions and decode
@@ -303,16 +291,8 @@ void SourcePositionTableIterator::Advance() {
       index_ = kDone;
     } else {
       PositionTableEntry tmp;
-      bool is_absolute_source;
-      DecodeEntry(bytes, &index_, &tmp, &is_absolute_source);
-      if (is_absolute_source) {
-        current_.source_position = tmp.source_position;
-        current_.code_offset += tmp.code_offset;
-        current_.is_statement = tmp.is_statement;
-        current_.is_breakable = tmp.is_breakable;
-      } else {
-        AddAndSetEntry(&current_, tmp);
-      }
+      DecodeEntry(bytes, &index_, &tmp);
+      AddAndSetEntry(&current_, tmp);
       SourcePosition p = source_position();
       filter_satisfied =
           (iteration_filter_ == kAll) ||

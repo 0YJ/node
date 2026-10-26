@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.chmodSync, fs.chownSync, fs.lchownSync, fs.utimesSync, and

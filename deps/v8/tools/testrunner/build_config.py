@@ -16,7 +16,6 @@ SCALE_FACTOR = dict(
     tsan=2,
     use_sanitizer=1.5,
     verify_predictable=8,
-    dumpling=10,
 )
 
 INITIALIZATION_ERROR = f"""

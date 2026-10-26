@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cstdint>
 #include <thread>  // NOLINT(build/c++11)
 #include <tuple>
 #include <vector>
@@ -24,7 +23,6 @@
 #include "absl/base/internal/sysinfo.h"
 #include "absl/container/fixed_array.h"
 #include "absl/time/clock.h"
-#include "absl/time/time.h"
 
 namespace {
 
@@ -115,12 +113,12 @@ std::vector<int> MultiplicativeRange(int low, int high, int scale) {
   return result;
 }
 
-#if defined(ABSL_HAVE_THREAD_SANITIZER)
+#ifndef ABSL_HAVE_THREAD_SANITIZER
+const int kMaxThreads = absl::base_internal::NumCPUs();
+#else
 // With TSAN, a lot of threads contending for atomic access on the sequence
 // lock make this test run too slowly.
 const int kMaxThreads = std::min(absl::base_internal::NumCPUs(), 4);
-#else
-const int kMaxThreads = absl::base_internal::NumCPUs();
 #endif
 
 // Return all of the interesting buffer sizes worth testing:

@@ -11,7 +11,6 @@
 #include <memory>
 #include <vector>
 
-#include "src/base/logging.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
 #include "src/objects/intl-objects.h"
@@ -37,7 +36,7 @@ namespace internal {
 namespace {
 // Type: identifying the types of the display names.
 //
-// https://tc39.es/ecma402/#sec-properties-of-intl-displaynames-instances
+// ecma402/#sec-properties-of-intl-displaynames-instances
 enum class Type {
   kUndefined,
   kLanguage,
@@ -71,7 +70,6 @@ UDisplayContext ToUDisplayContext(JSDisplayNames::Style style) {
     case JSDisplayNames::Style::kNarrow:
       return UDISPCTX_LENGTH_SHORT;
   }
-  UNREACHABLE();
 }
 
 }  // anonymous namespace
@@ -79,8 +77,7 @@ UDisplayContext ToUDisplayContext(JSDisplayNames::Style style) {
 // Abstract class for all different types.
 class DisplayNamesInternal {
  public:
-  static constexpr ManagedTypeId kTypeID =
-      ManagedTypeId::kDisplayNamesInternal;
+  static constexpr ExternalPointerTag kManagedTag = kDisplayNamesInternalTag;
 
   DisplayNamesInternal() = default;
   virtual ~DisplayNamesInternal() = default;
@@ -300,7 +297,6 @@ UDateTimePGDisplayWidth StyleToUDateTimePGDisplayWidth(
     case JSDisplayNames::Style::kNarrow:
       return UDATPG_NARROW;
   }
-  UNREACHABLE();
 }
 
 UDateTimePatternField StringToUDateTimePatternField(const char* code) {
@@ -397,7 +393,7 @@ DisplayNamesInternal* CreateInternal(const icu::Locale& locale,
 
 }  // anonymous namespace
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames
+// ecma402 #sec-Intl.DisplayNames
 MaybeDirectHandle<JSDisplayNames> JSDisplayNames::New(
     Isolate* isolate, DirectHandle<Map> map, DirectHandle<Object> locales,
     DirectHandle<Object> input_options, const char* service) {
@@ -429,7 +425,7 @@ MaybeDirectHandle<JSDisplayNames> JSDisplayNames::New(
   // 8. Set opt.[[localeMatcher]] to matcher.
   Intl::MatcherOption matcher = maybe_locale_matcher.FromJust();
 
-  // https://tc39.es/ecma402/#sec-Intl.DisplayNames-internal-slots
+  // ecma402/#sec-Intl.DisplayNames-internal-slots
   // The value of the [[RelevantExtensionKeys]] internal slot is
   // «  ».
   // 9. Let r be ResolveLocale(%DisplayNames%.[[AvailableLocales]],
@@ -532,9 +528,8 @@ MaybeDirectHandle<JSDisplayNames> JSDisplayNames::New(
     THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kIcuError));
   }
 
-  DirectHandle<CppGCManaged<DisplayNamesInternal>> managed_internal =
-      CppGCManaged<DisplayNamesInternal>::Create(isolate, 0,
-                                                 std::move(internal));
+  DirectHandle<Managed<DisplayNamesInternal>> managed_internal =
+      Managed<DisplayNamesInternal>::From(isolate, 0, std::move(internal));
 
   DirectHandle<JSDisplayNames> display_names =
       Cast<JSDisplayNames>(factory->NewFastOrSlowJSObjectFromMap(map));
@@ -550,7 +545,7 @@ MaybeDirectHandle<JSDisplayNames> JSDisplayNames::New(
   return display_names;
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames.prototype.resolvedOptions
+// ecma402 #sec-Intl.DisplayNames.prototype.resolvedOptions
 DirectHandle<JSObject> JSDisplayNames::ResolvedOptions(
     Isolate* isolate, DirectHandle<JSDisplayNames> display_names) {
   Factory* factory = isolate->factory();
@@ -558,8 +553,7 @@ DirectHandle<JSObject> JSDisplayNames::ResolvedOptions(
   DirectHandle<JSObject> options =
       factory->NewJSObject(isolate->object_function());
 
-  CppGCManaged<DisplayNamesInternal>::Ptr internal =
-      display_names->internal()->ptr();
+  DisplayNamesInternal* internal = display_names->internal()->raw();
 
   Maybe<std::string> maybe_locale = Intl::ToLanguageTag(internal->locale());
   DCHECK(maybe_locale.IsJust());
@@ -604,15 +598,14 @@ DirectHandle<JSObject> JSDisplayNames::ResolvedOptions(
   return options;
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames.prototype.of
+// ecma402 #sec-Intl.DisplayNames.prototype.of
 MaybeDirectHandle<Object> JSDisplayNames::Of(
     Isolate* isolate, DirectHandle<JSDisplayNames> display_names,
     Handle<Object> code_obj) {
   DirectHandle<String> code;
   ASSIGN_RETURN_ON_EXCEPTION(isolate, code,
                              Object::ToString(isolate, code_obj));
-  CppGCManaged<DisplayNamesInternal>::Ptr internal =
-      display_names->internal()->ptr();
+  DisplayNamesInternal* internal = display_names->internal()->raw();
   Maybe<icu::UnicodeString> maybe_result =
       internal->of(isolate, code->ToCString().get());
   MAYBE_RETURN(maybe_result, DirectHandle<Object>());

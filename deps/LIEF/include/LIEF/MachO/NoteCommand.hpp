@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,11 +15,8 @@
  */
 #ifndef LIEF_MACHO_NOTE_COMMAND_H
 #define LIEF_MACHO_NOTE_COMMAND_H
-#include <algorithm>
 #include <ostream>
-#include <string>
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/span.hpp"
 
@@ -32,7 +29,7 @@ namespace details {
 struct note_command;
 }
 
-/// Class that represents the `LC_NOTE` command.
+/// Class that represent the `LC_NOTE` command.
 ///
 /// This command is used to include arbitrary notes or metadata within a binary.
 class LIEF_API NoteCommand : public LoadCommand {
@@ -58,18 +55,17 @@ class LIEF_API NoteCommand : public LoadCommand {
   }
 
   /// Owner of the note (e.g. `AIR_METALLIB`)
-  span<const char> owner() const LIEF_LIFETIMEBOUND {
+  span<const char> owner() const {
     return owner_;
   }
 
-  span<char> owner() LIEF_LIFETIMEBOUND {
+  span<char> owner() {
     return owner_;
   }
 
   /// Owner as a zero-terminated string
   std::string owner_str() const {
-    const auto end = std::find(owner_.begin(), owner_.end(), '\0');
-    return {owner_.begin(), end};
+    return std::string(owner_.data(), owner_.size()).c_str();
   }
 
   void note_offset(uint64_t offset) {

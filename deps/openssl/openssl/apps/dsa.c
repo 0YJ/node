@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -38,6 +38,7 @@ typedef enum OPTION_choice {
     OPT_OUTFORM,
     OPT_IN,
     OPT_OUT,
+    OPT_ENGINE,
     /* Do not change the order here; see case statements below */
     OPT_PVK_NONE,
     OPT_PVK_WEAK,
@@ -62,6 +63,9 @@ const OPTIONS dsa_options[] = {
     { "pvk-weak", OPT_PVK_WEAK, '-', "Enable 'Weak' PVK encoding level" },
     { "pvk-none", OPT_PVK_NONE, '-', "Don't enforce PVK encoding" },
 #endif
+#ifndef OPENSSL_NO_ENGINE
+    { "engine", OPT_ENGINE, 's', "Use engine e, possibly a hardware device" },
+#endif
 
     OPT_SECTION("Input"),
     { "in", OPT_IN, 's', "Input key" },
@@ -85,6 +89,7 @@ const OPTIONS dsa_options[] = {
 int dsa_main(int argc, char **argv)
 {
     BIO *out = NULL;
+    ENGINE *e = NULL;
     EVP_PKEY *pkey = NULL;
     EVP_CIPHER *enc = NULL;
     char *infile = NULL, *outfile = NULL, *prog;
@@ -126,6 +131,9 @@ int dsa_main(int argc, char **argv)
             break;
         case OPT_OUT:
             outfile = opt_arg();
+            break;
+        case OPT_ENGINE:
+            e = setup_engine(opt_arg(), 0);
             break;
         case OPT_PASSIN:
             passinarg = opt_arg();
@@ -174,23 +182,23 @@ int dsa_main(int argc, char **argv)
     private = !pubin && (!pubout || text);
 
     if (!app_passwd(passinarg, passoutarg, &passin, &passout)) {
-        BIO_puts(bio_err, "Error getting passwords\n");
+        BIO_printf(bio_err, "Error getting passwords\n");
         goto end;
     }
 
-    BIO_puts(bio_err, "read DSA key\n");
+    BIO_printf(bio_err, "read DSA key\n");
     if (pubin)
-        pkey = load_pubkey(infile, informat, 1, passin, "public key");
+        pkey = load_pubkey(infile, informat, 1, passin, e, "public key");
     else
-        pkey = load_key(infile, informat, 1, passin, "private key");
+        pkey = load_key(infile, informat, 1, passin, e, "private key");
 
     if (pkey == NULL) {
-        BIO_puts(bio_err, "unable to load Key\n");
+        BIO_printf(bio_err, "unable to load Key\n");
         ERR_print_errors(bio_err);
         goto end;
     }
     if (!EVP_PKEY_is_a(pkey, "DSA")) {
-        BIO_puts(bio_err, "Not a DSA key\n");
+        BIO_printf(bio_err, "Not a DSA key\n");
         goto end;
     }
 
@@ -215,9 +223,9 @@ int dsa_main(int argc, char **argv)
             ERR_print_errors(bio_err);
             goto end;
         }
-        BIO_puts(out, "Public Key=");
+        BIO_printf(out, "Public Key=");
         BN_print(out, pub_key);
-        BIO_puts(out, "\n");
+        BIO_printf(out, "\n");
         BN_free(pub_key);
     }
 
@@ -225,7 +233,7 @@ int dsa_main(int argc, char **argv)
         ret = 0;
         goto end;
     }
-    BIO_puts(bio_err, "writing DSA key\n");
+    BIO_printf(bio_err, "writing DSA key\n");
     if (outformat == FORMAT_ASN1) {
         output_type = "DER";
     } else if (outformat == FORMAT_PEM) {
@@ -234,12 +242,12 @@ int dsa_main(int argc, char **argv)
         output_type = "MSBLOB";
     } else if (outformat == FORMAT_PVK) {
         if (pubin) {
-            BIO_puts(bio_err, "PVK form impossible with public key input\n");
+            BIO_printf(bio_err, "PVK form impossible with public key input\n");
             goto end;
         }
         output_type = "PVK";
     } else {
-        BIO_puts(bio_err, "bad output format specified for outfile\n");
+        BIO_printf(bio_err, "bad output format specified for outfile\n");
         goto end;
     }
 
@@ -287,13 +295,13 @@ int dsa_main(int argc, char **argv)
 
         params[0] = OSSL_PARAM_construct_int("encrypt-level", &pvk_encr);
         if (!OSSL_ENCODER_CTX_set_params(ectx, params)) {
-            BIO_puts(bio_err, "invalid PVK encryption level\n");
+            BIO_printf(bio_err, "invalid PVK encryption level\n");
             goto end;
         }
     }
 
     if (!OSSL_ENCODER_to_bio(ectx, out)) {
-        BIO_puts(bio_err, "unable to write key\n");
+        BIO_printf(bio_err, "unable to write key\n");
         goto end;
     }
     ret = 0;
@@ -304,6 +312,7 @@ end:
     BIO_free_all(out);
     EVP_PKEY_free(pkey);
     EVP_CIPHER_free(enc);
+    release_engine(e);
     OPENSSL_free(passin);
     OPENSSL_free(passout);
     return ret;

@@ -18,17 +18,14 @@
 #include "src/deoptimizer/translated-state.h"
 #include "src/diagnostics/eh-frame.h"
 #include "src/execution/frames.h"
-#include "src/flags/flags.h"
 #include "src/logging/counters.h"
 #include "src/logging/log.h"
 #include "src/objects/code-kind.h"
 #include "src/objects/smi.h"
 #include "src/utils/address-map.h"
 #include "src/utils/utils.h"
-#include "src/wasm/effect-handler.h"
 
 #if V8_ENABLE_WEBASSEMBLY
-#include "src/wasm/leb-helper.h"
 #include "src/wasm/wasm-deopt-data.h"
 #endif
 
@@ -73,11 +70,12 @@ CodeGenerator::CodeGenerator(Zone* codegen_zone, Frame* frame, Linkage* linkage,
       current_block_(RpoNumber::Invalid()),
       start_source_position_(start_source_position),
       current_source_position_(SourcePosition::Unknown()),
-      masm_(isolate, codegen_zone, options, CodeObjectRequired{false},
+      masm_(isolate, codegen_zone, options, CodeObjectRequired::kNo,
             std::unique_ptr<AssemblerBuffer>{}),
       resolver_(this),
       safepoints_(codegen_zone),
       handlers_(codegen_zone),
+      effect_handlers_(codegen_zone),
       deoptimization_exits_(codegen_zone),
       protected_deoptimization_literals_(codegen_zone),
       deoptimization_literals_(codegen_zone),
@@ -92,8 +90,7 @@ CodeGenerator::CodeGenerator(Zone* codegen_zone, Frame* frame, Linkage* linkage,
       source_position_table_builder_(
           codegen_zone, SourcePositionTableBuilder::RECORD_SOURCE_POSITIONS),
 #if V8_ENABLE_WEBASSEMBLY
-      trapping_instructions_(codegen_zone),
-      effect_handlers_(codegen_zone),
+      protected_instructions_(codegen_zone),
 #endif  // V8_ENABLE_WEBASSEMBLY
       result_(kSuccess),
       block_starts_(codegen_zone),
@@ -115,9 +112,9 @@ CodeGenerator::CodeGenerator(Zone* codegen_zone, Frame* frame, Linkage* linkage,
   masm_.set_builtin(builtin);
 }
 
-void CodeGenerator::RecordTrappingInstruction(uint32_t instr_offset) {
+void CodeGenerator::RecordProtectedInstruction(uint32_t instr_offset) {
 #if V8_ENABLE_WEBASSEMBLY
-  trapping_instructions_.push_back({instr_offset});
+  protected_instructions_.push_back({instr_offset});
 #endif  // V8_ENABLE_WEBASSEMBLY
 }
 
@@ -132,10 +129,7 @@ bool CodeGenerator::ShouldApplyOffsetToStackCheck(Instruction* instr,
 
   StackCheckKind kind =
       static_cast<StackCheckKind>(StackCheckField::decode(instr->opcode()));
-  if (kind != StackCheckKind::kJSFunctionEntry &&
-      kind != StackCheckKind::kWasm) {
-    return false;
-  }
+  if (kind != StackCheckKind::kJSFunctionEntry) return false;
 
   uint32_t stack_check_offset = *offset = GetStackCheckOffset();
   return stack_check_offset > kStackLimitSlackForDeoptimizationInBytes;
@@ -159,7 +153,7 @@ uint32_t CodeGenerator::GetStackCheckOffset() {
       static_cast<int32_t>(max_unoptimized_frame_height_);
 
   // The offset is either the delta between the optimized frames and the
-  // unoptimized frame, or the maximal number of bytes pushed to the stack
+  // interpreted frame, or the maximal number of bytes pushed to the stack
   // while preparing for function calls, whichever is bigger.
   uint32_t frame_height_delta = static_cast<uint32_t>(std::max(
       signed_max_unoptimized_frame_height - optimized_frame_height, 0));
@@ -496,19 +490,18 @@ void CodeGenerator::AssembleArchBinarySearchSwitchRange(
 #endif  // V8_TARGET_ARCH_X64/V8_TARGET_ARCH_RISCV64
 
 void CodeGenerator::AssembleArchJump(RpoNumber target) {
-  if (!IsNextInAssemblyOrder(target)) {
+  if (!IsNextInAssemblyOrder(target))
     AssembleArchJumpRegardlessOfAssemblyOrder(target);
-  }
 }
 
 base::OwnedVector<uint8_t> CodeGenerator::GetSourcePositionTable() {
   return source_position_table_builder_.ToSourcePositionTableVector();
 }
 
-base::OwnedVector<uint8_t> CodeGenerator::GetTrappingInstructionsData() {
+base::OwnedVector<uint8_t> CodeGenerator::GetProtectedInstructionsData() {
 #if V8_ENABLE_WEBASSEMBLY
   return base::OwnedCopyOf(
-      base::Vector<uint8_t>::cast(base::VectorOf(trapping_instructions_)));
+      base::Vector<uint8_t>::cast(base::VectorOf(protected_instructions_)));
 #else
   return {};
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -584,7 +577,9 @@ bool CodeGenerator::IsNextInAssemblyOrder(RpoNumber block) const {
 void CodeGenerator::RecordSafepoint(ReferenceMap* references, int pc_offset) {
   auto safepoint = safepoints()->DefineSafepoint(masm(), pc_offset);
 
-  safepoint.DefineTaggedStackSlots(frame()->tagged_slots());
+  for (int tagged : frame()->tagged_slots()) {
+    safepoint.DefineTaggedStackSlot(tagged);
+  }
 
   int frame_header_offset = frame()->GetFixedSlotCount();
   for (const InstructionOperand& operand : references->reference_operands()) {
@@ -600,10 +595,6 @@ void CodeGenerator::RecordSafepoint(ReferenceMap* references, int pc_offset) {
       safepoint.DefineTaggedStackSlot(index);
     }
   }
-}
-
-void CodeGenerator::RecordSafepointWithoutTaggedSlots() {
-  safepoints()->DefineSafepoint(masm());
 }
 
 bool CodeGenerator::IsMaterializableFromRoot(Handle<HeapObject> object,
@@ -1000,12 +991,11 @@ DirectHandle<TrustedPodArray<InliningPosition>> CreateInliningPositions(
     OptimizedCompilationInfo* info, Isolate* isolate) {
   const OptimizedCompilationInfo::InlinedFunctionList& inlined_functions =
       info->inlined_functions();
-  const uint32_t inlined_functions_len =
-      static_cast<uint32_t>(inlined_functions.size());
   DirectHandle<TrustedPodArray<InliningPosition>> inl_positions =
-      TrustedPodArray<InliningPosition>::New(isolate, inlined_functions_len);
-  for (uint32_t i = 0; i < inlined_functions_len; ++i) {
-    inl_positions->set(i, inlined_functions[i].position);
+      TrustedPodArray<InliningPosition>::New(
+          isolate, static_cast<int>(inlined_functions.size()));
+  for (size_t i = 0; i < inlined_functions.size(); ++i) {
+    inl_positions->set(static_cast<int>(i), inlined_functions[i].position);
   }
   return inl_positions;
 }
@@ -1042,12 +1032,10 @@ Handle<DeoptimizationData> CodeGenerator::GenerateDeoptimizationData() {
     data->SetWrappedSharedFunctionInfo(Smi::zero());
   }
 
-  const uint32_t protected_deopt_literals_len =
-      static_cast<uint32_t>(protected_deoptimization_literals_.size());
   DirectHandle<ProtectedDeoptimizationLiteralArray> protected_literals =
       isolate()->factory()->NewProtectedFixedArray(
-          protected_deopt_literals_len);
-  for (uint32_t i = 0; i < protected_deopt_literals_len; i++) {
+          static_cast<int>(protected_deoptimization_literals_.size()));
+  for (unsigned i = 0; i < protected_deoptimization_literals_.size(); i++) {
     IndirectHandle<TrustedObject> object =
         protected_deoptimization_literals_[i];
     CHECK(!object.is_null());
@@ -1055,11 +1043,10 @@ Handle<DeoptimizationData> CodeGenerator::GenerateDeoptimizationData() {
   }
   data->SetProtectedLiteralArray(*protected_literals);
 
-  const uint32_t deopt_literals_len =
-      static_cast<uint32_t>(deoptimization_literals_.size());
   DirectHandle<DeoptimizationLiteralArray> literals =
-      isolate()->factory()->NewDeoptimizationLiteralArray(deopt_literals_len);
-  for (uint32_t i = 0; i < deopt_literals_len; i++) {
+      isolate()->factory()->NewDeoptimizationLiteralArray(
+          static_cast<int>(deoptimization_literals_.size()));
+  for (unsigned i = 0; i < deoptimization_literals_.size(); i++) {
     DirectHandle<Object> object = deoptimization_literals_[i].Reify(isolate());
     CHECK(!object.is_null());
     literals->set(i, *object);
@@ -1102,7 +1089,6 @@ Handle<DeoptimizationData> CodeGenerator::GenerateDeoptimizationData() {
 
 #if V8_ENABLE_WEBASSEMBLY
 base::OwnedVector<uint8_t> CodeGenerator::GenerateWasmDeoptimizationData() {
-  CHECK_EQ(result_, kSuccess);
   int deopt_count = static_cast<int>(deoptimization_exits_.size());
   if (deopt_count == 0) {
     return {};
@@ -1118,7 +1104,7 @@ base::OwnedVector<uint8_t> CodeGenerator::GenerateWasmDeoptimizationData() {
   for (int i = 0; i < deopt_count; i++) {
     const DeoptimizationExit* deoptimization_exit = deoptimization_exits_[i];
     CHECK_NOT_NULL(deoptimization_exit);
-    CHECK_EQ(i, deoptimization_exit->deoptimization_id());
+    DCHECK_EQ(i, deoptimization_exit->deoptimization_id());
     deopt_entries[i] = {deoptimization_exit->bailout_id(),
                         deoptimization_exit->translation_id()};
   }
@@ -1153,30 +1139,15 @@ base::OwnedVector<uint8_t> CodeGenerator::GenerateWasmDeoptimizationData() {
   return result;
 }
 
-base::OwnedVector<uint8_t> CodeGenerator::GenerateWasmEffectHandlers() {
-  size_t size = 0;
+base::OwnedVector<wasm::WasmCode::EffectHandler>
+CodeGenerator::GenerateWasmEffectHandler() {
+  auto handlers = base::OwnedVector<wasm::WasmCode::EffectHandler>::New(
+      effect_handlers_.size());
   for (size_t i = 0; i < effect_handlers_.size(); ++i) {
-    size += wasm::LEBHelper::sizeof_u32v(effect_handlers_[i].pc_offset);
-    size += wasm::LEBHelper::sizeof_u32v(
-        effect_handlers_[i].tag_and_kind.raw_value());
-    if (!effect_handlers_[i].tag_and_kind.is_switch()) {
-      size += wasm::LEBHelper::sizeof_u32v(effect_handlers_[i].handler->pos());
-      size += wasm::LEBHelper::sizeof_u32v(effect_handlers_[i].sig.index);
-    }
+    handlers[i] = {effect_handlers_[i].pc_offset, effect_handlers_[i].tag_index,
+                   effect_handlers_[i].handler->pos()};
   }
-  auto bytes = base::OwnedVector<uint8_t>::New(size);
-  uint8_t* ptr = bytes.data();
-  for (size_t i = 0; i < effect_handlers_.size(); ++i) {
-    wasm::LEBHelper::write_u32v(&ptr, effect_handlers_[i].pc_offset);
-    wasm::LEBHelper::write_u32v(&ptr,
-                                effect_handlers_[i].tag_and_kind.raw_value());
-    if (!effect_handlers_[i].tag_and_kind.is_switch()) {
-      wasm::LEBHelper::write_u32v(&ptr, effect_handlers_[i].handler->pos());
-      wasm::LEBHelper::write_u32v(&ptr, effect_handlers_[i].sig.index);
-    }
-  }
-  DCHECK_EQ(ptr, bytes.end());
-  return bytes;
+  return handlers;
 }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
@@ -1198,30 +1169,19 @@ void CodeGenerator::RecordCallPosition(Instruction* instr) {
 
   InstructionOperandConverter i(this, instr);
   int index = static_cast<int>(instr->InputCount()) - 1;
-#if V8_ENABLE_WEBASSEMBLY
   if (instr->HasCallDescriptorFlag(CallDescriptor::kHasEffectHandler)) {
     int num_handlers = i.ToConstant(instr->InputAt(index)).ToInt32();
     // Start from the first handler, order matters.
-    for (int handler_idx = index - 3 * num_handlers; handler_idx < index;
-         handler_idx += 3) {
-      wasm::EffectHandlerTagIndex tag_index = wasm::EffectHandlerTagIndex(
-          i.ToConstant(instr->InputAt(handler_idx + 2)).ToInt32());
-
-      if (!tag_index.is_switch()) {
-        wasm::CanonicalTypeIndex sig{static_cast<uint32_t>(
-            i.ToConstant(instr->InputAt(handler_idx + 1)).ToInt32())};
-        RpoNumber handler_rpo =
-            i.ToConstant(instr->InputAt(handler_idx)).ToRpoNumber();
-        effect_handlers_.emplace_back(tag_index, GetLabel(handler_rpo),
-                                      masm()->pc_offset(), sig);
-      } else {
-        effect_handlers_.emplace_back(tag_index, nullptr, masm()->pc_offset(),
-                                      wasm::CanonicalTypeIndex::Invalid());
-      }
+    for (int handler_idx = index - 2 * num_handlers; handler_idx < index;
+         handler_idx += 2) {
+      RpoNumber handler_rpo =
+          i.ToConstant(instr->InputAt(handler_idx)).ToRpoNumber();
+      int tag_index = i.ToConstant(instr->InputAt(handler_idx + 1)).ToInt32();
+      effect_handlers_.push_back(
+          {tag_index, GetLabel(handler_rpo), masm()->pc_offset()});
     }
-    index = index - 3 * num_handlers - 1;
+    index = index - 2 * num_handlers - 1;
   }
-#endif
   if (instr->HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler)) {
     Constant handler_input = i.ToConstant(instr->InputAt(index--));
     if (handler_input.type() == Constant::Type::kRpoNumber) {
@@ -1674,12 +1634,6 @@ void CodeGenerator::AddTranslationForOperand(Instruction* instr,
         if (type == MachineType::HoleyFloat64() &&
             constant.ToFloat64().AsUint64() == kHoleNanInt64) {
           literal = DeoptimizationLiteral::HoleNaN();
-#ifdef V8_ENABLE_UNDEFINED_DOUBLE
-        } else if (type == MachineType::HoleyFloat64() &&
-                   constant.ToFloat64().AsUint64() == kUndefinedNanInt64) {
-          literal =
-              DeoptimizationLiteral(isolate()->factory()->undefined_value());
-#endif  // V8_ENABLE_UNDEFINED_DOUBLE
         } else {
           literal = DeoptimizationLiteral(constant.ToFloat64().value());
         }

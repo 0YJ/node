@@ -92,7 +92,8 @@ TEST(DownCastTest, Pointer) {
   // Tests a bad downcast. We have to disguise the badness just enough
   // that the compiler doesn't warn about it at compile time.
   BaseForDownCast* base2 = new BaseForDownCast();
-#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1))
+#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1 || \
+                                                  ABSL_OPTION_HARDENED == 2))
   EXPECT_DEATH(static_cast<void>(absl::down_cast<DerivedForDownCast*>(base2)),
                ".*down cast from .*BaseForDownCast.* to "
                ".*DerivedForDownCast.* failed.*");
@@ -125,7 +126,8 @@ TEST(DownCastTest, Reference) {
   // Tests a bad downcast. We have to disguise the badness just enough
   // that the compiler doesn't warn about it at compile time.
   BaseForDownCast& base2 = *new BaseForDownCast();
-#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1))
+#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1 || \
+                                                  ABSL_OPTION_HARDENED == 2))
   EXPECT_DEATH(static_cast<void>(absl::down_cast<DerivedForDownCast&>(base2)),
                ".*down cast from .*BaseForDownCast.* to "
                ".*DerivedForDownCast.* failed.*");
@@ -138,7 +140,8 @@ TEST(DownCastTest, ErrorMessage) {
   BaseForDownCast& base = derived;
   (void)base;
 
-#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1))
+#if GTEST_HAS_DEATH_TEST && (!defined(NDEBUG) || (ABSL_OPTION_HARDENED == 1 || \
+                                                  ABSL_OPTION_HARDENED == 2))
   EXPECT_DEATH(static_cast<void>(absl::down_cast<Derived2ForDownCast&>(base)),
                ".*down cast from .*DerivedForDownCast.* to "
                ".*Derived2ForDownCast.* failed.*");

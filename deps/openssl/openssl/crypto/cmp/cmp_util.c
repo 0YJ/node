@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2007-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright Nokia 2007-2019
  * Copyright Siemens AG 2015-2019
  *
@@ -9,7 +9,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <stdio.h>
 #include <string.h>
 #include <openssl/cmp_util.h>
 #include "cmp_local.h" /* just for decls of internal functions defined here */
@@ -56,7 +55,7 @@ static OSSL_CMP_severity parse_level(const char *level)
 
     if (HAS_PREFIX(level, OSSL_CMP_LOG_PREFIX))
         level += strlen(OSSL_CMP_LOG_PREFIX);
-    len = (int)(end_level - level);
+    len = end_level - level;
     if (len > max_level_len)
         return -1;
     OPENSSL_strlcpy(level_copy, level, len + 1);
@@ -171,13 +170,13 @@ void OSSL_CMP_print_errors_cb(OSSL_CMP_log_cb_t log_fn)
         }
 #endif
         if (rs == NULL) {
-            snprintf(rsbuf, sizeof(rsbuf), "reason(%lu)", reason);
+            BIO_snprintf(rsbuf, sizeof(rsbuf), "reason(%lu)", reason);
             rs = rsbuf;
         }
         if (data != NULL && (flags & ERR_TXT_STRING) != 0)
-            snprintf(msg, sizeof(msg), "%s:%s", rs, data);
+            BIO_snprintf(msg, sizeof(msg), "%s:%s", rs, data);
         else
-            snprintf(msg, sizeof(msg), "%s", rs);
+            BIO_snprintf(msg, sizeof(msg), "%s", rs);
 
         if (log_fn == NULL) {
 #ifndef OPENSSL_NO_STDIO
@@ -220,16 +219,15 @@ int ossl_cmp_X509_STORE_add1_certs(X509_STORE *store, STACK_OF(X509) *certs,
 }
 
 int ossl_cmp_sk_ASN1_UTF8STRING_push_str(STACK_OF(ASN1_UTF8STRING) *sk,
-    const char *text, size_t len)
+    const char *text, int len)
 {
     ASN1_UTF8STRING *utf8string;
 
-    /* text == NULL with len == 0 is the canonical empty string and is valid */
-    if (!ossl_assert(sk != NULL && (text != NULL || len == 0)))
+    if (!ossl_assert(sk != NULL && text != NULL))
         return 0;
     if ((utf8string = ASN1_UTF8STRING_new()) == NULL)
         return 0;
-    if (!ossl_asn1_string_set1_data(utf8string, (const uint8_t *)text, len))
+    if (!ASN1_STRING_set(utf8string, text, len))
         goto err;
     if (!sk_ASN1_UTF8STRING_push(sk, utf8string))
         goto err;

@@ -8,7 +8,6 @@
 #include "src/objects/prototype.h"
 // Include the non-inl header before the rest of the headers.
 
-#include "src/execution/isolate-inl.h"  // For Isolate::native_context().
 #include "src/handles/handles-inl.h"
 #include "src/objects/js-proxy.h"
 #include "src/objects/map-inl.h"
@@ -46,7 +45,7 @@ PrototypeIterator::PrototypeIterator(Isolate* isolate, Tagged<Map> receiver_map,
     : isolate_(isolate),
       object_(receiver_map->GetPrototypeChainRootMap(isolate_)->prototype()),
       where_to_end_(where_to_end),
-      is_at_end_(IsNull(object_)),
+      is_at_end_(IsNull(object_, isolate_)),
       seen_proxies_(0) {
   if (!is_at_end_ && where_to_end_ == END_AT_NON_HIDDEN) {
     DCHECK(IsJSReceiver(object_));
@@ -62,7 +61,7 @@ PrototypeIterator::PrototypeIterator(Isolate* isolate,
       handle_(receiver_map->GetPrototypeChainRootMap(isolate_)->prototype(),
               isolate_),
       where_to_end_(where_to_end),
-      is_at_end_(IsNull(*handle_)),
+      is_at_end_(IsNull(*handle_, isolate_)),
       seen_proxies_(0) {
   if (!is_at_end_ && where_to_end_ == END_AT_NON_HIDDEN) {
     DCHECK(IsJSReceiver(*handle_));
@@ -100,7 +99,7 @@ void PrototypeIterator::AdvanceIgnoringProxies() {
   Tagged<Map> map = object->map();
 
   Tagged<JSPrototype> prototype = map->prototype();
-  is_at_end_ = IsNull(prototype) ||
+  is_at_end_ = IsNull(prototype, isolate_) ||
                (where_to_end_ == END_AT_NON_HIDDEN && !IsJSGlobalProxyMap(map));
 
   if (handle_.is_null()) {
@@ -145,7 +144,7 @@ PrototypeIterator::AdvanceFollowingProxiesIgnoringAccessChecks() {
   handle_ = indirect_handle(proto_direct_handle, isolate_);
   if (!ok) return false;
 
-  is_at_end_ = where_to_end_ == END_AT_NON_HIDDEN || IsNull(*handle_);
+  is_at_end_ = where_to_end_ == END_AT_NON_HIDDEN || IsNull(*handle_, isolate_);
   return true;
 }
 

@@ -30,7 +30,4 @@ const hashes = getHashes();
   'sha1',
   'sha256',
   'sha512-256',
-  'sha3-256',
-  'sha3-384',
-  'sha3-512',
 ].forEach((hash) => assert(hashes.includes(hash), hash));

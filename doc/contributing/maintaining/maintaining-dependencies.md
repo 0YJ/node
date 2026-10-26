@@ -22,6 +22,7 @@ This a list of all the dependencies:
 * [libffi][]
 * [libuv][]
 * [llhttp][]
+* [minimatch][]
 * [nghttp2][]
 * [nghttp3][]
 * [ngtcp2][]
@@ -295,6 +296,11 @@ The [llhttp](https://github.com/nodejs/llhttp) dependency is
 the http parser used by Node.js.
 See [maintaining-http][] for more information.
 
+### minimatch
+
+The [minimatch](https://github.com/isaacs/minimatch) dependency is a
+minimal matching utility.
+
 ### nghttp2
 
 The [nghttp2](https://github.com/nghttp2/nghttp2) dependency is a C library
@@ -426,6 +432,7 @@ according to [RFC 8878](https://datatracker.ietf.org/doc/html/rfc8878).
 [maintaining-openssl]: ./maintaining-openssl.md
 [maintaining-web-assembly]: ./maintaining-web-assembly.md
 [merve]: #merve
+[minimatch]: #minimatch
 [nghttp2]: #nghttp2
 [nghttp3]: #nghttp3
 [ngtcp2]: #ngtcp2

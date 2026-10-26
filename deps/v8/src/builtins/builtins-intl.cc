@@ -30,7 +30,6 @@
 #include "src/objects/js-segment-iterator-inl.h"
 #include "src/objects/js-segmenter-inl.h"
 #include "src/objects/js-segments-inl.h"
-#include "src/objects/object-conversions-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/option-utils.h"
 #include "src/objects/property-descriptor.h"
@@ -40,7 +39,6 @@
 namespace v8 {
 namespace internal {
 
-// https://tc39.es/ecma262/#sec-string.prototype.touppercase
 BUILTIN(StringPrototypeToUpperCaseIntl) {
   HandleScope scope(isolate);
   TO_THIS_STRING(string, "String.prototype.toUpperCase");
@@ -48,7 +46,6 @@ BUILTIN(StringPrototypeToUpperCaseIntl) {
   RETURN_RESULT_OR_FAILURE(isolate, Intl::ConvertToUpper(isolate, string));
 }
 
-// https://tc39.es/ecma262/#sec-string.prototype.normalize
 BUILTIN(StringPrototypeNormalizeIntl) {
   HandleScope handle_scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kStringNormalize);
@@ -60,8 +57,8 @@ BUILTIN(StringPrototypeNormalizeIntl) {
                            Intl::Normalize(isolate, string, form_input));
 }
 
-// https://tc39.es/ecma402/#sup-properties-of-the-string-prototype-object
-// https://tc39.es/ecma402/section 19.1.1.
+// ecma402 #sup-properties-of-the-string-prototype-object
+// ecma402 section 19.1.1.
 //   String.prototype.localeCompare ( that [ , locales [ , options ] ] )
 // This implementation supersedes the definition provided in ES6.
 BUILTIN(StringPrototypeLocaleCompareIntl) {
@@ -81,10 +78,6 @@ BUILTIN(StringPrototypeLocaleCompareIntl) {
     DCHECK(isolate->has_exception());
     return ReadOnlyRoots(isolate).exception();
   }
-  // The localeCompare inline fast path (StringLocaleCompareIntlOp) types
-  // the result as kMinusOneOrZeroOrOne; keep this in sync with ICU's
-  // UCollationResult enum.
-  DCHECK(result.value() == -1 || result.value() == 0 || result.value() == 1);
   return Smi::FromInt(result.value());
 }
 
@@ -99,7 +92,6 @@ BUILTIN(V8BreakIteratorSupportedLocalesOf) {
                    JSV8BreakIterator::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.supportedlocalesof
 BUILTIN(NumberFormatSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -111,7 +103,6 @@ BUILTIN(NumberFormatSupportedLocalesOf) {
                    JSNumberFormat::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.formattoparts
 BUILTIN(NumberFormatPrototypeFormatToParts) {
   const char* const method_name = "Intl.NumberFormat.prototype.formatToParts";
   HandleScope handle_scope(isolate);
@@ -128,7 +119,6 @@ BUILTIN(NumberFormatPrototypeFormatToParts) {
       isolate, JSNumberFormat::FormatToParts(isolate, number_format, x));
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.resolvedoptions
 BUILTIN(DateTimeFormatPrototypeResolvedOptions) {
   const char* const method_name =
       "Intl.DateTimeFormat.prototype.resolvedOptions";
@@ -145,7 +135,6 @@ BUILTIN(DateTimeFormatPrototypeResolvedOptions) {
       isolate, JSDateTimeFormat::ResolvedOptions(isolate, date_time_format));
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.supportedlocalesof
 BUILTIN(DateTimeFormatSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -157,7 +146,6 @@ BUILTIN(DateTimeFormatSupportedLocalesOf) {
                    JSDateTimeFormat::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.formattoparts
 BUILTIN(DateTimeFormatPrototypeFormatToParts) {
   const char* const method_name = "Intl.DateTimeFormat.prototype.formatToParts";
   HandleScope handle_scope(isolate);
@@ -192,7 +180,7 @@ V8_WARN_UNUSED_RESULT Tagged<Object> DateTimeFormatRange(
   // exception.
   DirectHandle<Object> start_date = args.atOrUndefined(isolate, 1);
   DirectHandle<Object> end_date = args.atOrUndefined(isolate, 2);
-  if (IsUndefined(*start_date) || IsUndefined(*end_date)) {
+  if (IsUndefined(*start_date, isolate) || IsUndefined(*end_date, isolate)) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kInvalidTimeValue));
   }
@@ -204,7 +192,6 @@ V8_WARN_UNUSED_RESULT Tagged<Object> DateTimeFormatRange(
                            F(isolate, dtf, start_date, end_date, method_name));
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.formatrange
 BUILTIN(DateTimeFormatPrototypeFormatRange) {
   const char* const method_name = "Intl.DateTimeFormat.prototype.formatRange";
   HandleScope handle_scope(isolate);
@@ -212,7 +199,6 @@ BUILTIN(DateTimeFormatPrototypeFormatRange) {
       args, isolate, method_name);
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.formatrangetoparts
 BUILTIN(DateTimeFormatPrototypeFormatRangeToParts) {
   const char* const method_name =
       "Intl.DateTimeFormat.prototype.formatRangeToParts";
@@ -258,7 +244,7 @@ Tagged<Object> LegacyFormatConstructor(BuiltinArguments args, Isolate* isolate,
   DirectHandle<JSReceiver> new_target;
   // 1. If NewTarget is undefined, let newTarget be the active
   // function object, else let newTarget be NewTarget.
-  if (IsUndefined(*args.new_target())) {
+  if (IsUndefined(*args.new_target(), isolate)) {
     new_target = args.target();
   } else {
     new_target = Cast<JSReceiver>(args.new_target());
@@ -280,7 +266,7 @@ Tagged<Object> LegacyFormatConstructor(BuiltinArguments args, Isolate* isolate,
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, format, T::New(isolate, map, locales, options, method_name));
   // 4. Let this be the this value.
-  if (IsUndefined(*args.new_target())) {
+  if (IsUndefined(*args.new_target(), isolate)) {
     DirectHandle<JSAny> receiver = args.receiver();
     // 5. If NewTarget is undefined and ? OrdinaryHasInstance(%<T>%, this)
     // is true, then Look up the intrinsic value that has been stored on
@@ -330,7 +316,7 @@ Tagged<Object> DisallowCallConstructor(BuiltinArguments args, Isolate* isolate,
   isolate->CountUsage(feature);
 
   // 1. If NewTarget is undefined, throw a TypeError exception.
-  if (IsUndefined(*args.new_target())) {  // [[Call]]
+  if (IsUndefined(*args.new_target(), isolate)) {  // [[Call]]
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kConstructorNotFunction,
                               isolate->factory()->NewStringFromAsciiChecked(
@@ -363,7 +349,7 @@ Tagged<Object> CallOrConstructConstructor(BuiltinArguments args,
                                           const char* method_name) {
   DirectHandle<JSReceiver> new_target;
 
-  if (IsUndefined(*args.new_target())) {
+  if (IsUndefined(*args.new_target(), isolate)) {
     new_target = args.target();
   } else {
     new_target = Cast<JSReceiver>(args.new_target());
@@ -387,7 +373,6 @@ Tagged<Object> CallOrConstructConstructor(BuiltinArguments args,
 
 // Intl.DisplayNames
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames
 BUILTIN(DisplayNamesConstructor) {
   HandleScope scope(isolate);
 
@@ -396,7 +381,6 @@ BUILTIN(DisplayNamesConstructor) {
       "Intl.DisplayNames");
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames.prototype.resolvedOptions
 BUILTIN(DisplayNamesPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDisplayNames, holder,
@@ -404,7 +388,6 @@ BUILTIN(DisplayNamesPrototypeResolvedOptions) {
   return *JSDisplayNames::ResolvedOptions(isolate, holder);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames.supportedLocalesOf
 BUILTIN(DisplayNamesSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -416,7 +399,6 @@ BUILTIN(DisplayNamesSupportedLocalesOf) {
                    JSDisplayNames::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DisplayNames.prototype.of
 BUILTIN(DisplayNamesPrototypeOf) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDisplayNames, holder, "Intl.DisplayNames.prototype.of");
@@ -426,11 +408,7 @@ BUILTIN(DisplayNamesPrototypeOf) {
                            JSDisplayNames::Of(isolate, holder, code_obj));
 }
 
-//
 // Intl.DurationFormat
-//
-
-// https://tc39.es/ecma402/#sec-intl-durationformat-constructor
 BUILTIN(DurationFormatConstructor) {
   HandleScope scope(isolate);
 
@@ -439,7 +417,6 @@ BUILTIN(DurationFormatConstructor) {
       "Intl.DurationFormat");
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DurationFormat.prototype.resolvedOptions
 BUILTIN(DurationFormatPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDurationFormat, holder,
@@ -447,7 +424,6 @@ BUILTIN(DurationFormatPrototypeResolvedOptions) {
   return *JSDurationFormat::ResolvedOptions(isolate, holder);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DurationFormat.supportedLocalesOf
 BUILTIN(DurationFormatSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -459,7 +435,6 @@ BUILTIN(DurationFormatSupportedLocalesOf) {
                    JSDurationFormat::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DurationFormat.prototype.format
 BUILTIN(DurationFormatPrototypeFormat) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDurationFormat, holder,
@@ -469,7 +444,6 @@ BUILTIN(DurationFormatPrototypeFormat) {
                            JSDurationFormat::Format(isolate, holder, value));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.DurationFormat.prototype.formatToParts
 BUILTIN(DurationFormatPrototypeFormatToParts) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSDurationFormat, holder,
@@ -479,11 +453,8 @@ BUILTIN(DurationFormatPrototypeFormatToParts) {
       isolate, JSDurationFormat::FormatToParts(isolate, holder, value));
 }
 
-//
 // Intl.NumberFormat
-//
 
-// https://tc39.es/ecma402/#sec-intl.numberformat
 BUILTIN(NumberFormatConstructor) {
   HandleScope scope(isolate);
 
@@ -492,7 +463,6 @@ BUILTIN(NumberFormatConstructor) {
       isolate->intl_number_format_function(), "Intl.NumberFormat");
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.resolvedoptions
 BUILTIN(NumberFormatPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   const char* const method_name = "Intl.NumberFormat.prototype.resolvedOptions";
@@ -510,7 +480,6 @@ BUILTIN(NumberFormatPrototypeResolvedOptions) {
   return *JSNumberFormat::ResolvedOptions(isolate, number_format);
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.format
 BUILTIN(NumberFormatPrototypeFormatNumber) {
   const char* const method_name = "get Intl.NumberFormat.prototype.format";
   HandleScope scope(isolate);
@@ -528,7 +497,7 @@ BUILTIN(NumberFormatPrototypeFormatNumber) {
   DirectHandle<Object> bound_format(number_format->bound_format(), isolate);
 
   // 4. If nf.[[BoundFormat]] is undefined, then
-  if (!IsUndefined(*bound_format)) {
+  if (!IsUndefined(*bound_format, isolate)) {
     DCHECK(IsJSFunction(*bound_format));
     // 5. Return nf.[[BoundFormat]].
     return *bound_format;
@@ -544,7 +513,6 @@ BUILTIN(NumberFormatPrototypeFormatNumber) {
   return *new_bound_format_function;
 }
 
-// https://tc39.es/ecma402/#sec-number-format-functions
 BUILTIN(NumberFormatInternalFormatNumber) {
   HandleScope scope(isolate);
 
@@ -580,13 +548,13 @@ V8_WARN_UNUSED_RESULT Tagged<Object> NumberFormatRange(
 
   Factory* factory = isolate->factory();
   // 3. If start is undefined or end is undefined, throw a TypeError exception.
-  if (IsUndefined(*start)) {
+  if (IsUndefined(*start, isolate)) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate,
         NewTypeError(MessageTemplate::kInvalid,
                      factory->NewStringFromStaticChars("start"), start));
   }
-  if (IsUndefined(*end)) {
+  if (IsUndefined(*end, isolate)) {
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kInvalid,
                               factory->NewStringFromStaticChars("end"), end));
@@ -595,7 +563,6 @@ V8_WARN_UNUSED_RESULT Tagged<Object> NumberFormatRange(
   RETURN_RESULT_OR_FAILURE(isolate, F(isolate, nf, start, end));
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.formatrange
 BUILTIN(NumberFormatPrototypeFormatRange) {
   const char* const method_name = "Intl.NumberFormat.prototype.formatRange";
   HandleScope handle_scope(isolate);
@@ -603,7 +570,6 @@ BUILTIN(NumberFormatPrototypeFormatRange) {
       args, isolate, method_name);
 }
 
-// https://tc39.es/ecma402/#sec-intl.numberformat.prototype.formatrangetoparts
 BUILTIN(NumberFormatPrototypeFormatRangeToParts) {
   const char* const method_name =
       "Intl.NumberFormat.prototype.formatRangeToParts";
@@ -612,7 +578,6 @@ BUILTIN(NumberFormatPrototypeFormatRangeToParts) {
       args, isolate, method_name);
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat
 BUILTIN(DateTimeFormatConstructor) {
   HandleScope scope(isolate);
 
@@ -621,7 +586,6 @@ BUILTIN(DateTimeFormatConstructor) {
       isolate->intl_date_time_format_function(), "Intl.DateTimeFormat");
 }
 
-// https://tc39.es/ecma402/#sec-intl.datetimeformat.prototype.format
 BUILTIN(DateTimeFormatPrototypeFormat) {
   const char* const method_name = "get Intl.DateTimeFormat.prototype.format";
   HandleScope scope(isolate);
@@ -640,7 +604,7 @@ BUILTIN(DateTimeFormatPrototypeFormat) {
       DirectHandle<Object>(format->bound_format(), isolate);
 
   // 4. If dtf.[[BoundFormat]] is undefined, then
-  if (!IsUndefined(*bound_format)) {
+  if (!IsUndefined(*bound_format, isolate)) {
     DCHECK(IsJSFunction(*bound_format));
     // 5. Return dtf.[[BoundFormat]].
     return *bound_format;
@@ -656,7 +620,6 @@ BUILTIN(DateTimeFormatPrototypeFormat) {
   return *new_bound_format_function;
 }
 
-// https://tc39.es/ecma402/#sec-datetime-format-functions
 BUILTIN(DateTimeFormatInternalFormat) {
   HandleScope scope(isolate);
   DirectHandle<Context> context(isolate->context(), isolate);
@@ -676,7 +639,6 @@ BUILTIN(DateTimeFormatInternalFormat) {
                                         "DateTime Format Functions"));
 }
 
-// https://tc39.es/ecma402/#sec-intl.getcanonicallocales
 BUILTIN(IntlGetCanonicalLocales) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -685,7 +647,6 @@ BUILTIN(IntlGetCanonicalLocales) {
                            Intl::GetCanonicalLocales(isolate, locales));
 }
 
-// https://tc39.es/ecma402/#sec-intl.supportedvaluesof
 BUILTIN(IntlSupportedValuesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -693,7 +654,6 @@ BUILTIN(IntlSupportedValuesOf) {
   RETURN_RESULT_OR_FAILURE(isolate, Intl::SupportedValuesOf(isolate, locales));
 }
 
-// https://tc39.es/ecma402/#sec-intl-listformat-constructor
 BUILTIN(ListFormatConstructor) {
   HandleScope scope(isolate);
 
@@ -702,7 +662,6 @@ BUILTIN(ListFormatConstructor) {
       "Intl.ListFormat");
 }
 
-// https://tc39.es/ecma402/#sec-intl.listformat.prototype.resolvedoptions
 BUILTIN(ListFormatPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSListFormat, format_holder,
@@ -710,7 +669,6 @@ BUILTIN(ListFormatPrototypeResolvedOptions) {
   return *JSListFormat::ResolvedOptions(isolate, format_holder);
 }
 
-// https://tc39.es/ecma402/#sec-intl.ListFormat.supportedlocalesof
 BUILTIN(ListFormatSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -722,18 +680,14 @@ BUILTIN(ListFormatSupportedLocalesOf) {
                    JSListFormat::GetAvailableLocales(), locales, options));
 }
 
-//
 // Intl.Locale implementation
-//
-
-// https://tc39.es/ecma402/#sec-intl-locale-constructor
 BUILTIN(LocaleConstructor) {
   HandleScope scope(isolate);
 
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocale);
 
   const char* method_name = "Intl.Locale";
-  if (IsUndefined(*args.new_target())) {  // [[Call]]
+  if (IsUndefined(*args.new_target(), isolate)) {  // [[Call]]
     THROW_NEW_ERROR_RETURN_FAILURE(
         isolate, NewTypeError(MessageTemplate::kConstructorNotFunction,
                               isolate->factory()->NewStringFromAsciiChecked(
@@ -780,21 +734,18 @@ BUILTIN(LocaleConstructor) {
       isolate, JSLocale::New(isolate, map, locale_string, options_object));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.maximize
 BUILTIN(LocalePrototypeMaximize) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.maximize");
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::Maximize(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.minimize
 BUILTIN(LocalePrototypeMinimize) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.minimize");
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::Minimize(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getCalendars
 BUILTIN(LocalePrototypeGetCalendars) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -802,7 +753,6 @@ BUILTIN(LocalePrototypeGetCalendars) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetCalendars(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getCollations
 BUILTIN(LocalePrototypeGetCollations) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -810,7 +760,6 @@ BUILTIN(LocalePrototypeGetCollations) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetCollations(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getHourCycles
 BUILTIN(LocalePrototypeGetHourCycles) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -818,7 +767,6 @@ BUILTIN(LocalePrototypeGetHourCycles) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetHourCycles(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getNumberingSystems
 BUILTIN(LocalePrototypeGetNumberingSystems) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -827,7 +775,6 @@ BUILTIN(LocalePrototypeGetNumberingSystems) {
                            JSLocale::GetNumberingSystems(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getTextInfo
 BUILTIN(LocalePrototypeGetTextInfo) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -835,7 +782,6 @@ BUILTIN(LocalePrototypeGetTextInfo) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetTextInfo(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getTimeZones
 BUILTIN(LocalePrototypeGetTimeZones) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -843,7 +789,6 @@ BUILTIN(LocalePrototypeGetTimeZones) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetTimeZones(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.getWeekInfo
 BUILTIN(LocalePrototypeGetWeekInfo) {
   HandleScope scope(isolate);
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kLocaleInfoFunctions);
@@ -851,7 +796,6 @@ BUILTIN(LocalePrototypeGetWeekInfo) {
   RETURN_RESULT_OR_FAILURE(isolate, JSLocale::GetWeekInfo(isolate, locale));
 }
 
-// https://tc39.es/ecma402/#sec-intl.RelativeTimeFormat.supportedlocalesof
 BUILTIN(RelativeTimeFormatSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -864,7 +808,6 @@ BUILTIN(RelativeTimeFormatSupportedLocalesOf) {
           JSRelativeTimeFormat::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.RelativeTimeFormat.prototype.format
 BUILTIN(RelativeTimeFormatPrototypeFormat) {
   HandleScope scope(isolate);
   // 1. Let relativeTimeFormat be the this value.
@@ -881,7 +824,6 @@ BUILTIN(RelativeTimeFormatPrototypeFormat) {
                                             format_holder));
 }
 
-// https://tc39.es/ecma402/#sec-intl.RelativeTimeFormat.prototype.formatToParts
 BUILTIN(RelativeTimeFormatPrototypeFormatToParts) {
   HandleScope scope(isolate);
   // 1. Let relativeTimeFormat be the this value.
@@ -897,7 +839,7 @@ BUILTIN(RelativeTimeFormatPrototypeFormatToParts) {
                                                    format_holder));
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.language
+// Locale getters.
 BUILTIN(LocalePrototypeLanguage) {
   HandleScope scope(isolate);
   // CHECK_RECEIVER will case locale_holder to JSLocale.
@@ -906,7 +848,6 @@ BUILTIN(LocalePrototypeLanguage) {
   return *JSLocale::Language(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.script
 BUILTIN(LocalePrototypeScript) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.script");
@@ -914,7 +855,6 @@ BUILTIN(LocalePrototypeScript) {
   return *JSLocale::Script(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.region
 BUILTIN(LocalePrototypeRegion) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.region");
@@ -922,7 +862,6 @@ BUILTIN(LocalePrototypeRegion) {
   return *JSLocale::Region(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.variants
 BUILTIN(LocalePrototypeVariants) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.variants");
@@ -930,7 +869,6 @@ BUILTIN(LocalePrototypeVariants) {
   return *JSLocale::Variants(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.baseName
 BUILTIN(LocalePrototypeBaseName) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.baseName");
@@ -938,7 +876,6 @@ BUILTIN(LocalePrototypeBaseName) {
   return *JSLocale::BaseName(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.calendar
 BUILTIN(LocalePrototypeCalendar) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.calendar");
@@ -946,7 +883,6 @@ BUILTIN(LocalePrototypeCalendar) {
   return *JSLocale::Calendar(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.caseFirst
 BUILTIN(LocalePrototypeCaseFirst) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.caseFirst");
@@ -954,7 +890,6 @@ BUILTIN(LocalePrototypeCaseFirst) {
   return *JSLocale::CaseFirst(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.collation
 BUILTIN(LocalePrototypeCollation) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.collation");
@@ -962,7 +897,6 @@ BUILTIN(LocalePrototypeCollation) {
   return *JSLocale::Collation(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.firstDayOfWeek
 BUILTIN(LocalePrototypeFirstDayOfWeek) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.firstDayOfWeek");
@@ -970,7 +904,6 @@ BUILTIN(LocalePrototypeFirstDayOfWeek) {
   return *JSLocale::FirstDayOfWeek(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.hourCycle
 BUILTIN(LocalePrototypeHourCycle) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.hourCycle");
@@ -978,7 +911,6 @@ BUILTIN(LocalePrototypeHourCycle) {
   return *JSLocale::HourCycle(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.numeric
 BUILTIN(LocalePrototypeNumeric) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.numeric");
@@ -986,7 +918,6 @@ BUILTIN(LocalePrototypeNumeric) {
   return *JSLocale::Numeric(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.numberingSystem
 BUILTIN(LocalePrototypeNumberingSystem) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.numberingSystem");
@@ -994,7 +925,6 @@ BUILTIN(LocalePrototypeNumberingSystem) {
   return *JSLocale::NumberingSystem(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-Intl.Locale.prototype.toString
 BUILTIN(LocalePrototypeToString) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSLocale, locale, "Intl.Locale.prototype.toString");
@@ -1002,7 +932,6 @@ BUILTIN(LocalePrototypeToString) {
   return *JSLocale::ToString(isolate, locale);
 }
 
-// https://tc39.es/ecma402/#sec-intl.RelativeTimeFormat.constructor
 BUILTIN(RelativeTimeFormatConstructor) {
   HandleScope scope(isolate);
 
@@ -1011,7 +940,6 @@ BUILTIN(RelativeTimeFormatConstructor) {
       "Intl.RelativeTimeFormat");
 }
 
-// https://tc39.es/ecma402/#sec-intl.RelativeTimeFormat.prototype.resolvedOptions
 BUILTIN(RelativeTimeFormatPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSRelativeTimeFormat, format_holder,
@@ -1041,7 +969,6 @@ bool IsFastLocale(Tagged<Object> maybe_locale) {
          (first != 'l' || second != 't') && (first != 't' || second != 'r');
 }
 
-// https://tc39.es/ecma402/#sup-string.prototype.tolocaleuppercase
 BUILTIN(StringPrototypeToLocaleUpperCase) {
   HandleScope scope(isolate);
   DirectHandle<Object> maybe_locale = args.atOrUndefined(isolate, 1);
@@ -1055,7 +982,6 @@ BUILTIN(StringPrototypeToLocaleUpperCase) {
   }
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules
 BUILTIN(PluralRulesConstructor) {
   HandleScope scope(isolate);
 
@@ -1064,7 +990,6 @@ BUILTIN(PluralRulesConstructor) {
       "Intl.PluralRules");
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules.prototype.resolvedoptions
 BUILTIN(PluralRulesPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSPluralRules, plural_rules_holder,
@@ -1072,7 +997,6 @@ BUILTIN(PluralRulesPrototypeResolvedOptions) {
   return *JSPluralRules::ResolvedOptions(isolate, plural_rules_holder);
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules.prototype.select
 BUILTIN(PluralRulesPrototypeSelect) {
   HandleScope scope(isolate);
 
@@ -1092,7 +1016,6 @@ BUILTIN(PluralRulesPrototypeSelect) {
                                         isolate, plural_rules, number_double));
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules.prototype.selectrange
 BUILTIN(PluralRulesPrototypeSelectRange) {
   HandleScope scope(isolate);
 
@@ -1143,7 +1066,6 @@ BUILTIN(PluralRulesPrototypeSelectRange) {
                                                  Object::NumberValue(*y)));
 }
 
-// https://tc39.es/ecma402/#sec-intl.pluralrules.supportedlocalesof
 BUILTIN(PluralRulesSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -1155,7 +1077,6 @@ BUILTIN(PluralRulesSupportedLocalesOf) {
                    JSPluralRules::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.collator
 BUILTIN(CollatorConstructor) {
   HandleScope scope(isolate);
 
@@ -1164,7 +1085,6 @@ BUILTIN(CollatorConstructor) {
   return CallOrConstructConstructor<JSCollator>(args, isolate, "Intl.Collator");
 }
 
-// https://tc39.es/ecma402/#sec-intl.collator.prototype.resolvedoptions
 BUILTIN(CollatorPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSCollator, collator_holder,
@@ -1172,7 +1092,6 @@ BUILTIN(CollatorPrototypeResolvedOptions) {
   return *JSCollator::ResolvedOptions(isolate, collator_holder);
 }
 
-// https://tc39.es/ecma402/#sec-intl.collator.supportedlocalesof
 BUILTIN(CollatorSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -1184,7 +1103,6 @@ BUILTIN(CollatorSupportedLocalesOf) {
                    JSCollator::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.collator.prototype.compare
 BUILTIN(CollatorPrototypeCompare) {
   const char* const method_name = "get Intl.Collator.prototype.compare";
   HandleScope scope(isolate);
@@ -1197,7 +1115,7 @@ BUILTIN(CollatorPrototypeCompare) {
 
   // 4. If collator.[[BoundCompare]] is undefined, then
   DirectHandle<Object> bound_compare(collator->bound_compare(), isolate);
-  if (!IsUndefined(*bound_compare)) {
+  if (!IsUndefined(*bound_compare, isolate)) {
     DCHECK(IsJSFunction(*bound_compare));
     // 5. Return collator.[[BoundCompare]].
     return *bound_compare;
@@ -1213,7 +1131,6 @@ BUILTIN(CollatorPrototypeCompare) {
   return *new_bound_compare_function;
 }
 
-// https://tc39.es/ecma402/#sec-collator-compare-functions
 BUILTIN(CollatorInternalCompare) {
   HandleScope scope(isolate);
   DirectHandle<Context> context(isolate->context(), isolate);
@@ -1241,16 +1158,13 @@ BUILTIN(CollatorInternalCompare) {
                                      Object::ToString(isolate, y));
 
   // 7. Return CompareStrings(collator, X, Y).
-  Managed<icu::Collator>::Ptr icu_collator = collator->icu_collator()->ptr();
+  icu::Collator* icu_collator = collator->icu_collator()->raw();
   CHECK_NOT_NULL(icu_collator);
-  int result = Intl::CompareStrings(isolate, *icu_collator, string_x, string_y);
-  // See StringPrototypeLocaleCompareIntl: the inline fast path relies on
-  // ICU's UCollationResult enum range {-1, 0, 1}.
-  DCHECK(result == -1 || result == 0 || result == 1);
-  return Smi::FromInt(result);
+  return Smi::FromInt(
+      Intl::CompareStrings(isolate, *icu_collator, string_x, string_y));
 }
 
-// https://tc39.es/ecma402/#sec-%segmentiteratorprototype%.next
+// ecma402 #sec-%segmentiteratorprototype%.next
 BUILTIN(SegmentIteratorPrototypeNext) {
   const char* const method_name = "%SegmentIterator.prototype%.next";
   HandleScope scope(isolate);
@@ -1260,7 +1174,7 @@ BUILTIN(SegmentIteratorPrototypeNext) {
                            JSSegmentIterator::Next(isolate, segment_iterator));
 }
 
-// https://tc39.es/ecma402/#sec-intl.segmenter
+// ecma402 #sec-intl.segmenter
 BUILTIN(SegmenterConstructor) {
   HandleScope scope(isolate);
 
@@ -1269,7 +1183,7 @@ BUILTIN(SegmenterConstructor) {
       "Intl.Segmenter");
 }
 
-// https://tc39.es/ecma402/#sec-intl.segmenter.supportedlocalesof
+// ecma402 #sec-intl.segmenter.supportedlocalesof
 BUILTIN(SegmenterSupportedLocalesOf) {
   HandleScope scope(isolate);
   DirectHandle<Object> locales = args.atOrUndefined(isolate, 1);
@@ -1281,7 +1195,7 @@ BUILTIN(SegmenterSupportedLocalesOf) {
                    JSSegmenter::GetAvailableLocales(), locales, options));
 }
 
-// https://tc39.es/ecma402/#sec-intl.segmenter.prototype.resolvedoptions
+// ecma402 #sec-intl.segmenter.prototype.resolvedoptions
 BUILTIN(SegmenterPrototypeResolvedOptions) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSSegmenter, segmenter,
@@ -1289,7 +1203,7 @@ BUILTIN(SegmenterPrototypeResolvedOptions) {
   return *JSSegmenter::ResolvedOptions(isolate, segmenter);
 }
 
-// https://tc39.es/ecma402/#sec-intl.segmenter.prototype.segment
+// ecma402 #sec-intl.segmenter.prototype.segment
 BUILTIN(SegmenterPrototypeSegment) {
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSSegmenter, segmenter, "Intl.Segmenter.prototype.segment");
@@ -1304,7 +1218,7 @@ BUILTIN(SegmenterPrototypeSegment) {
                            JSSegments::Create(isolate, segmenter, string));
 }
 
-// https://tc39.es/ecma402/#sec-%segmentsprototype%.containing
+// ecma402 #sec-%segmentsprototype%.containing
 BUILTIN(SegmentsPrototypeContaining) {
   const char* const method_name = "%Segments.prototype%.containing";
   HandleScope scope(isolate);
@@ -1320,19 +1234,18 @@ BUILTIN(SegmentsPrototypeContaining) {
                            JSSegments::Containing(isolate, segments, n));
 }
 
-// https://tc39.es/ecma402/#sec-%segmentsprototype%-@@iterator
+// ecma402 #sec-%segmentsprototype%-@@iterator
 BUILTIN(SegmentsPrototypeIterator) {
   const char* const method_name = "%SegmentIsPrototype%[@@iterator]";
   HandleScope scope(isolate);
   CHECK_RECEIVER(JSSegments, segments, method_name);
-
-  CppGCManaged<IcuBreakIteratorWithText>::Ptr iterator_with_text =
-      segments->icu_iterator_with_text()->ptr();
+  DirectHandle<Managed<icu::BreakIterator>> managed_break_iterator(
+      segments->icu_break_iterator(), isolate);
 
   RETURN_RESULT_OR_FAILURE(
       isolate, JSSegmentIterator::Create(
                    isolate, direct_handle(segments->raw_string(), isolate),
-                   *iterator_with_text->iterator(), segments->granularity()));
+                   managed_break_iterator, segments->granularity()));
 }
 
 BUILTIN(V8BreakIteratorConstructor) {
@@ -1358,7 +1271,7 @@ BUILTIN(V8BreakIteratorPrototypeAdoptText) {
 
   DirectHandle<Object> bound_adopt_text(break_iterator->bound_adopt_text(),
                                         isolate);
-  if (!IsUndefined(*bound_adopt_text)) {
+  if (!IsUndefined(*bound_adopt_text, isolate)) {
     DCHECK(IsJSFunction(*bound_adopt_text));
     return *bound_adopt_text;
   }
@@ -1394,7 +1307,7 @@ BUILTIN(V8BreakIteratorPrototypeFirst) {
   CHECK_RECEIVER(JSV8BreakIterator, break_iterator, method_name);
 
   DirectHandle<Object> bound_first(break_iterator->bound_first(), isolate);
-  if (!IsUndefined(*bound_first)) {
+  if (!IsUndefined(*bound_first, isolate)) {
     DCHECK(IsJSFunction(*bound_first));
     return *bound_first;
   }
@@ -1424,7 +1337,7 @@ BUILTIN(V8BreakIteratorPrototypeNext) {
   CHECK_RECEIVER(JSV8BreakIterator, break_iterator, method_name);
 
   DirectHandle<Object> bound_next(break_iterator->bound_next(), isolate);
-  if (!IsUndefined(*bound_next)) {
+  if (!IsUndefined(*bound_next, isolate)) {
     DCHECK(IsJSFunction(*bound_next));
     return *bound_next;
   }
@@ -1453,7 +1366,7 @@ BUILTIN(V8BreakIteratorPrototypeCurrent) {
   CHECK_RECEIVER(JSV8BreakIterator, break_iterator, method_name);
 
   DirectHandle<Object> bound_current(break_iterator->bound_current(), isolate);
-  if (!IsUndefined(*bound_current)) {
+  if (!IsUndefined(*bound_current, isolate)) {
     DCHECK(IsJSFunction(*bound_current));
     return *bound_current;
   }
@@ -1484,7 +1397,7 @@ BUILTIN(V8BreakIteratorPrototypeBreakType) {
 
   DirectHandle<Object> bound_break_type(break_iterator->bound_break_type(),
                                         isolate);
-  if (!IsUndefined(*bound_break_type)) {
+  if (!IsUndefined(*bound_break_type, isolate)) {
     DCHECK(IsJSFunction(*bound_break_type));
     return *bound_break_type;
   }

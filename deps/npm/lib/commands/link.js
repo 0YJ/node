@@ -6,7 +6,6 @@ const semver = require('semver')
 const reifyFinish = require('../utils/reify-finish.js')
 const resolveAllowScripts = require('../utils/resolve-allow-scripts.js')
 const strictAllowScriptsPreflight = require('../utils/strict-allow-scripts-preflight.js')
-const { patchRelaxOpts } = require('../utils/cli-only-flag.js')
 const ArboristWorkspaceCmd = require('../arborist-cmd.js')
 
 class Link extends ArboristWorkspaceCmd {
@@ -75,7 +74,6 @@ class Link extends ArboristWorkspaceCmd {
     const { policy: allowScriptsPolicy } = await resolveAllowScripts(this.npm)
     const globalOpts = {
       ...this.npm.flatOptions,
-      ...patchRelaxOpts(this.npm.config),
       Arborist,
       path: globalTop,
       global: true,
@@ -132,7 +130,6 @@ class Link extends ArboristWorkspaceCmd {
     // reify all the pending names as symlinks there
     const localArb = new Arborist({
       ...this.npm.flatOptions,
-      ...patchRelaxOpts(this.npm.config),
       prune: false,
       path: this.npm.prefix,
       save,
@@ -161,7 +158,6 @@ class Link extends ArboristWorkspaceCmd {
     const Arborist = require('@npmcli/arborist')
     const arb = new Arborist({
       ...this.npm.flatOptions,
-      ...patchRelaxOpts(this.npm.config),
       Arborist,
       path: globalTop,
       global: true,

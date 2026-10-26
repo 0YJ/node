@@ -4,7 +4,6 @@
 
 extern enum IterationKind extends uint31 { kKeys, kValues, kEntries }
 
-@cppObjectLayoutDefinition
 extern class JSArrayIterator extends JSObject {
   iterated_object: JSReceiver;
 
@@ -36,7 +35,7 @@ extern class JSArrayIterator extends JSObject {
   kind: SmiTagged<IterationKind>;
 }
 
-// https://tc39.es/ecma262/#sec-createarrayiterator
+// Perform CreateArrayIterator (ES #sec-createarrayiterator).
 @export
 macro CreateArrayIterator(
     implicit context: NativeContext)(array: JSReceiver,
@@ -51,7 +50,7 @@ macro CreateArrayIterator(
   };
 }
 
-// https://tc39.es/ecma262/#sec-createarrayiterator
+// Perform CreateArrayIterator (ES #sec-createarrayiterator).
 @export
 macro CreateArrayIterator(
     implicit context: NativeContext)(array: JSReceiver,
@@ -59,7 +58,6 @@ macro CreateArrayIterator(
   return CreateArrayIterator(array, kind, 0);
 }
 
-@cppObjectLayoutDefinition
 extern class JSArray extends JSObject {
   macro IsEmpty(): bool {
     return this.length == 0;
@@ -69,7 +67,6 @@ extern class JSArray extends JSObject {
 
 @hasSameInstanceTypeAsParent
 @doNotGenerateCast
-@cppObjectLayoutDefinition
 extern class TemplateLiteralObject extends JSArray {
   raw: JSArray;
   function_literal_id: Smi;
@@ -77,8 +74,8 @@ extern class TemplateLiteralObject extends JSArray {
 }
 
 @doNotGenerateCast
-extern class JSArrayConstructor extends JSFunctionWithPrototype
-    generates 'JSFunction';
+extern class JSArrayConstructor extends JSFunction
+    generates 'TNode<JSFunction>';
 
 macro NewJSArray(
     implicit context: Context)(map: Map, elements: FixedArrayBase): JSArray {
@@ -86,7 +83,7 @@ macro NewJSArray(
     map,
     properties_or_hash: kEmptyFixedArray,
     elements,
-    length: Convert<Smi>(elements.length)
+    length: elements.length
   };
 }
 
@@ -148,9 +145,6 @@ extern macro AllocateJSArray(
     constexpr ElementsKind, Map, intptr, Smi): JSArray;
 extern macro AllocateJSArray(constexpr ElementsKind, Map, Smi, Smi): JSArray;
 extern macro AllocateJSArray(Map, FixedArrayBase, Smi): JSArray;
-extern macro AllocateJSArrayFolded(
-    constexpr ElementsKind, Map, Smi, Smi): JSArray
-    labels Bailout;
 
 macro LoadElementNoHole<T : type extends FixedArrayBase>(
     a: JSArray, index: Smi): JSAny

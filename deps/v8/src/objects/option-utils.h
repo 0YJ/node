@@ -13,17 +13,16 @@
 namespace v8 {
 namespace internal {
 
-// https://tc39.es/ecma262/#sec-getoptionsobject
+// ecma402/#sec-getoptionsobject and temporal/#sec-getoptionsobject
 V8_WARN_UNUSED_RESULT MaybeDirectHandle<JSReceiver> GetOptionsObject(
     Isolate* isolate, DirectHandle<Object> options, const char* method_name);
 
-// https://tc39.es/ecma402/#sec-coerceoptionstoobject
+// ecma402/#sec-coerceoptionstoobject
 V8_WARN_UNUSED_RESULT MaybeDirectHandle<JSReceiver> CoerceOptionsToObject(
     Isolate* isolate, DirectHandle<Object> options, const char* method_name);
 
 // ECMA402 9.2.10. GetOption( options, property, type, values, fallback)
-// https://tc39.es/ecma402/#sec-getoption and
-// https://tc39.es/proposal-temporal/#sec-getoption
+// ecma402/#sec-getoption and temporal/#sec-getoption
 //
 // This is specialized for the case when type is string, and when
 // no list of values is passed. If you wish to pass a list of values,
@@ -42,8 +41,7 @@ V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Maybe<bool> GetStringOption(
     DirectHandle<String>* result);
 
 // ECMA402 9.2.10. GetOption( options, property, type, values, fallback)
-// https://tc39.es/ecma402/#sec-getoption and
-// https://tc39.es/proposal-temporal/#sec-getoption
+// ecma402/#sec-getoption and temporal/#sec-getoption
 //
 // This is specialized for the case when type is string, and when you are
 // passing in a list of values to match against. If you just wish to get the
@@ -124,11 +122,11 @@ V8_WARN_UNUSED_RESULT static Maybe<T> GetStringOrBooleanOption(
       isolate, value,
       Object::GetPropertyOrElement(isolate, options, property_str));
   // 2. If value is undefined, then return fallback.
-  if (IsUndefined(*value)) {
+  if (IsUndefined(*value, isolate)) {
     return Just(fallback_value);
   }
   // 3. If value is true, then return trueValue.
-  if (IsTrue(*value)) {
+  if (IsTrue(*value, isolate)) {
     return Just(true_value);
   }
   // 4. Let valueBoolean be ToBoolean(value).
@@ -163,7 +161,7 @@ V8_WARN_UNUSED_RESULT static Maybe<T> GetStringOrBooleanOption(
 }
 
 // ECMA402 9.2.10. GetOption( options, property, type, values, fallback)
-// https://tc39.es/ecma402/#sec-getoption
+// ecma402/#sec-getoption
 //
 // This is specialized for the case when type is boolean.
 //
@@ -183,12 +181,12 @@ V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Maybe<int> GetNumberOption(
     Isolate* isolate, DirectHandle<JSReceiver> options,
     DirectHandle<String> property, int min, int max, int fallback);
 
-// https://tc39.es/ecma262/#sec-getoption while type is "number"
+// #sec-getoption while type is "number"
 V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Maybe<double> GetNumberOptionAsDouble(
     Isolate* isolate, DirectHandle<JSReceiver> options,
     DirectHandle<String> property, double default_value);
 
-// https://tc39.es/ecma402/#sec-defaultnumberoption
+// ecma402/#sec-defaultnumberoption
 V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Maybe<int> DefaultNumberOption(
     Isolate* isolate, DirectHandle<Object> value, int min, int max,
     int fallback, DirectHandle<String> property);

@@ -25,10 +25,10 @@ assertEquals(31, f());
 
 %OptimizeMaglevOnNextCall(f);
 assertEquals(31, f());
-assertMaglevved(f);
+assertTrue(isMaglevved(f));
 
 // Trigger a lazy deopt on the next g() call.
 do_change = true;
 assertEquals(42, f());
-assertNotMaglevved(f);
+assertFalse(isMaglevved(f));
 assertUnoptimized(f);

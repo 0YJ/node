@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-stringref
+// Flags: --wasm-staging
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -19,7 +19,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
   assertThrows(() => builder.instantiate().exports.main("foo"),
                WebAssembly.CompileError,
-               /has to be in the same reference type hierarchy/);
+               /string views are not classifiable/);
 })();
 
 (function TestView() {
@@ -35,7 +35,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
     assertThrows(() => builder.instantiate().exports.main("foo"),
                  WebAssembly.CompileError,
-                 /has to be in the same reference type hierarchy/);
+                 /string views are not classifiable/);
 })();
 
 (function TestBranchOnCast() {
@@ -55,7 +55,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
     assertThrows(() => builder.instantiate().exports.main("foo"),
                  WebAssembly.CompileError,
-                 /nullable string views don't exist/);
+                 /invalid types for br_on_cast/);
 })();
 
 (function TestBranchOnCastFail() {
@@ -65,17 +65,15 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
   builder.addFunction("main", kSig_v_r)
     .addBody([
-      kExprBlock, kAnyRefCode,
+      kExprBlock, kWasmVoid,
       kExprLocalGet, 0,
       kGCPrefix, kExprAnyConvertExtern,
       kGCPrefix, kExprBrOnCastFail, 0b11, 0, kAnyRefCode, view,
       kExprDrop,
-      kExprRefNull, kAnyRefCode,
       kExprEnd,
-      kExprDrop,
     ]).exportFunc();
 
     assertThrows(() => builder.instantiate().exports.main("foo"),
                  WebAssembly.CompileError,
-                 /nullable string views don't exist/);
+                 /invalid types for br_on_cast/);
 })();

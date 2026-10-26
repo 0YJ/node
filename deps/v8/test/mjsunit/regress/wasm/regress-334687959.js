@@ -2,14 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-inlining --wasm-tiering-budget=1 --wasm-tier-up
+// Flags: --wasm-lazy-validation --wasm-inlining
+// Flags: --wasm-tiering-budget=1
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 let builder = new WasmModuleBuilder();
-// This was originally a regression test for a lazy validation bug, where
-// function "fact_aux" had an invalid body.
-builder.addFunction("fact_aux", kSig_i_ii).addBody([kExprLocalGet, 0]);
+builder.addFunction("fact_aux", kSig_i_ii);
 builder.addFunction("main", kSig_i_i)
        .addBody([kExprI32Const, 0,
                  kExprIf, kWasmI32,

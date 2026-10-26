@@ -25,12 +25,12 @@ class Zone;
 template <typename T>
 class ZoneForwardList;
 
+#include "torque-generated/src/objects/module-tq.inc"
+
 // Module is the base class for ECMAScript module types, roughly corresponding
 // to Abstract Module Record.
-// https://tc39.es/ecma262/#sec-abstract-module-records
-V8_OBJECT class Module : public HeapObject {
-  V8_IT_ABSTRACT;
-
+// https://tc39.github.io/ecma262/#sec-abstract-module-records
+class Module : public TorqueGeneratedModule<Module, HeapObject> {
  public:
   DECL_VERIFIER(Module)
   DECL_PRINTER(Module)
@@ -74,7 +74,7 @@ V8_OBJECT class Module : public HeapObject {
       const UserResolveCallbacks& callbacks);
 
   // Implementation of spec operation ModuleEvaluation.
-  static V8_WARN_UNUSED_RESULT MaybeDirectHandle<JSPromise> Evaluate(
+  static V8_WARN_UNUSED_RESULT MaybeDirectHandle<Object> Evaluate(
       Isolate* isolate, Handle<Module> module);
 
   // Get the namespace object for [module].  If it doesn't exist yet, it is
@@ -86,34 +86,8 @@ V8_OBJECT class Module : public HeapObject {
       Isolate* isolate, Handle<Module> module,
       ModuleImportPhase phase = ModuleImportPhase::kEvaluation);
 
-  inline Tagged<ObjectHashTable> exports() const;
-  inline void set_exports(Tagged<ObjectHashTable> value,
-                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int hash() const;
-  inline void set_hash(int value);
-
-  inline int status() const;
-  inline void set_status(int value);
-
-  inline Tagged<UnionOf<Cell, Undefined>> module_namespace() const;
-  inline void set_module_namespace(
-      Tagged<UnionOf<Cell, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<Cell, Undefined>> deferred_module_namespace() const;
-  inline void set_deferred_module_namespace(
-      Tagged<UnionOf<Cell, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Object> exception() const;
-  inline void set_exception(Tagged<Object> value,
-                            WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<JSPromise, Undefined>> top_level_capability() const;
-  inline void set_top_level_capability(
-      Tagged<UnionOf<JSPromise, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  using BodyDescriptor =
+      FixedBodyDescriptor<kExportsOffset, kHeaderSize, kHeaderSize>;
 
   struct Hash;
 
@@ -140,7 +114,7 @@ V8_OBJECT class Module : public HeapObject {
   static V8_WARN_UNUSED_RESULT bool FinishInstantiate(
       Isolate* isolate, Handle<Module> module,
       ZoneForwardList<Handle<SourceTextModule>>* stack, unsigned* dfs_index,
-      Zone* zone, unsigned depth, unsigned* max_depth);
+      Zone* zone);
 
   // Set module's status back to kUnlinked and reset other internal state.
   // This is used when instantiation fails.
@@ -151,35 +125,17 @@ V8_OBJECT class Module : public HeapObject {
   void SetStatus(Status status);
   void RecordError(Isolate* isolate, Tagged<Object> error);
 
- public:
-  TaggedMember<ObjectHashTable> exports_;
-  TaggedMember<Smi> hash_;
-  TaggedMember<Smi> status_;
-  TaggedMember<UnionOf<Cell, Undefined>> module_namespace_;
-  TaggedMember<UnionOf<Cell, Undefined>> deferred_module_namespace_;
-  TaggedMember<Object> exception_;
-  TaggedMember<UnionOf<JSPromise, Undefined>> top_level_capability_;
-} V8_OBJECT_END;
-
-template <>
-struct ObjectTraits<Module> {
-  using BodyDescriptor = FixedBodyDescriptor<offsetof(Module, exports_),
-                                             sizeof(Module), sizeof(Module)>;
+  TQ_OBJECT_CONSTRUCTORS(Module)
 };
 
 // When importing a module namespace (import * as foo from "bar"), a
 // JSModuleNamespace object (representing module "bar") is created and bound to
 // the declared variable (foo).  A module can have at most one namespace object.
-V8_OBJECT class JSModuleNamespace : public JSSpecialObject {
-  V8_IT_OWN_TYPE;
-
+class JSModuleNamespace
+    : public TorqueGeneratedJSModuleNamespace<JSModuleNamespace,
+                                              JSSpecialObject> {
  public:
-  inline Tagged<Module> module() const;
-  inline void set_module(Tagged<Module> value,
-                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
   DECL_PRINTER(JSModuleNamespace)
-  DECL_VERIFIER(JSModuleNamespace)
 
   // Retrieve the value exported by [module] under the given [name]. If there is
   // no such export, return Just(undefined). If the export is uninitialized,
@@ -188,15 +144,6 @@ V8_OBJECT class JSModuleNamespace : public JSSpecialObject {
       Isolate* isolate, DirectHandle<String> name);
 
   bool HasExport(Isolate* isolate, DirectHandle<String> name);
-
-  // Counts an access to a missing `default` export on the namespace [it] starts
-  // at, when that module has an `export * from '...'` statement. Such a
-  // `default` is absent today because `export *` skips it, but would resolve to
-  // the star-exported default (if it exists) under the export-star-default
-  // proposal (https://github.com/tc39/proposal-export-star-default).
-  // Called from [[Get]] and [[HasProperty]]. Only valid while [it] is in the
-  // LookupIterator::MODULE_NAMESPACE state.
-  static void MaybeCountMissingDefaultWithStarExport(LookupIterator* it);
 
   // Return the (constant) property attributes for the referenced property,
   // which is assumed to correspond to an export. If the export is
@@ -209,30 +156,31 @@ V8_OBJECT class JSModuleNamespace : public JSSpecialObject {
       DirectHandle<Object> key, PropertyDescriptor* desc,
       Maybe<ShouldThrow> should_throw);
 
-  // In-object fields. These indices represent both the in-object field index,
-  // as well as the descriptor index.
+  // In-object fields.
   enum {
-    kToStringTagIndex,
+    kToStringTagFieldIndex,
     kInObjectFieldCount,
   };
 
-  static const int kHeaderSize;
   // We need to include in-object fields
   // TODO(v8:8944): improve handling of in-object fields
-  static const int kSize;
+  static constexpr int kSize =
+      kHeaderSize + (kTaggedSize * kInObjectFieldCount);
 
- public:
-  TaggedMember<Module> module_;
-} V8_OBJECT_END;
+  TQ_OBJECT_CONSTRUCTORS(JSModuleNamespace)
+};
 
-inline constexpr int JSModuleNamespace::kHeaderSize = sizeof(JSModuleNamespace);
-inline constexpr int JSModuleNamespace::kSize =
-    JSModuleNamespace::kHeaderSize + (kTaggedSize * kInObjectFieldCount);
-
-V8_OBJECT class JSDeferredModuleNamespace : public JSModuleNamespace {
+class JSDeferredModuleNamespace
+    : public TorqueGeneratedJSDeferredModuleNamespace<JSDeferredModuleNamespace,
+                                                      JSModuleNamespace> {
  public:
   DECL_PRINTER(JSDeferredModuleNamespace)
-  DECL_VERIFIER(JSDeferredModuleNamespace)
+
+  // In-object fields.
+  enum {
+    kToStringTagFieldIndex,
+    kInObjectFieldCount,
+  };
 
   static void EvaluateModuleSync(
       Isolate* isolate, DirectHandle<JSDeferredModuleNamespace> holder);
@@ -240,13 +188,13 @@ V8_OBJECT class JSDeferredModuleNamespace : public JSModuleNamespace {
 
   // We need to include in-object fields
   // TODO(v8:8944): improve handling of in-object fields
-  static const int kSize;
-} V8_OBJECT_END;
+  static constexpr int kSize =
+      kHeaderSize + (kTaggedSize * kInObjectFieldCount);
 
-inline constexpr int JSDeferredModuleNamespace::kSize =
-    sizeof(JSDeferredModuleNamespace) + (kTaggedSize * kInObjectFieldCount);
+  TQ_OBJECT_CONSTRUCTORS(JSDeferredModuleNamespace)
+};
 
-V8_OBJECT class ScriptOrModule : public Struct {
+V8_OBJECT class ScriptOrModule : public StructLayout {
  public:
   inline Tagged<Object> resource_name() const;
   inline void set_resource_name(Tagged<Object> value,

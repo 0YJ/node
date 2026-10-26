@@ -4,16 +4,14 @@
 const common = require('../common');
 const assert = require('assert');
 const {
-  dump,
   from,
   fromSync,
-  merge,
   push,
+  merge,
   text,
   toAsyncStreamable,
   toStreamable,
 } = require('stream/iter');
-const { setTimeout, setImmediate } = require('timers/promises');
 
 // =============================================================================
 // merge
@@ -91,7 +89,7 @@ async function testMergeSourceError() {
     const enc = new TextEncoder();
     yield [enc.encode('a')];
     // Slow so the bad source errors first
-    await setTimeout(50);
+    await new Promise((r) => setTimeout(r, 50));
     yield [enc.encode('b')];
   }
 
@@ -101,7 +99,10 @@ async function testMergeSourceError() {
   }
   await assert.rejects(
     async () => {
-      await dump(merge(goodSource(), badSource()));
+      // eslint-disable-next-line no-unused-vars
+      for await (const _ of merge(goodSource(), badSource())) {
+        /* consume */
+      }
     },
     { message: 'merge source boom' },
   );
@@ -158,7 +159,7 @@ async function testMergeSourceErrorDoesNotAwaitCleanup() {
       () => ({ __proto__: null, status: 'fulfilled' }),
       (error) => ({ __proto__: null, status: 'rejected', error }),
     ),
-    setImmediate(timedOut),
+    new Promise((resolve) => setImmediate(resolve, timedOut)),
   ]);
 
   assert.notStrictEqual(outcome, timedOut);
@@ -180,7 +181,7 @@ async function testMergeBreakDoesNotAwaitCleanup() {
       }
       return true;
     })(),
-    setImmediate(timedOut),
+    new Promise((resolve) => setImmediate(resolve, timedOut)),
   ]);
 
   assert.strictEqual(outcome, true);
@@ -193,7 +194,7 @@ async function testMergeNaNAbortDoesNotAwaitCleanup() {
     signal: ac.signal,
   })[Symbol.asyncIterator]();
   const next = iterator.next();
-  await setImmediate();
+  await new Promise(setImmediate);
   ac.abort(NaN);
 
   const timedOut = { __proto__: null };
@@ -202,7 +203,7 @@ async function testMergeNaNAbortDoesNotAwaitCleanup() {
       () => ({ __proto__: null, status: 'fulfilled' }),
       (error) => ({ __proto__: null, status: 'rejected', error }),
     ),
-    setImmediate(timedOut),
+    new Promise((resolve) => setImmediate(resolve, timedOut)),
   ]);
 
   assert.notStrictEqual(outcome, timedOut);
@@ -233,7 +234,7 @@ async function testMergeConsumerBreak() {
     break; // Break after first batch
   }
   // Give async cleanup a tick to complete
-  await setImmediate();
+  await new Promise(setImmediate);
   // Both sources should be cleaned up
   assert.strictEqual(source1Return && source2Return, true);
 }
@@ -243,7 +244,7 @@ async function testMergeSignalMidIteration() {
   async function* slowSource() {
     const enc = new TextEncoder();
     yield [enc.encode('a')];
-    await setTimeout(100);
+    await new Promise((r) => setTimeout(r, 100));
     yield [enc.encode('b')];
   }
   const merged = merge(slowSource(), { signal: ac.signal });
@@ -296,7 +297,7 @@ async function testMergeSignalDuringPendingSingleSourceRead() {
   })[Symbol.asyncIterator]();
 
   const next = iter.next();
-  await setImmediate();
+  await new Promise(setImmediate);
   ac.abort();
 
   await assert.rejects(next, { name: 'AbortError' });
@@ -321,7 +322,7 @@ async function testMergeDoesNotDrainSourcesWhileIdle() {
   const iterator = merge(a, b)[Symbol.asyncIterator]();
 
   await iterator.next();
-  await setImmediate();
+  await new Promise(setImmediate);
 
   assert.strictEqual(a.pulls, 1);
   assert.strictEqual(b.pulls, 1);
@@ -389,7 +390,10 @@ async function testMergeCleanupErrorOnly() {
 
   await assert.rejects(
     async () => {
-      await dump(merge(source(), failingReturnSource()));
+      // eslint-disable-next-line no-unused-vars
+      for await (const _ of merge(source(), failingReturnSource())) {
+        // Consume all - no primary error
+      }
     },
     { message: 'cleanup boom' },
   );
@@ -412,7 +416,10 @@ async function testMergePrimaryErrorPrecedesCleanupError() {
 
   await assert.rejects(
     async () => {
-      await dump(merge(badSource(), failingReturnSource()));
+      // eslint-disable-next-line no-unused-vars
+      for await (const _ of merge(badSource(), failingReturnSource())) {
+        // Consume until error
+      }
     },
     { message: 'primary boom' },
   );

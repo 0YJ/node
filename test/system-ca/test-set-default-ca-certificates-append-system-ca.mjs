@@ -13,7 +13,6 @@ if (!common.hasCrypto) {
   common.skip('requires crypto');
 }
 
-const { untrustedLeafErrorCode } = await import('../common/tls.js');
 const { default: https } = await import('node:https');
 const { default: tls } = await import('node:tls');
 
@@ -33,7 +32,7 @@ const url = `https://localhost:${server.address().port}/hello-world`;
 await assert.rejects(
   fetch(url),
   (err) => {
-    assert.strictEqual(err.cause.code, untrustedLeafErrorCode);
+    assert.strictEqual(err.cause.code, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
     return true;
   },
 );

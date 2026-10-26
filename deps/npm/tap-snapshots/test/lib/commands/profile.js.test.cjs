@@ -40,6 +40,8 @@ created	2015-02-26T01:26:37.384Z
 updated	2020-08-12T16:19:35.326Z
 fullname	Foo Bar
 homepage	https://github.com
+freenode	foobar
+twitter	https://twitter.com/npmjs
 github	https://github.com/npm
 `
 
@@ -49,6 +51,8 @@ email: foo@github.com (verified)
 two-factor auth: auth-and-writes
 fullname: Foo Bar
 homepage: https://github.com
+freenode: foobar
+twitter: https://twitter.com/npmjs
 github: https://github.com/npm
 created: 2015-02-26T01:26:37.384Z
 updated: 2020-08-12T16:19:35.326Z
@@ -60,6 +64,8 @@ email: foo@github.com (verified)
 two-factor auth: disabled
 fullname: Foo Bar
 homepage: https://github.com
+freenode: foobar
+twitter: https://twitter.com/npmjs
 github: https://github.com/npm
 created: 2015-02-26T01:26:37.384Z
 updated: 2020-08-12T16:19:35.326Z
@@ -71,6 +77,8 @@ email: foo@github.com (verified)
 two-factor auth: auth-and-writes
 fullname: Foo Bar
 homepage: https://github.com
+freenode: foobar
+twitter: https://twitter.com/npmjs
 github: https://github.com/npm
 created: 2015-02-26T01:26:37.384Z
 updated: 2020-08-12T16:19:35.326Z
@@ -83,6 +91,8 @@ email: foo@github.com(unverified)
 two-factor auth: auth-and-writes
 fullname: Foo Bar
 homepage: https://github.com
+freenode: foobar
+twitter: https://twitter.com/npmjs
 github: https://github.com/npm
 created: 2015-02-26T01:26:37.384Z
 updated: 2020-08-12T16:19:35.326Z

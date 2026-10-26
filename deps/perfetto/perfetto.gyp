@@ -18,14 +18,6 @@
       'sources': [
         '<@(perfetto_sdk_sources)',
       ],
-      'conditions': [
-        ['OS=="win"', {
-          'defines': [
-            'WIN32_LEAN_AND_MEAN',
-            'NOMINMAX',
-          ],
-        }],
-      ],
     },
   ]
 }

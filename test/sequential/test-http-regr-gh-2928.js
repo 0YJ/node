@@ -1,12 +1,11 @@
-// Flags: --expose-internals --no-warnings
 // This test is designed to fail with a segmentation fault in Node.js 4.1.0 and
 // execute without issues in Node.js 4.1.1 and up.
 
 'use strict';
 const common = require('../common');
 const assert = require('assert');
-const httpCommon = require('internal/http/common');
-const { HTTPParser } = require('internal/http/common');
+const httpCommon = require('_http_common');
+const { HTTPParser } = require('_http_common');
 const net = require('net');
 
 httpCommon.parsers.max = 50;

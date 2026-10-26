@@ -1,10 +1,8 @@
-// Flags: --expose-internals --no-warnings
-
 'use strict';
 require('../common');
 const assert = require('assert');
 const inspect = require('util').inspect;
-const { _checkIsHttpToken, _checkInvalidHeaderChar } = require('internal/http/common');
+const { _checkIsHttpToken, _checkInvalidHeaderChar } = require('_http_common');
 
 // Good header field names
 [

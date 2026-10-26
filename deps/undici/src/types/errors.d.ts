@@ -39,15 +39,13 @@ declare namespace Errors {
       code: number,
       options: {
         headers?: IncomingHttpHeaders | string[] | null,
-        body?: null | Record<string, any> | string,
-        bodyTruncated?: boolean
+        body?: null | Record<string, any> | string
       }
     )
     name: 'ResponseError'
     code: 'UND_ERR_RESPONSE'
     statusCode: number
     body: null | Record<string, any> | string
-    bodyTruncated: boolean
     headers: IncomingHttpHeaders | string[] | null
   }
 
@@ -123,13 +121,6 @@ declare namespace Errors {
     code: string
   }
 
-  /** WebAssembly is unavailable when initializing the HTTP/1 parser. */
-  export class WebAssemblyNotSupportedError extends Error {
-    constructor (message?: string)
-    name: 'Error'
-    code: 'ERR_WEBASSEMBLY_NOT_SUPPORTED'
-  }
-
   /** The response exceed the length allowed. */
   export class ResponseExceededMaxSizeError extends UndiciError {
     name: 'ResponseExceededMaxSizeError'
@@ -176,12 +167,6 @@ declare namespace Errors {
   export class MaxOriginsReachedError extends UndiciError {
     name: 'MaxOriginsReachedError'
     code: 'UND_ERR_MAX_ORIGINS_REACHED'
-  }
-
-  /** The maximum number of redirects has been reached. */
-  export class MaxRedirectsError extends UndiciError {
-    name: 'MaxRedirectsError'
-    code: 'UND_ERR_REDIRECT_MAX'
   }
 
   /** SOCKS5 proxy related error. */

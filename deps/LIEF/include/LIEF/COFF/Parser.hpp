@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,10 +16,10 @@
 #ifndef LIEF_COFF_PARSER_H
 #define LIEF_COFF_PARSER_H
 #include <map>
-#include "LIEF/compiler_attributes.hpp"
-#include "LIEF/BinaryStream/BinaryStream.hpp"
 #include "LIEF/visibility.h"
-#include "LIEF/errors.hpp"
+
+#include "LIEF/BinaryStream/VectorStream.hpp"
+#include "LIEF/BinaryStream/SpanStream.hpp"
 
 #include "LIEF/COFF/ParserConfig.hpp"
 #include "LIEF/COFF/Header.hpp"
@@ -33,20 +33,23 @@ class Symbol;
 
 class Parser {
   public:
-  static constexpr size_t MAX_NB_SECTIONS = 1 << 20;
-
   /// Parse the COFF binary referenced by the `stream` argument with the
   /// given config
-  static LIEF_API std::unique_ptr<Binary>
-      parse(std::unique_ptr<BinaryStream> stream,
-            const ParserConfig& config = ParserConfig::default_conf());
+  static LIEF_API
+    std::unique_ptr<Binary> parse(std::unique_ptr<BinaryStream> stream,
+                                  const ParserConfig& config = ParserConfig::default_conf());
 
   /// Parse the COFF binary pointed by the `file` argument with the given config
-  static LIEF_API std::unique_ptr<Binary>
-      parse(const std::string& file,
-            const ParserConfig& config = ParserConfig::default_conf());
+  static std::unique_ptr<Binary> parse(const std::string& file,
+                                       const ParserConfig& config = ParserConfig::default_conf())
+  {
+    if (auto strm = VectorStream::from_file(file)) {
+      return parse(std::unique_ptr<VectorStream>(new VectorStream(std::move(*strm))), config);
+    }
+    return nullptr;
+  }
 
-  /// @private
+  /// \private
   struct SymSec {
     size_t sec_idx = 0;
     Symbol* symbol = nullptr;
@@ -67,17 +70,21 @@ class Parser {
   /// <=> std::unordered_multimap<section index, Symbol*>
   using SymSecMap = std::vector<SymSec>;
 
-  /// @private
+  /// \private
   LIEF_LOCAL void memoize(String str);
 
-  /// @private
+  /// \private
   LIEF_LOCAL String* find_coff_string(uint32_t offset) const;
 
   ~Parser();
 
   private:
   Parser(std::unique_ptr<BinaryStream> stream, const ParserConfig& config,
-         Header::KIND kind);
+         Header::KIND kind) :
+    stream_(std::move(stream)),
+    kind_(kind),
+    config_(config)
+  {}
 
   ok_error_t process();
   ok_error_t parse_header();
@@ -95,7 +102,7 @@ class Parser {
   std::map<size_t, Symbol*> symbol_idx_;
   SymSecMap symsec_;
 
-  LIEF_MAYBE_UNUSED ParserConfig config_;
+  ParserConfig config_;
 };
 }
 }

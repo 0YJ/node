@@ -14,9 +14,8 @@
 
 #include "absl/base/optimization.h"
 
-#include <optional>
-
 #include "gtest/gtest.h"
+#include "absl/types/optional.h"
 
 namespace {
 
@@ -81,8 +80,8 @@ TEST(PredictTest, Pointer) {
 
 TEST(PredictTest, Optional) {
   // Note: An optional's truth value is the value's existence, not its truth.
-  std::optional<bool> has_value(false);
-  std::optional<bool> no_value;
+  absl::optional<bool> has_value(false);
+  absl::optional<bool> no_value;
   EXPECT_TRUE(ABSL_PREDICT_TRUE(has_value));
   EXPECT_FALSE(ABSL_PREDICT_TRUE(no_value));
   EXPECT_TRUE(ABSL_PREDICT_FALSE(has_value));

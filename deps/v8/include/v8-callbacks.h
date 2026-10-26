@@ -22,7 +22,6 @@ struct _EXCEPTION_POINTERS;
 
 namespace v8 {
 
-class ArrayBuffer;
 template <typename T>
 class FunctionCallbackInfo;
 class Isolate;
@@ -343,10 +342,6 @@ using WasmCustomDescriptorsEnabledCallback = bool (*)(Local<Context> context);
 using SharedArrayBufferConstructorEnabledCallback =
     bool (*)(Local<Context> context);
 
-// --- Callback for getting high resolution timestamps in Temporal ---
-using TemporalHostSystemUTCEpochNanosecondsCallback =
-    int64_t (*)(Local<Context> context);
-
 /**
  * Import phases in import requests.
  */
@@ -470,13 +465,6 @@ using HostCreateShadowRealmContextCallback =
  */
 using IsJSApiWrapperNativeErrorCallback = bool (*)(Isolate* isolate,
                                                    Local<Object> obj);
-
-/**
- * ArrayBufferDetachCallback is called when an ArrayBuffer wrapping an embedder
- * object is detached.
- */
-using ArrayBufferDetachCallback = void (*)(Isolate* isolate,
-                                           Local<ArrayBuffer> buffer);
 
 /**
  * PrepareStackTraceCallback is called when the stack property of an error is

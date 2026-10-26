@@ -14,6 +14,7 @@
 
 #include <cstdlib>
 #include <thread>  // NOLINT(build/c++11), Abseil test
+#include <type_traits>
 
 #include "absl/base/attributes.h"
 #include "absl/base/const_init.h"

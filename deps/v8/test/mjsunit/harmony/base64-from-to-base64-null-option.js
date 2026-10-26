@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --js-base-64
+
 (function TestBase64FromToBase64WithNullOption() {
   assertThrows(() => Uint8Array.fromBase64('Zm9vYmE', null), TypeError);
 

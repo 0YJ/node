@@ -2,6 +2,7 @@
   'variables': {
     'openssl_defines_VC-WIN32': [
       'NDEBUG',
+      'OPENSSL_BUILDING_OPENSSL',
       'BROTLI',
       'ZLIB',
       'ZSTD',
@@ -22,6 +23,7 @@
       'OPENSSL_BN_ASM_PART_WORDS',
       'OPENSSL_CPUID_OBJ',
       'OPENSSL_IA32_SSE2',
+      'PADLOCK_ASM',
       'POLY1305_ASM',
       'RC4_ASM',
       'RMD160_ASM',
@@ -35,7 +37,7 @@
     'openssl_cflags_VC-WIN32': [
       '-Wa,--noexecstack',
       '/W3 /wd4090 /nologo /O2',
-      '/GF /Gy',
+      '/Gs0 /GF /Gy',
       '/W3 /wd4090 /nologo /O2',
     ],
     'openssl_ex_libs_VC-WIN32': [
@@ -48,7 +50,6 @@
       'openssl/apps/ciphers.c',
       'openssl/apps/cmp.c',
       'openssl/apps/cms.c',
-      'openssl/apps/configutl.c',
       'openssl/apps/crl.c',
       'openssl/apps/crl2pkcs7.c',
       'openssl/apps/dgst.c',
@@ -56,9 +57,9 @@
       'openssl/apps/dsa.c',
       'openssl/apps/dsaparam.c',
       'openssl/apps/ec.c',
-      'openssl/apps/ech.c',
       'openssl/apps/ecparam.c',
       'openssl/apps/enc.c',
+      'openssl/apps/engine.c',
       'openssl/apps/errstr.c',
       'openssl/apps/fipsinstall.c',
       'openssl/apps/gendsa.c',
@@ -108,6 +109,8 @@
       'openssl/apps/lib/apps_opt_printf.c',
       'openssl/apps/lib/apps_ui.c',
       'openssl/apps/lib/columns.c',
+      'openssl/apps/lib/engine.c',
+      'openssl/apps/lib/engine_loader.c',
       'openssl/apps/lib/fmt.c',
       'openssl/apps/lib/http_server.c',
       'openssl/apps/lib/log.c',
@@ -122,7 +125,6 @@
   'defines': ['<@(openssl_defines_VC-WIN32)'],
   'include_dirs': [
     './include',
-    './apps/include',
   ],
 
   'sources': ['<@(openssl_cli_srcs_VC-WIN32)'],

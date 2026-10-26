@@ -9,6 +9,7 @@
 // Include the non-inl header before the rest of the headers.
 
 #include "src/common/globals.h"
+#include "src/execution/isolate.h"
 #include "src/heap/heap-layout.h"
 #include "src/heap/heap.h"
 #include "src/objects/heap-object.h"
@@ -27,7 +28,8 @@ bool GCAwareObjectTypeCheck(Tagged<Object> object, const Heap* heap) {
   }
   // 2) A conservative scavenge is ongoing and `object` was pinned by
   // conservative stack scanning.
-  MapWord map_word = heap_object->map_word(kRelaxedLoad);
+  MapWord map_word = heap_object->map_word(
+      PtrComprCageBase(heap->isolate()->cage_base()), kRelaxedLoad);
   if ((heap->gc_state() == Heap::SCAVENGE) &&
       HeapLayout::InYoungGeneration(heap_object) &&
       ((heap->ConservativeStackScanningModeForMinorGC() !=

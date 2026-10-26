@@ -25,7 +25,6 @@
 #include <openssl/proverr.h>
 #include <openssl/kdf.h>
 #include <openssl/rand.h>
-#include "internal/cryptlib.h"
 #include "prov/provider_ctx.h"
 #include "prov/implementations.h"
 #include "prov/securitycheck.h"
@@ -35,8 +34,7 @@
 #include "internal/hpke_util.h"
 #include "crypto/ec.h"
 #include "prov/ecx.h"
-#include "prov/eckem.h"
-#include "providers/implementations/kem/ec_kem.inc"
+#include "eckem.h"
 
 typedef struct {
     EC_KEY *recipient_key;
@@ -289,18 +287,19 @@ static int eckem_auth_decapsulate_init(void *vctx, void *vecx, void *vauthpub,
 static int eckem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_EC_CTX *ctx = (PROV_EC_CTX *)vctx;
-    struct eckem_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     int mode;
 
-    if (ctx == NULL || !eckem_set_ctx_params_decoder(params, &p))
-        return 0;
+    if (ossl_param_is_empty(params))
+        return 1;
 
-    if (p.ikme != NULL) {
+    p = OSSL_PARAM_locate_const(params, OSSL_KEM_PARAM_IKME);
+    if (p != NULL) {
         void *tmp = NULL;
         size_t tmplen = 0;
 
-        if (p.ikme->data != NULL && p.ikme->data_size != 0) {
-            if (!OSSL_PARAM_get_octet_string(p.ikme, &tmp, 0, &tmplen))
+        if (p->data != NULL && p->data_size != 0) {
+            if (!OSSL_PARAM_get_octet_string(p, &tmp, 0, &tmplen))
                 return 0;
         }
         OPENSSL_clear_free(ctx->ikm, ctx->ikmlen);
@@ -309,10 +308,11 @@ static int eckem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
         ctx->ikmlen = tmplen;
     }
 
-    if (p.op != NULL) {
-        if (p.op->data_type != OSSL_PARAM_UTF8_STRING)
+    p = OSSL_PARAM_locate_const(params, OSSL_KEM_PARAM_OPERATION);
+    if (p != NULL) {
+        if (p->data_type != OSSL_PARAM_UTF8_STRING)
             return 0;
-        mode = ossl_eckem_modename2id(p.op->data);
+        mode = ossl_eckem_modename2id(p->data);
         if (mode == KEM_MODE_UNDEFINED)
             return 0;
         ctx->mode = mode;
@@ -320,10 +320,16 @@ static int eckem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
     return 1;
 }
 
+static const OSSL_PARAM known_settable_eckem_ctx_params[] = {
+    OSSL_PARAM_utf8_string(OSSL_KEM_PARAM_OPERATION, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_KEM_PARAM_IKME, NULL, 0),
+    OSSL_PARAM_END
+};
+
 static const OSSL_PARAM *eckem_settable_ctx_params(ossl_unused void *vctx,
     ossl_unused void *provctx)
 {
-    return eckem_set_ctx_params_list;
+    return known_settable_eckem_ctx_params;
 }
 
 /*
@@ -424,7 +430,7 @@ int ossl_ec_dhkem_derive_private(EC_KEY *ec, BIGNUM *priv,
                 &counter, 1))
             goto err;
         privbuf[0] &= info->bitmask;
-        if (BN_bin2bn(privbuf, (int)info->Nsk, priv) == NULL)
+        if (BN_bin2bn(privbuf, info->Nsk, priv) == NULL)
             goto err;
         if (counter == 0xFF) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GENERATE_KEY);
@@ -571,8 +577,7 @@ static int derive_secret(PROV_EC_CTX *ctx, unsigned char *secret,
     size_t encodedprivlen = info->Nsk;
     int auth = ctx->sender_authkey != NULL;
 
-    if (!generate_ecdhkm(privkey1, peerkey1, dhkm, sizeof(dhkm),
-            (unsigned int)encodedprivlen))
+    if (!generate_ecdhkm(privkey1, peerkey1, dhkm, sizeof(dhkm), encodedprivlen))
         goto err;
     dhkmlen = encodedprivlen;
     kemctxlen = 2 * encodedpublen;
@@ -590,7 +595,7 @@ static int derive_secret(PROV_EC_CTX *ctx, unsigned char *secret,
         }
         if (!generate_ecdhkm(privkey2, peerkey2,
                 dhkm + dhkmlen, sizeof(dhkm) - dhkmlen,
-                (unsigned int)encodedprivlen))
+                encodedprivlen))
             goto err;
         dhkmlen += encodedprivlen;
         kemctxlen += encodedpublen;

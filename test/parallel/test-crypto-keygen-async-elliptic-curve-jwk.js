@@ -18,21 +18,19 @@ const rejectsXCurves = hasFIPS(3, 5);
       common.printSkipMessage(`Skipping unsupported ${type} test case`);
       continue;
     }
-    const options = {
+    generateKeyPair(type, {
       publicKeyEncoding: {
         format: 'jwk'
       },
       privateKeyEncoding: {
         format: 'jwk'
       }
-    };
-    if (rejectsXCurves && type.startsWith('x')) {
-      assert.throws(() => generateKeyPair(type, options, common.mustNotCall()), {
-        code: 'ERR_INVALID_ARG_VALUE',
-      });
-      continue;
-    }
-    generateKeyPair(type, options, common.mustSucceed((publicKey, privateKey) => {
+    }, common.mustCall((err, publicKey, privateKey) => {
+      if (rejectsXCurves && type.startsWith('x')) {
+        assert.strictEqual(err?.code, 'ERR_OSSL_EVP_UNSUPPORTED');
+        return;
+      }
+      assert.ifError(err);
       assert.strictEqual(typeof publicKey, 'object');
       assert.strictEqual(typeof privateKey, 'object');
       assert.strictEqual(publicKey.x, privateKey.x);

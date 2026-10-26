@@ -282,9 +282,9 @@ def jomb(debugger, param, *args):
 @lldbCommand
 def bta(debugger, *args):
   """Print stack trace with assertion scopes"""
-  func_name_re = re.compile(r"([^(<]+)(?:\(.+\))?")
+  func_name_re = re.compile("([^(<]+)(?:\(.+\))?")
   assert_re = re.compile(
-      r"^v8::internal::Per\w+AssertType::(\w+)_ASSERT, (false|true)>")
+      "^v8::internal::Per\w+AssertType::(\w+)_ASSERT, (false|true)>")
   thread = current_thread(debugger)
   for frame in thread:
     functionSignature = frame.GetDisplayFunctionName()

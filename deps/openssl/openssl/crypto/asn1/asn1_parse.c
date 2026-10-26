@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -17,8 +17,6 @@
 #define ASN1_PARSE_MAXDEPTH 128
 #endif
 
-#include <crypto/asn1.h>
-
 static int asn1_parse2(BIO *bp, const unsigned char **pp, long length,
     int offset, int depth, int indent, int dump);
 static int asn1_print_info(BIO *bp, long offset, int depth, int hl, long len,
@@ -28,7 +26,7 @@ static int asn1_print_info(BIO *bp, long offset, int depth, int hl, long len,
     const char *p;
     int pop_f_prefix = 0;
     long saved_indent = -1;
-    int i = 0, n;
+    int i = 0;
     BIO *bio = NULL;
 
     if (constructed & V_ASN1_CONSTRUCTED)
@@ -36,14 +34,16 @@ static int asn1_print_info(BIO *bp, long offset, int depth, int hl, long len,
     else
         p = "prim: ";
     if (constructed != (V_ASN1_CONSTRUCTED | 1)) {
-        n = snprintf(str, sizeof(str), "%5ld:d=%-2d hl=%ld l=%4ld %s",
-            offset, depth, (long)hl, len, p);
+        if (BIO_snprintf(str, sizeof(str), "%5ld:d=%-2d hl=%ld l=%4ld %s",
+                offset, depth, (long)hl, len, p)
+            <= 0)
+            goto err;
     } else {
-        n = snprintf(str, sizeof(str), "%5ld:d=%-2d hl=%ld l=inf  %s",
-            offset, depth, (long)hl, p);
+        if (BIO_snprintf(str, sizeof(str), "%5ld:d=%-2d hl=%ld l=inf  %s",
+                offset, depth, (long)hl, p)
+            <= 0)
+            goto err;
     }
-    if (n <= 0 || (size_t)n >= sizeof(str))
-        goto err;
     if (bp != NULL) {
         if (BIO_set_prefix(bp, str) <= 0) {
             if ((bio = BIO_new(BIO_f_prefix())) == NULL
@@ -62,13 +62,13 @@ static int asn1_print_info(BIO *bp, long offset, int depth, int hl, long len,
      */
     p = str;
     if ((xclass & V_ASN1_PRIVATE) == V_ASN1_PRIVATE)
-        snprintf(str, sizeof(str), "priv [ %d ] ", tag);
+        BIO_snprintf(str, sizeof(str), "priv [ %d ] ", tag);
     else if ((xclass & V_ASN1_CONTEXT_SPECIFIC) == V_ASN1_CONTEXT_SPECIFIC)
-        snprintf(str, sizeof(str), "cont [ %d ]", tag);
+        BIO_snprintf(str, sizeof(str), "cont [ %d ]", tag);
     else if ((xclass & V_ASN1_APPLICATION) == V_ASN1_APPLICATION)
-        snprintf(str, sizeof(str), "appl [ %d ]", tag);
+        BIO_snprintf(str, sizeof(str), "appl [ %d ]", tag);
     else if (tag > 30)
-        snprintf(str, sizeof(str), "<ASN1 %d>", tag);
+        BIO_snprintf(str, sizeof(str), "<ASN1 %d>", tag);
     else
         p = ASN1_tag2str(tag);
 
@@ -122,7 +122,7 @@ static int asn1_parse2(BIO *bp, const unsigned char **pp, long length,
             BIO_puts(bp, "Error in encoding\n");
             goto end;
         }
-        hl = (int)(p - op);
+        hl = (p - op);
         length -= hl;
         /*
          * if j == 0x21 it is a constructed indefinite length object
@@ -143,12 +143,12 @@ static int asn1_parse2(BIO *bp, const unsigned char **pp, long length,
             if ((j == 0x21) && (len == 0)) {
                 for (;;) {
                     r = asn1_parse2(bp, &p, (long)(tot - p),
-                        offset + (int)(p - *pp), depth + 1,
+                        offset + (p - *pp), depth + 1,
                         indent, dump);
                     if (r == 0)
                         goto end;
                     if ((r == 2) || (p >= tot)) {
-                        len = (long)(p - sp);
+                        len = p - sp;
                         break;
                     }
                 }
@@ -158,11 +158,11 @@ static int asn1_parse2(BIO *bp, const unsigned char **pp, long length,
                 while (p < ep) {
                     sp = p;
                     r = asn1_parse2(bp, &p, tmp,
-                        offset + (int)(p - *pp), depth + 1,
+                        offset + (p - *pp), depth + 1,
                         indent, dump);
                     if (r == 0)
                         goto end;
-                    tmp -= (long)(p - sp);
+                    tmp -= p - sp;
                 }
             }
         } else if (xclass != 0) {
@@ -358,7 +358,7 @@ const char *ASN1_tag2str(int tag)
         "NULL", "OBJECT", "OBJECT DESCRIPTOR", "EXTERNAL", "REAL",
         /* 10-13 */
         "ENUMERATED", "<ASN1 11>", "UTF8STRING", "<ASN1 13>",
-        /* 14-17 */
+        /* 15-17 */
         "<ASN1 14>", "<ASN1 15>", "SEQUENCE", "SET",
         /* 18-20 */
         "NUMERICSTRING", "PRINTABLESTRING", "T61STRING",

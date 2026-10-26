@@ -4,7 +4,6 @@
 
 #include "src/codegen/macro-assembler-base.h"
 
-#include "src/base/strong-alias.h"
 #include "src/builtins/builtins.h"
 #include "src/builtins/constants-table-builder.h"
 #include "src/codegen/external-reference-encoder.h"
@@ -29,7 +28,7 @@ MacroAssemblerBase::MacroAssemblerBase(Isolate* isolate,
                                        CodeObjectRequired create_code_object,
                                        std::unique_ptr<AssemblerBuffer> buffer)
     : Assembler(zone, options, std::move(buffer)), isolate_(isolate) {
-  if (create_code_object) {
+  if (create_code_object == CodeObjectRequired::kYes) {
     code_object_ = IndirectHandle<HeapObject>::New(
         ReadOnlyRoots(isolate).self_reference_marker(), isolate);
   }

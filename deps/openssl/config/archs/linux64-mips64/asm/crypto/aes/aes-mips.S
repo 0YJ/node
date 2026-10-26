@@ -1,4 +1,4 @@
-#include "arch/mips_arch.h"
+#include "mips_arch.h"
 
 .text
 #if !defined(__mips_eabi) && (!defined(__vxworks) || defined(__pic__))

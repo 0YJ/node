@@ -25,16 +25,17 @@
 
 #include "frozen/bits/algorithms.h"
 #include "frozen/bits/basic_types.h"
+#include "frozen/bits/constexpr_assert.h"
 #include "frozen/bits/version.h"
 #include "frozen/bits/defines.h"
 
-#include <iterator>
 #include <utility>
 
 namespace frozen {
 
-template <class Key, std::size_t N, class Compare = std::less<Key>> class set : private Compare {
+template <class Key, std::size_t N, class Compare = std::less<Key>> class set {
   using container_type = bits::carray<Key, N>;
+  Compare less_than_;
   container_type keys_;
 
 public:
@@ -50,17 +51,17 @@ public:
   using pointer = typename container_type::const_pointer;
   using const_pointer = pointer;
   using iterator = typename container_type::const_iterator;
-  using reverse_iterator = std::reverse_iterator<iterator>;
+  using reverse_iterator = typename container_type::const_reverse_iterator;
   using const_iterator = iterator;
-  using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+  using const_reverse_iterator = reverse_iterator;
 
 public:
   /* constructors */
   constexpr set(const set &other) = default;
 
   constexpr set(container_type keys, Compare const & comp)
-      : Compare{comp}
-      , keys_(bits::quicksort(keys, value_comp())) {
+      : less_than_{comp}
+      , keys_(bits::quicksort(keys, less_than_)) {
       }
 
   explicit constexpr set(container_type keys)
@@ -68,6 +69,7 @@ public:
 
   constexpr set(std::initializer_list<Key> keys, Compare const & comp)
       : set{container_type{keys}, comp} {
+        constexpr_assert(keys.size() == N, "Inconsistent initializer_list size and type size argument");
       }
 
   constexpr set(std::initializer_list<Key> keys)
@@ -83,13 +85,13 @@ public:
   /* lookup */
   template <class KeyType>
   constexpr std::size_t count(KeyType const &key) const {
-    return bits::binary_search<N>(keys_.begin(), key, value_comp());
+    return bits::binary_search<N>(keys_.begin(), key, less_than_);
   }
 
   template <class KeyType>
   constexpr const_iterator find(KeyType const &key) const {
     const_iterator where = lower_bound(key);
-    if ((where != end()) && !value_comp()(key, *where))
+    if ((where != end()) && !less_than_(key, *where))
       return where;
     else
       return end();
@@ -111,8 +113,8 @@ public:
 
   template <class KeyType>
   constexpr const_iterator lower_bound(KeyType const &key) const {
-    auto const where = bits::lower_bound<N>(keys_.begin(), key, value_comp());
-    if ((where != end()) && !value_comp()(key, *where))
+    auto const where = bits::lower_bound<N>(keys_.begin(), key, less_than_);
+    if ((where != end()) && !less_than_(key, *where))
       return where;
     else
       return end();
@@ -120,27 +122,27 @@ public:
 
   template <class KeyType>
   constexpr const_iterator upper_bound(KeyType const &key) const {
-    auto const where = bits::lower_bound<N>(keys_.begin(), key, value_comp());
-    if ((where != end()) && !value_comp()(key, *where))
+    auto const where = bits::lower_bound<N>(keys_.begin(), key, less_than_);
+    if ((where != end()) && !less_than_(key, *where))
       return where + 1;
     else
       return end();
   }
 
   /* observers */
-  constexpr const key_compare& key_comp() const { return value_comp(); }
-  constexpr const key_compare& value_comp() const { return static_cast<const Compare&>(*this); }
+  constexpr const key_compare& key_comp() const { return less_than_; }
+  constexpr const key_compare& value_comp() const { return less_than_; }
 
   /* iterators */
   constexpr const_iterator begin() const { return keys_.begin(); }
-  constexpr const_iterator cbegin() const { return keys_.begin(); }
+  constexpr const_iterator cbegin() const { return keys_.cbegin(); }
   constexpr const_iterator end() const { return keys_.end(); }
-  constexpr const_iterator cend() const { return keys_.end(); }
+  constexpr const_iterator cend() const { return keys_.cend(); }
 
-  constexpr const_reverse_iterator rbegin() const { return const_reverse_iterator{keys_.end()}; }
-  constexpr const_reverse_iterator crbegin() const { return const_reverse_iterator{keys_.end()}; }
-  constexpr const_reverse_iterator rend() const { return const_reverse_iterator{keys_.begin()}; }
-  constexpr const_reverse_iterator crend() const { return const_reverse_iterator{keys_.begin()}; }
+  constexpr const_reverse_iterator rbegin() const { return keys_.rbegin(); }
+  constexpr const_reverse_iterator crbegin() const { return keys_.crbegin(); }
+  constexpr const_reverse_iterator rend() const { return keys_.rend(); }
+  constexpr const_reverse_iterator crend() const { return keys_.crend(); }
 
   /* comparison */
   constexpr bool operator==(set const& rhs) const { return bits::equal(begin(), end(), rhs.begin()); }
@@ -151,8 +153,9 @@ public:
   constexpr bool operator>=(set const& rhs) const { return (*this > rhs) || (*this == rhs); }
 };
 
-template <class Key, class Compare> class set<Key, 0, Compare> : private Compare {
+template <class Key, class Compare> class set<Key, 0, Compare> {
   using container_type = bits::carray<Key, 0>; // just for the type definitions
+  Compare less_than_;
 
 public:
   /* container typedefs*/
@@ -178,7 +181,7 @@ public:
   explicit constexpr set(bits::carray<Key, 0>) {}
 
   constexpr set(std::initializer_list<Key>, Compare const &comp)
-      : Compare{comp} {}
+      : less_than_{comp} {}
   constexpr set(std::initializer_list<Key> keys) : set{keys, Compare{}} {}
 
   constexpr set& operator=(const set &other) = default;
@@ -206,8 +209,8 @@ public:
   constexpr const_iterator upper_bound(KeyType const &) const { return end(); }
 
   /* observers */
-  constexpr const key_compare& key_comp() const { return value_comp(); }
-  constexpr const key_compare& value_comp() const { return static_cast<Compare const&>(*this); }
+  constexpr key_compare key_comp() const { return less_than_; }
+  constexpr key_compare value_comp() const { return less_than_; }
 
   /* iterators */
   constexpr const_iterator begin() const { return nullptr; }

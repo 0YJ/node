@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 #ifndef LIEF_DWARF_TYPE_TYPEDEF_H
 #define LIEF_DWARF_TYPE_TYPEDEF_H
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/DWARF/Type.hpp"
 
@@ -26,26 +25,16 @@ namespace types {
 /// This class represents a `DW_TAG_typedef` type
 class LIEF_API Typedef : public Type {
   public:
-  template<typename... Args,
-           typename = typename std::
-               enable_if<std::is_constructible<Type, Args&&...>::value>::type>
-  Typedef(Args&&... args) :
-    Type(std::forward<Args>(args)...) {}
-
-  Typedef(const Typedef&) = delete;
-  Typedef& operator=(const Typedef&) = delete;
-
-  Typedef(Typedef&&) noexcept = default;
-  Typedef& operator=(Typedef&&) noexcept = default;
+  using Type::Type;
 
   /// The type aliased by this typedef
-  const Type* underlying_type() const LIEF_LIFETIMEBOUND;
+  const Type* underlying_type() const;
 
-  const Type* operator->() const LIEF_LIFETIMEBOUND {
+  const Type* operator->() const {
     return underlying_type();
   }
 
-  const Type& operator*() const LIEF_LIFETIMEBOUND {
+  const Type& operator*() const {
     return *underlying_type();
   }
 
@@ -57,9 +46,12 @@ class LIEF_API Typedef : public Type {
 
   protected:
   mutable std::unique_ptr<Type> underlying_;
+
 };
 
 }
 }
 }
 #endif
+
+

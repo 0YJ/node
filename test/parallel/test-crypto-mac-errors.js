@@ -6,10 +6,10 @@ if (!common.hasCrypto) {
   common.skip('missing crypto');
 }
 
-const { isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL, isBoringSSL } = require('../common/crypto');
 
-if (isBoringSSL) {
-  common.skip('OpenSSL EVP_MAC support is required');
+if (!hasOpenSSL(3) || isBoringSSL) {
+  common.skip('OpenSSL 3 EVP_MAC support is required');
 }
 
 const assert = require('node:assert');

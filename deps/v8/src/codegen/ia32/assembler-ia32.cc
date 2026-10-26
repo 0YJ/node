@@ -48,7 +48,7 @@
 #endif
 
 #include "src/base/bits.h"
-#include "src/base/cpu/cpu.h"
+#include "src/base/cpu.h"
 #include "src/codegen/assembler-inl.h"
 #include "src/codegen/macro-assembler.h"
 #include "src/deoptimizer/deoptimizer.h"
@@ -114,10 +114,10 @@ bool OSHasAVXSupport() {
 
 }  // namespace
 
-bool CpuFeatures::SupportsSimd128() {
-#if V8_ENABLE_SIMD128
+bool CpuFeatures::SupportsWasmSimd128() {
+#if V8_ENABLE_WEBASSEMBLY
   if (IsSupported(SSE4_1)) return true;
-#endif  // V8_ENABLE_SIMD128
+#endif  // V8_ENABLE_WEBASSEMBLY
   return false;
 }
 
@@ -165,13 +165,12 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   // This variable is only used for certain archs to query SupportWasmSimd128()
   // at runtime in builtins using an extern ref. Other callers should use
   // CpuFeatures::SupportWasmSimd128().
-  CpuFeatures::supports_simd_128_ = CpuFeatures::SupportsSimd128();
+  CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
-void CpuFeatures::PrintInformation() {
-  CpuFeatures::Probe(false);
+void CpuFeatures::PrintTarget() {}
+void CpuFeatures::PrintFeatures() {
   printf(
-      "CPU features: "
       "SSE3=%d SSSE3=%d SSE4_1=%d AVX=%d AVX2=%d FMA3=%d BMI1=%d BMI2=%d "
       "LZCNT=%d "
       "POPCNT=%d ATOM=%d\n",
@@ -3310,7 +3309,13 @@ void Assembler::GrowBuffer() {
 
   // Compute new buffer size.
   int old_size = buffer_->size();
-  int new_size = ComputeNewBufferSize(BufferGrowthStrategy::kDouble);
+  int new_size = 2 * old_size;
+
+  // Some internal data structures overflow for very large buffers,
+  // they must ensure that kMaximalBufferSize is not too large.
+  if (new_size > kMaximalBufferSize) {
+    V8::FatalProcessOutOfMemory(nullptr, "Assembler::GrowBuffer");
+  }
 
   // Set up new buffer.
   std::unique_ptr<AssemblerBuffer> new_buffer = buffer_->Grow(new_size);

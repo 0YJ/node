@@ -41,7 +41,7 @@
 #if V8_TARGET_ARCH_ARM
 
 #include "src/base/bits.h"
-#include "src/base/cpu/cpu.h"
+#include "src/base/cpu.h"
 #include "src/base/overflowing-math.h"
 #include "src/codegen/arm/assembler-arm-inl.h"
 #include "src/codegen/assembler-inl.h"
@@ -206,13 +206,7 @@ static constexpr CpuFeatureSet CpuFeaturesFromCompiler() {
 #endif
 }
 
-bool CpuFeatures::SupportsSimd128() {
-#if V8_ENABLE_SIMD128
-  return IsSupported(NEON);
-#else
-  return false;
-#endif  // V8_ENABLE_SIMD128
-}
+bool CpuFeatures::SupportsWasmSimd128() { return IsSupported(NEON); }
 
 void CpuFeatures::ProbeImpl(bool cross_compile) {
   dcache_line_size_ = 64;
@@ -220,9 +214,7 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   CpuFeatureSet command_line = CpuFeaturesFromCommandLine();
   // Only use statically determined features for cross compile (snapshot).
   if (cross_compile) {
-#ifdef V8_USE_HOST_CPU_ARM_FEATURES
     supported_ |= command_line & CpuFeaturesFromCompiler();
-#endif
     return;
   }
 
@@ -271,7 +263,7 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   // This variable is only used for certain archs to query SupportWasmSimd128()
   // at runtime in builtins using an extern ref. Other callers should use
   // CpuFeatures::SupportWasmSimd128().
-  CpuFeatures::supports_simd_128_ = CpuFeatures::SupportsSimd128();
+  CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
 static bool IsEabiHardFloat() {
@@ -292,8 +284,7 @@ static bool IsEabiHardFloat() {
   UNREACHABLE();
 }
 
-void CpuFeatures::PrintInformation() {
-  CpuFeatures::Probe(false);
+void CpuFeatures::PrintTarget() {
   const char* arm_arch = nullptr;
   const char* arm_target_type = "";
   const char* arm_no_probe = "";
@@ -335,15 +326,15 @@ void CpuFeatures::PrintInformation() {
   arm_thumb = " thumb";
 #endif
 
-  printf("CPU target:%s%s %s%s%s %s\n", arm_target_type, arm_no_probe, arm_arch,
+  printf("target%s%s %s%s%s %s\n", arm_target_type, arm_no_probe, arm_arch,
          arm_fpu, arm_thumb, arm_float_abi);
+}
 
-  printf(
-      "CPU features: ARMv8=%d ARMv7=%d VFPv3=%d VFP32DREGS=%d NEON=%d "
-      "SUDIV=%d",
-      CpuFeatures::IsSupported(ARMv8), CpuFeatures::IsSupported(ARMv7),
-      CpuFeatures::IsSupported(VFPv3), CpuFeatures::IsSupported(VFP32DREGS),
-      CpuFeatures::IsSupported(NEON), CpuFeatures::IsSupported(SUDIV));
+void CpuFeatures::PrintFeatures() {
+  printf("ARMv8=%d ARMv7=%d VFPv3=%d VFP32DREGS=%d NEON=%d SUDIV=%d",
+         CpuFeatures::IsSupported(ARMv8), CpuFeatures::IsSupported(ARMv7),
+         CpuFeatures::IsSupported(VFPv3), CpuFeatures::IsSupported(VFP32DREGS),
+         CpuFeatures::IsSupported(NEON), CpuFeatures::IsSupported(SUDIV));
   bool eabi_hardfloat = IsEabiHardFloat();
   printf(" USE_EABI_HARDFLOAT=%d\n", eabi_hardfloat);
 }
@@ -5221,7 +5212,13 @@ void Assembler::GrowBuffer() {
 
   // Compute new buffer size.
   int old_size = buffer_->size();
-  int new_size = ComputeNewBufferSize(BufferGrowthStrategy::kDoubleCapped1MB);
+  int new_size = std::min(2 * old_size, old_size + 1 * MB);
+
+  // Some internal data structures overflow for very large buffers,
+  // they must ensure that kMaximalBufferSize is not too large.
+  if (new_size > kMaximalBufferSize) {
+    V8::FatalProcessOutOfMemory(nullptr, "Assembler::GrowBuffer");
+  }
 
   // Set up new buffer.
   std::unique_ptr<AssemblerBuffer> new_buffer = buffer_->Grow(new_size);

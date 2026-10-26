@@ -55,7 +55,6 @@ const server = new http.Server(common.mustCallAtLeast(function(req, res) {
 
 server.listen(0, common.mustCall(() => {
   const req = http.request({
-    agent: false,
     port: server.address().port,
     method: 'POST',
     path: '/',

@@ -5,21 +5,12 @@
 """\
 Convenience wrapper for compiling V8 with gn/ninja and running tests.
 Sets up build output directories if they don't exist.
-Produces simulator builds for non-native target architectures.
+Produces simulator builds for non-Intel target architectures.
 Uses reclient by default if it is detected (at output directory setup time).
 Expects to be run from the root of a V8 checkout.
 
 Usage:
-    gm.py [<arch>].[<mode>[-<suffix>]].[<target>] [testname...] [options...]
-
-Supported options:
-  --sync:        Runs 'gclient sync -D'
-  --sync=force:  Runs 'gclient sync -D --force --reset' before building.
-  --update-reclient-config: Autodetects remote compilation setup and updates
-                            args.gn accordingly.
-
-All other flags are passed unchanged to the test runner. They must start with
-"--" and must not contain spaces.
+    gm.py [<arch>].[<mode>[-<suffix>]].[<target>] [testname...] [--flag]
 
 All arguments are optional. Most combinations should work, e.g.:
     gm.py ia32.debug x64.release x64.release-my-custom-opts d8
@@ -29,11 +20,14 @@ All arguments are optional. Most combinations should work, e.g.:
 For a less automated experience, pass an existing output directory (which
 must contain an existing args.gn), e.g.:
     gm.py out/foo unittests
+
+Flags are passed unchanged to the test runner. They must start with -- and must
+not contain spaces.
 """
 # See HELP below for additional documentation.
 
 from __future__ import print_function
-from enum import IntEnum, StrEnum
+from enum import IntEnum
 from pathlib import Path
 import errno
 import os
@@ -47,11 +41,7 @@ import time
 
 USE_PTY = "linux" in sys.platform
 if USE_PTY:
-  import fcntl
   import pty
-  import termios
-  import struct
-
 
 BUILD_TARGETS_TEST = [
     "d8", "bigint_shell", "cctest", "inspector-test", "v8_unittests",
@@ -123,13 +113,6 @@ ACTIONS = {
     },
 }
 
-
-class GclientSyncMode(StrEnum):
-  NONE = "none"
-  NORMAL = "normal"
-  FORCE = "force"
-
-
 HELP = """<arch> can be any of: %(arches)s
 <mode> can be any of: %(modes)s
 <target> can be any of:
@@ -141,7 +124,7 @@ HELP = """<arch> can be any of: %(arches)s
 """ % {
     "arches": " ".join(ARCHES),
     "modes": " ".join(MODES.keys()),
-    "targets": ", ".join(TARGETS),
+    "targets": ", ".join(TARGETS)
 }
 
 TESTSUITES_TARGETS = {
@@ -169,59 +152,14 @@ QUIET = sys.argv[0] == "quietgm"  # Overridden by "quiet" keyword.
 build_dir_prefix = os.getenv("V8_GM_BUILD_DIR_PREFIX")
 
 V8_DIR = Path(__file__).resolve().parent.parent.parent
+GCLIENT_FILE_PATH = V8_DIR.parent / ".gclient"
+RECLIENT_CERT_CACHE = V8_DIR / ".#gm_reclient_cert_cache"
 
-
-def v8_root_dir() -> Path:
-  try:
-    git_dir = subprocess.check_output(["git", "rev-parse", "--git-common-dir"],
-                                      cwd=V8_DIR,
-                                      text=True,
-                                      stderr=subprocess.PIPE).strip()
-    if (V8_DIR / git_dir).exists():
-      root = (V8_DIR / git_dir).parent.resolve()
-      if root != V8_DIR:
-        return root
-  except (subprocess.CalledProcessError, FileNotFoundError):
-    pass
-
-  # Some AI agent framework creates isolated workspaces using local `git clone` instead of a
-  # `git worktree`. In a full clone, `V8_DIR == V8_ROOT_DIR` (since it has its own standalone
-  # .git dir). We check `remote.origin.url` to detect if the repo was locally cloned. If so,
-  # we return the parent's path so gm.py can automatically setup dependencies.
-  try:
-    origin_url = subprocess.check_output(
-        ["git", "config", "--get", "remote.origin.url"],
-        cwd=V8_DIR,
-        text=True,
-        stderr=subprocess.PIPE).strip()
-    if origin_url and os.path.isdir(origin_url):
-      return Path(origin_url).resolve()
-  except (subprocess.CalledProcessError, FileNotFoundError):
-    pass
-
-  return V8_DIR
-
-V8_ROOT_DIR = v8_root_dir()
-
-if V8_DIR != V8_ROOT_DIR:
-  res = subprocess.run([
-      sys.executable,
-      str(V8_DIR / "tools" / "dev" / "setup_worktree_build.py"),
-      str(V8_ROOT_DIR),
-      str(V8_DIR),
-  ])
-  if res.returncode != 0:
-    sys.exit(res.returncode)
-
-RECLIENT_CERT_CACHE = V8_ROOT_DIR / ".#gm_reclient_cert_cache"
-
-if (V8_ROOT_DIR.parent / "chrome").exists():
-  CHROMIUM_DIR = V8_ROOT_DIR.parent
+if (V8_DIR.parent / "chrome").exists():
+  CHROMIUM_DIR = V8_DIR.parent
+  GCLIENT_FILE_PATH = CHROMIUM_DIR / ".gclient"
 else:
   CHROMIUM_DIR = None
-
-GCLIENT_FILE_PATH = (CHROMIUM_DIR.parent
-                     if CHROMIUM_DIR else V8_ROOT_DIR.parent) / ".gclient"
 
 out_dir_override = os.getenv("V8_GM_OUTDIR")
 if out_dir_override and Path(out_dir_override).is_dir:
@@ -234,24 +172,21 @@ else:
   else:
     OUTDIR = Path(V8_DIR / OUTDIR_BASENAME)
 
-
-
 BUILD_DISTRIBUTION_RE = re.compile(r"\nuse_(remoteexec|goma) = (false|true)")
 GOMA_DIR_LINE = re.compile(r"\ngoma_dir = \"[^\"]+\"")
 DEPRECATED_RBE_CFG_RE = re.compile(r"\nrbe_cfg_dir = \"[^\"]+\"")
 RECLIENT_CFG_RE = re.compile(r"\nreclient_cfg_dir = \"[^\"]+\"")
-UPDATE_RECLIENT_CONFIG = False
 
 class Reclient(IntEnum):
   NONE = 0
   GOOGLE = 1
   CUSTOM = 2
 
-def get_gclient_solution(solutions):
+
+def get_v8_solution(solutions):
   for solution in solutions:
-    if (solution["name"] in ("v8", "src") or solution["url"]
-        in ("https://chromium.googlesource.com/v8/v8.git",
-            "https://chromium.googlesource.com/chromium/src.git")):
+    if (solution["name"] == "v8" or
+        solution["url"] == "https://chromium.googlesource.com/v8/v8.git"):
       return solution
   return None
 
@@ -259,7 +194,7 @@ def get_gclient_solution(solutions):
 # Note: this function is reused by update-compile-commands.py. When renaming
 # this, please update that file too!
 def detect_reclient():
-  if not GCLIENT_FILE_PATH or not GCLIENT_FILE_PATH.exists():
+  if not GCLIENT_FILE_PATH.exists():
     return Reclient.NONE
   content = GCLIENT_FILE_PATH.read_text()
   try:
@@ -268,11 +203,11 @@ def detect_reclient():
   except SyntaxError as e:
     print("# Can't detect reclient due to .gclient syntax errors.")
     return Reclient.NONE
-  gclient_solution = get_gclient_solution(config_dict["solutions"])
-  if not gclient_solution:
+  v8_solution = get_v8_solution(config_dict["solutions"])
+  if not v8_solution:
     print("# Can't detect reclient due to missing v8 gclient solution.")
     return Reclient.NONE
-  custom_vars = gclient_solution.get("custom_vars", {})
+  custom_vars = v8_solution.get("custom_vars", {})
   if "rbe_instance" in custom_vars:
     return Reclient.CUSTOM
   if "download_remoteexec_cfg" in custom_vars:
@@ -340,7 +275,6 @@ v8_enable_backtrace = true
 v8_enable_fast_mksnapshot = true
 v8_enable_slow_dchecks = true
 v8_optimized_debug = false
-v8_use_perfetto = false
 """
 
 OPTDEBUG_ARGS_TEMPLATE = f"""\
@@ -384,11 +318,10 @@ def print_completions_and_exit():
   sys.exit(0)
 
 
-def _call(cmd, silent=False, cwd=None):
+def _call(cmd, silent=False):
   if not silent and not QUIET:
-    cwd_print = f"cd {cwd} && " if cwd else ""
-    print(f"# {cwd_print}{cmd}")
-  return subprocess.call(cmd, shell=True, cwd=cwd)
+    print(f"# {cmd}")
+  return subprocess.call(cmd, shell=True)
 
 
 # Quiet mode means: only print in case of error.
@@ -413,14 +346,6 @@ def _call_with_output(cmd):
   # The following trickery is required so that the 'cmd' thinks it's running
   # in a real terminal, while this script gets to intercept its output.
   parent, child = pty.openpty()
-  # Set terminal size on the PTY
-  try:
-    size = shutil.get_terminal_size()
-    winsize = struct.pack("HHHH", size.lines, size.columns, 0, 0)
-    fcntl.ioctl(child, termios.TIOCSWINSZ, winsize)
-  except Exception as e:
-    # Fallback or ignore if not supported
-    pass
   p = subprocess.Popen(cmd, shell=True, stdin=child, stdout=child, stderr=child)
   os.close(child)
   output = []
@@ -529,8 +454,7 @@ class RawConfig:
       _write(args_gn, new_gn_args, log=False)
 
   def build(self):
-    if UPDATE_RECLIENT_CONFIG:
-      self.update_build_distribution_args()
+    self.update_build_distribution_args()
     # If the target is to just build args.gn then we are done here; otherwise
     # drop that target because it's not something ninja can build.
     if 'gn_args' in self.targets:
@@ -546,24 +470,13 @@ class RawConfig:
         printable_path = self.path
     else:
       printable_path = self.path
-
-    printable_path_gn = printable_path
-    change_cwd = None
-    if CHROMIUM_DIR:
-      change_cwd = CHROMIUM_DIR
-      try:
-        printable_path_gn = self.path.relative_to(CHROMIUM_DIR)
-      except ValueError:
-        pass
-
     build_ninja = self.path / "build.ninja"
-
     if not build_ninja.exists():
-      code = _call(f"gn gen {printable_path_gn}", cwd=change_cwd)
+      code = _call(f"gn gen {printable_path}")
       if code != 0:
         return code
     elif self.clean:
-      code = _call(f"gn clean {printable_path_gn}", cwd=change_cwd)
+      code = _call(f"gn clean {printable_path}")
       if code != 0:
         return code
     targets = " ".join(self.targets)
@@ -586,8 +499,6 @@ class RawConfig:
         match = csa_trap.search(output)
         extra_opt = match.group(1) if match else ""
         cmdline = re.compile("python3 ../../tools/run.py ./mksnapshot (.*)")
-        if CHROMIUM_DIR:
-          cmdline = re.compile("python3 ../../v8/tools/run.py ./mksnapshot (.*)")
         orig_cmdline = cmdline.search(output).group(1).strip()
         cmdline = (
             prepare_mksnapshot_cmdline(orig_cmdline, self.path) + extra_opt)
@@ -597,8 +508,6 @@ class RawConfig:
       elif "run.py ./torque" in output and not ": Torque Error: " in output:
         # Torque failed/crashed without printing an error message.
         cmdline = re.compile("python3 ../../tools/run.py ./torque (.*)")
-        if CHROMIUM_DIR:
-          cmdline = re.compile("python3 ../../v8/tools/run.py ./torque (.*)")
         orig_cmdline = cmdline.search(output).group(1).strip()
         cmdline = f"gdb --args "
         cmdline = prepare_torque_cmdline(orig_cmdline, self.path)
@@ -617,7 +526,7 @@ class RawConfig:
     run_tests = V8_DIR / "tools" / "run-tests.py"
     test_runner_args = " ".join(self.testrunner_args)
     return _call(
-        f'"{sys.executable}" {run_tests} --outdir={self.path} {tests} {test_runner_args}'
+        f'"{sys.executable }" {run_tests} --outdir={self.path} {tests} {test_runner_args}'
     )
 
 
@@ -749,7 +658,6 @@ class ArgumentParser(object):
     self.global_actions = set()
     self.configs = {}
     self.testrunner_args = []
-    self.sync_mode = GclientSyncMode.NONE
 
   def populate_configs(self, arches, modes, targets, tests, clean):
     for a in arches:
@@ -815,34 +723,14 @@ class ArgumentParser(object):
       self.configs[path].extend(targets, tests, clean)
     return True
 
-  def _parse_sync_arg(self, argstring):
-    if argstring == "--sync":
-      self.sync_mode = GclientSyncMode.NORMAL
-      return True
-    if argstring.startswith("--sync="):
-      mode = argstring[len("--sync="):]
-      try:
-        self.sync_mode = GclientSyncMode(mode)
-        return True
-      except ValueError:
-        print(f"Unknown sync mode: {mode}")
-        sys.exit(1)
-    return False
-
   def parse_arg(self, argstring):
     if argstring in ("-h", "--help", "help"):
       print_help_and_exit()
     if argstring == "--print-completions":
       print_completions_and_exit()
-    if self._parse_sync_arg(argstring):
-      return
     if argstring == "quiet":
       global QUIET
       QUIET = True
-      return
-    if argstring == "--update-reclient-config":
-      global UPDATE_RECLIENT_CONFIG
-      UPDATE_RECLIENT_CONFIG = True
       return
     arches = []
     modes = []
@@ -915,6 +803,7 @@ class ArgumentParser(object):
     arches = arches or DEFAULT_ARCHES
     modes = modes or DEFAULT_MODES
     targets = targets or DEFAULT_TARGETS
+    # Produce configs.
     self.populate_configs(arches, modes, targets, tests, clean)
 
   def parse_arguments(self, argv):
@@ -934,16 +823,6 @@ class ArgumentParser(object):
 def main(argv):
   parser = ArgumentParser()
   configs = parser.parse_arguments(argv[1:])
-
-  if parser.sync_mode == GclientSyncMode.NORMAL:
-    sync_code = _call("gclient sync -D")
-    if sync_code != 0:
-      return sync_code
-  elif parser.sync_mode == GclientSyncMode.FORCE:
-    sync_code = _call("gclient sync -D --force --reset")
-    if sync_code != 0:
-      return sync_code
-
   return_code = 0
   # If we have Reclient with the Google configuration, check for current
   # certificate.

@@ -225,7 +225,8 @@ on deeper dependencies. Sets `--install-strategy=shallow`.
 Dependency types to omit from the installation tree on disk.
 
 Note that these dependencies _are_ still resolved and added to the
-`package-lock.json` file. They are just not physically installed on disk.
+`package-lock.json` or `npm-shrinkwrap.json` file. They are just not
+physically installed on disk.
 
 If a package type appears in both the `--include` and `--omit` lists, then
 it will be included.
@@ -307,9 +308,6 @@ Note that commands explicitly intended to run a particular script, such as
 run their intended script if `ignore-scripts` is set, but they will *not*
 run any pre- or post-scripts.
 
-Setting `ignore-scripts` also disables `.npm-extension` execution, as if
-`ignore-extension` were set.
-
 
 
 #### `allow-scripts`
@@ -332,7 +330,7 @@ Each name is matched against a dependency's resolved identity, not against
 the package's self-reported name. `--ignore-scripts` and
 `--dangerously-allow-all-scripts` both override this setting.
 
-This value is not exported to the environment for child processes.
+
 
 #### `strict-allow-scripts`
 
@@ -340,12 +338,11 @@ This value is not exported to the environment for child processes.
 * Type: Boolean
 
 If `true`, turn the install-script policy from a warning into a hard error:
-any dependency with install scripts that is not covered by `allowScripts`
-will fail the install instead of being blocked with a warning.
+any dependency with install scripts not covered by `allowScripts` will fail
+the install instead of running with a notice.
 
 Dependencies explicitly denied with `false` in `allowScripts` are always
-silently skipped; this setting only affects unreviewed entries (packages
-with install scripts that are neither approved nor denied).
+silently skipped; this setting only affects unreviewed entries.
 `--ignore-scripts` and `--dangerously-allow-all-scripts` both override this
 setting.
 
@@ -573,6 +570,7 @@ workspaces.
 
 * [npm install](/commands/npm-install)
 * [npm outdated](/commands/npm-outdated)
+* [npm shrinkwrap](/commands/npm-shrinkwrap)
 * [npm registry](/using-npm/registry)
 * [npm folders](/configuring-npm/folders)
 * [npm ls](/commands/npm-ls)

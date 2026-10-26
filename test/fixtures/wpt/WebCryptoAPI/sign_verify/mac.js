@@ -107,9 +107,7 @@ function runMacTests(options) {
             promise_test(function(test) {
                 var signature = copyBuffer(vector.signature);
                 var operation = subtle.verify(operationAlgorithm(vector, function() {
-                        if (!signature.buffer.detached) {
-                            signature.buffer.transfer();
-                        }
+                        signature.buffer.transfer();
                         return options.operationAlgorithm(vector).name;
                     }), vector.key, signature, vector.plaintext)
                 .then(function(is_verified) {
@@ -214,9 +212,7 @@ function runMacTests(options) {
             promise_test(function(test) {
                 var plaintext = copyBuffer(vector.plaintext);
                 var operation = subtle.verify(operationAlgorithm(vector, function() {
-                        if (!plaintext.buffer.detached) {
-                            plaintext.buffer.transfer();
-                        }
+                        plaintext.buffer.transfer();
                         return options.operationAlgorithm(vector).name;
                     }), vector.key, vector.signature, plaintext)
                 .then(function(is_verified) {

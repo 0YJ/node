@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2018-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -22,7 +22,6 @@
 #include <openssl/core_names.h>
 #include <openssl/proverr.h>
 #include "internal/cryptlib.h"
-#include "internal/fips.h"
 #include "internal/numbers.h"
 #include "crypto/evp.h"
 #include "prov/provider_ctx.h"
@@ -30,38 +29,13 @@
 #include "prov/implementations.h"
 #include "prov/provider_util.h"
 #include "prov/securitycheck.h"
-#include "providers/implementations/kdfs/pbkdf2.inc"
+#include "pbkdf2.h"
 
 /* Constants specified in SP800-132 */
 #define KDF_PBKDF2_MIN_KEY_LEN_BITS 112
 #define KDF_PBKDF2_MAX_KEY_LEN_DIGEST_RATIO 0xFFFFFFFF
 #define KDF_PBKDF2_MIN_ITERATIONS 1000
 #define KDF_PBKDF2_MIN_SALT_LEN (128 / 8)
-/*
- * The Implementation Guidance for FIPS 140-3 says in section D.N
- * "Password-Based Key Derivation for Storage Applications" that "the vendor
- * shall document in the module's Security Policy the length of
- * a password/passphrase used in key derivation and establish an upper bound
- * for the probability of having this parameter guessed at random. This
- * probability shall take into account not only the length of the
- * password/passphrase, but also the difficulty of guessing it. The decision on
- * the minimum length of a password used for key derivation is the vendor's,
- * but the vendor shall at a minimum informally justify the decision."
- *
- * ACVP may assume 8, most FIPS modules choose 8, BC-FJA chose 14.
- *
- * Allow setting this for default provider too, in case consistency is
- * desired for FIPS and Default providers. Because password being
- * accepted on one system, but not the other, is very confusing.
- */
-#ifndef KDF_PBKDF2_MIN_PASSWORD_LEN
-#ifdef FIPS_MODULE
-#define KDF_PBKDF2_MIN_PASSWORD_LEN (8)
-#define KDF_PBKDF2_FIPS_SELF_TEST_ITERATIONS 2
-#else
-#define KDF_PBKDF2_MIN_PASSWORD_LEN (1)
-#endif
-#endif
 
 static OSSL_FUNC_kdf_newctx_fn kdf_pbkdf2_new;
 static OSSL_FUNC_kdf_dupctx_fn kdf_pbkdf2_dup;
@@ -98,12 +72,6 @@ static void *kdf_pbkdf2_new_no_init(void *provctx)
 
     if (!ossl_prov_is_running())
         return NULL;
-
-#ifdef FIPS_MODULE
-    if (!ossl_deferred_self_test(PROV_LIBCTX_OF(provctx),
-            ST_ID_KDF_PBKDF2))
-        return NULL;
-#endif
 
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx == NULL)
@@ -181,20 +149,16 @@ err:
 
 static void kdf_pbkdf2_init(KDF_PBKDF2 *ctx)
 {
-    OSSL_PARAM param;
+    OSSL_PARAM params[2] = { OSSL_PARAM_END, OSSL_PARAM_END };
     OSSL_LIB_CTX *provctx = PROV_LIBCTX_OF(ctx->provctx);
 
-    param = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
+    params[0] = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST,
         SN_sha1, 0);
-    if (!ossl_prov_digest_load(&ctx->digest, &param, NULL, provctx))
+    if (!ossl_prov_digest_load_from_params(&ctx->digest, params, provctx))
         /* This is an error, but there is no way to indicate such directly */
         ossl_prov_digest_reset(&ctx->digest);
     ctx->iter = PKCS5_DEFAULT_ITER;
-#ifdef FIPS_MODULE
-    ctx->lower_bound_checks = 1;
-#else
-    ctx->lower_bound_checks = 0;
-#endif
+    ctx->lower_bound_checks = ossl_kdf_pbkdf2_default_checks;
 }
 
 static int pbkdf2_set_membuf(unsigned char **buffer, size_t *buflen,
@@ -215,17 +179,9 @@ static int pbkdf2_set_membuf(unsigned char **buffer, size_t *buflen,
 }
 
 static int pbkdf2_lower_bound_check_passed(int saltlen, uint64_t iter,
-    size_t keylen, size_t passlen,
-    int *error, const char **desc)
+    size_t keylen, int *error,
+    const char **desc)
 {
-    uint64_t min_iter = KDF_PBKDF2_MIN_ITERATIONS;
-
-    if (passlen < KDF_PBKDF2_MIN_PASSWORD_LEN) {
-        *error = PROV_R_PASSWORD_STRENGTH_TOO_WEAK;
-        if (desc != NULL)
-            *desc = "Weak password";
-        return 0;
-    }
     if ((keylen * 8) < KDF_PBKDF2_MIN_KEY_LEN_BITS) {
         *error = PROV_R_KEY_SIZE_TOO_SMALL;
         if (desc != NULL)
@@ -238,13 +194,7 @@ static int pbkdf2_lower_bound_check_passed(int saltlen, uint64_t iter,
             *desc = "Salt size";
         return 0;
     }
-#ifdef FIPS_MODULE
-    /* Modify this check during self-test. See FIPS 140-3 IG 10.3.A.8 */
-    if (ossl_self_test_in_progress(ST_ID_KDF_PBKDF2)) {
-        min_iter = KDF_PBKDF2_FIPS_SELF_TEST_ITERATIONS;
-    }
-#endif
-    if (iter < min_iter) {
+    if (iter < KDF_PBKDF2_MIN_ITERATIONS) {
         *error = PROV_R_INVALID_ITERATION_COUNT;
         if (desc != NULL)
             *desc = "Iteration count";
@@ -255,20 +205,18 @@ static int pbkdf2_lower_bound_check_passed(int saltlen, uint64_t iter,
 }
 
 #ifdef FIPS_MODULE
-static int fips_lower_bound_check_passed(KDF_PBKDF2 *ctx, int saltlen,
-    uint64_t iter, size_t keylen,
-    size_t passlen)
+static int fips_lower_bound_check_passed(KDF_PBKDF2 *ctx, size_t keylen)
 {
     OSSL_LIB_CTX *libctx = PROV_LIBCTX_OF(ctx->provctx);
     int error = 0;
     const char *desc = NULL;
-    int approved = pbkdf2_lower_bound_check_passed(saltlen, iter, keylen,
-        passlen, &error, &desc);
+    int approved = pbkdf2_lower_bound_check_passed(ctx->salt_len, ctx->iter,
+        keylen, &error, &desc);
 
     if (!approved) {
         if (!OSSL_FIPS_IND_ON_UNAPPROVED(ctx, OSSL_FIPS_IND_SETTABLE0, libctx,
                 "PBKDF2", desc,
-                FIPS_CONFIG_PBKDF2_LOWER_BOUND_CHECK)) {
+                ossl_fips_config_pbkdf2_lower_bound_check)) {
             ERR_raise(ERR_LIB_PROV, error);
             return 0;
         }
@@ -276,32 +224,6 @@ static int fips_lower_bound_check_passed(KDF_PBKDF2 *ctx, int saltlen,
     return 1;
 }
 #endif
-
-static int lower_bound_check_passed(KDF_PBKDF2 *ctx, int saltlen, uint64_t iter,
-    size_t keylen, size_t passlen,
-    int lower_bound_checks)
-{
-#ifdef FIPS_MODULE
-    if (!fips_lower_bound_check_passed(ctx, saltlen, iter, keylen, passlen))
-        return 0;
-#else
-    if (lower_bound_checks) {
-        int error = 0;
-        int passed = pbkdf2_lower_bound_check_passed(saltlen, iter, keylen,
-            passlen, &error, NULL);
-
-        if (!passed) {
-            ERR_raise(ERR_LIB_PROV, error);
-            return 0;
-        }
-    } else if (iter < 1) {
-        ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_ITERATION_COUNT);
-        return 0;
-    }
-#endif
-
-    return 1;
-}
 
 static int kdf_pbkdf2_derive(void *vctx, unsigned char *key, size_t keylen,
     const OSSL_PARAM params[])
@@ -324,26 +246,24 @@ static int kdf_pbkdf2_derive(void *vctx, unsigned char *key, size_t keylen,
 
     md = ossl_prov_digest_md(&ctx->digest);
     return pbkdf2_derive(ctx, (char *)ctx->pass, ctx->pass_len,
-        ctx->salt, (int)ctx->salt_len, ctx->iter,
+        ctx->salt, ctx->salt_len, ctx->iter,
         md, key, keylen, ctx->lower_bound_checks);
 }
 
 static int kdf_pbkdf2_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
-    struct pbkdf2_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     KDF_PBKDF2 *ctx = vctx;
-    OSSL_LIB_CTX *provctx;
+    OSSL_LIB_CTX *provctx = PROV_LIBCTX_OF(ctx->provctx);
     int pkcs5;
-    uint64_t iter;
+    uint64_t iter, min_iter;
     const EVP_MD *md;
 
-    if (ctx == NULL || !pbkdf2_set_ctx_params_decoder(params, &p))
-        return 0;
+    if (ossl_param_is_empty(params))
+        return 1;
 
-    provctx = PROV_LIBCTX_OF(ctx->provctx);
-
-    if (p.digest != NULL) {
-        if (!ossl_prov_digest_load(&ctx->digest, p.digest, p.propq, provctx))
+    if (OSSL_PARAM_locate_const(params, OSSL_ALG_PARAM_DIGEST) != NULL) {
+        if (!ossl_prov_digest_load_from_params(&ctx->digest, params, provctx))
             return 0;
         md = ossl_prov_digest_md(&ctx->digest);
         if (EVP_MD_xof(md)) {
@@ -352,8 +272,8 @@ static int kdf_pbkdf2_set_ctx_params(void *vctx, const OSSL_PARAM params[])
         }
     }
 
-    if (p.pkcs5 != NULL) {
-        if (!OSSL_PARAM_get_int(p.pkcs5, &pkcs5))
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_KDF_PARAM_PKCS5)) != NULL) {
+        if (!OSSL_PARAM_get_int(p, &pkcs5))
             return 0;
         ctx->lower_bound_checks = pkcs5 == 0;
 #ifdef FIPS_MODULE
@@ -363,32 +283,28 @@ static int kdf_pbkdf2_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 #endif
     }
 
-    if (p.pw != NULL) {
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_KDF_PARAM_PASSWORD)) != NULL)
+        if (!pbkdf2_set_membuf(&ctx->pass, &ctx->pass_len, p))
+            return 0;
+
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_KDF_PARAM_SALT)) != NULL) {
         if (ctx->lower_bound_checks != 0
-            && p.pw->data_size < KDF_PBKDF2_MIN_PASSWORD_LEN) {
-            ERR_raise_data(ERR_LIB_PROV, PROV_R_PASSWORD_STRENGTH_TOO_WEAK,
-                "password length %zu should be at least %d",
-                p.pw->data_size, KDF_PBKDF2_MIN_PASSWORD_LEN);
+            && p->data_size < KDF_PBKDF2_MIN_SALT_LEN) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_SALT_LENGTH);
             return 0;
         }
-        if (!pbkdf2_set_membuf(&ctx->pass, &ctx->pass_len, p.pw))
+        if (!pbkdf2_set_membuf(&ctx->salt, &ctx->salt_len, p))
             return 0;
     }
 
-    if (p.salt != NULL) {
-        if (!lower_bound_check_passed(ctx, (int)p.salt->data_size, UINT64_MAX, SIZE_MAX,
-                SIZE_MAX, ctx->lower_bound_checks))
+    if ((p = OSSL_PARAM_locate_const(params, OSSL_KDF_PARAM_ITER)) != NULL) {
+        if (!OSSL_PARAM_get_uint64(p, &iter))
             return 0;
-        if (!pbkdf2_set_membuf(&ctx->salt, &ctx->salt_len, p.salt))
+        min_iter = ctx->lower_bound_checks != 0 ? KDF_PBKDF2_MIN_ITERATIONS : 1;
+        if (iter < min_iter) {
+            ERR_raise(ERR_LIB_PROV, PROV_R_INVALID_ITERATION_COUNT);
             return 0;
-    }
-
-    if (p.iter != NULL) {
-        if (!OSSL_PARAM_get_uint64(p.iter, &iter))
-            return 0;
-        if (!lower_bound_check_passed(ctx, INT_MAX, iter, SIZE_MAX,
-                SIZE_MAX, ctx->lower_bound_checks))
-            return 0;
+        }
         ctx->iter = iter;
     }
     return 1;
@@ -397,21 +313,27 @@ static int kdf_pbkdf2_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 static const OSSL_PARAM *kdf_pbkdf2_settable_ctx_params(ossl_unused void *ctx,
     ossl_unused void *p_ctx)
 {
-    return pbkdf2_set_ctx_params_list;
+    static const OSSL_PARAM known_settable_ctx_params[] = {
+        OSSL_PARAM_utf8_string(OSSL_KDF_PARAM_PROPERTIES, NULL, 0),
+        OSSL_PARAM_utf8_string(OSSL_KDF_PARAM_DIGEST, NULL, 0),
+        OSSL_PARAM_octet_string(OSSL_KDF_PARAM_PASSWORD, NULL, 0),
+        OSSL_PARAM_octet_string(OSSL_KDF_PARAM_SALT, NULL, 0),
+        OSSL_PARAM_uint64(OSSL_KDF_PARAM_ITER, NULL),
+        OSSL_PARAM_int(OSSL_KDF_PARAM_PKCS5, NULL),
+        OSSL_PARAM_END
+    };
+    return known_settable_ctx_params;
 }
 
 static int kdf_pbkdf2_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
-    KDF_PBKDF2 *ctx = vctx;
-    struct pbkdf2_get_ctx_params_st p;
+    OSSL_PARAM *p;
 
-    if (ctx == NULL || !pbkdf2_get_ctx_params_decoder(params, &p))
-        return 0;
+    if ((p = OSSL_PARAM_locate(params, OSSL_KDF_PARAM_SIZE)) != NULL)
+        if (!OSSL_PARAM_set_size_t(p, SIZE_MAX))
+            return 0;
 
-    if (p.size != NULL && !OSSL_PARAM_set_size_t(p.size, SIZE_MAX))
-        return 0;
-
-    if (!OSSL_FIPS_IND_GET_CTX_FROM_PARAM(ctx, p.ind))
+    if (!OSSL_FIPS_IND_GET_CTX_PARAM((KDF_PBKDF2 *)vctx, params))
         return 0;
     return 1;
 }
@@ -419,7 +341,12 @@ static int kdf_pbkdf2_get_ctx_params(void *vctx, OSSL_PARAM params[])
 static const OSSL_PARAM *kdf_pbkdf2_gettable_ctx_params(ossl_unused void *ctx,
     ossl_unused void *p_ctx)
 {
-    return pbkdf2_get_ctx_params_list;
+    static const OSSL_PARAM known_gettable_ctx_params[] = {
+        OSSL_PARAM_size_t(OSSL_KDF_PARAM_SIZE, NULL),
+        OSSL_FIPS_IND_GETTABLE_CTX_PARAM()
+            OSSL_PARAM_END
+    };
+    return known_gettable_ctx_params;
 }
 
 const OSSL_DISPATCH ossl_kdf_pbkdf2_functions[] = {
@@ -472,15 +399,28 @@ static int pbkdf2_derive(KDF_PBKDF2 *ctx, const char *pass, size_t passlen,
         return 0;
     }
 
-    if (!lower_bound_check_passed(ctx, saltlen, iter, keylen, passlen, lower_bound_checks))
+#ifdef FIPS_MODULE
+    if (!fips_lower_bound_check_passed(ctx, keylen))
         return 0;
+#else
+    if (lower_bound_checks) {
+        int error = 0;
+        int passed = pbkdf2_lower_bound_check_passed(saltlen, iter, keylen,
+            &error, NULL);
+
+        if (!passed) {
+            ERR_raise(ERR_LIB_PROV, error);
+            return 0;
+        }
+    }
+#endif
 
     hctx_tpl = HMAC_CTX_new();
     if (hctx_tpl == NULL)
         return 0;
     p = key;
-    tkeylen = (int)keylen;
-    if (!HMAC_Init_ex(hctx_tpl, pass, (int)passlen, digest, NULL))
+    tkeylen = keylen;
+    if (!HMAC_Init_ex(hctx_tpl, pass, passlen, digest, NULL))
         goto err;
     hctx = HMAC_CTX_new();
     if (hctx == NULL)

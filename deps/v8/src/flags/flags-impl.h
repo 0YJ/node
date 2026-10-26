@@ -39,6 +39,7 @@ class V8_EXPORT_PRIVATE FlagHelpers {
 };
 
 struct Flag;
+Flag* FindFlagByPointer(const void* ptr);
 V8_EXPORT_PRIVATE Flag* FindFlagByName(const char* name);
 V8_EXPORT_PRIVATE Flag* FindImplicationFlagByName(const char* name);
 
@@ -83,8 +84,10 @@ struct Flag {
   }
 
   FlagType type_;       // What type of flag, bool, int, or string.
+  const char* name_;    // Name of the flag, ex "my_flag".
   void* valptr_;        // Pointer to the global flag variable.
   const void* defptr_;  // Pointer to the default value.
+  const char* cmt_;     // A comment about the flags purpose.
   bool owns_ptr_;       // Does the flag own its string value?
   SetBy set_by_ = SetBy::kDefault;
   // Name of the flag implying this flag, if any.
@@ -96,9 +99,9 @@ struct Flag {
 
   FlagType type() const { return type_; }
 
-  V8_EXPORT_PRIVATE const char* name() const;
+  const char* name() const { return name_; }
 
-  V8_EXPORT_PRIVATE const char* comment() const;
+  const char* comment() const { return cmt_; }
 
   bool PointsTo(const void* ptr) const { return valptr_ == ptr; }
 

@@ -19,32 +19,27 @@
 #include <iomanip>
 #include <ios>
 #include <limits>
-#include <optional>
 #include <ostream>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <type_traits>
 
+#ifdef __ANDROID__
+#include <android/api-level.h>
+#endif
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/attributes.h"
 #include "absl/base/config.h"
 #include "absl/log/check.h"
 #include "absl/log/internal/test_matchers.h"
 #include "absl/log/log.h"
-#include "absl/log/log_entry.h"
-#include "absl/log/log_sink.h"
 #include "absl/log/scoped_mock_log.h"
 #include "absl/strings/match.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/source_location.h"
-
-#ifdef __ANDROID__
-#include <android/api-level.h>
-#endif
+#include "absl/types/optional.h"
 
 namespace {
 using ::absl::log_internal::AsString;
@@ -295,21 +290,6 @@ TYPED_TEST(SignedIntLogFormatTest, BitfieldNegative) {
   LOG(INFO) << value.bits;
 }
 
-TEST(SourceLocationTest, Format) {
-  absl::ScopedMockLog test_sink(absl::MockLogDefault::kDisallowUnexpected);
-  EXPECT_CALL(test_sink, Send).Times(0);
-
-  absl::SourceLocation loc = absl::SourceLocation::current();
-  std::string expected = absl::StrCat(__FILE__, ":", __LINE__ - 1);
-
-  EXPECT_CALL(test_sink, Send(AllOf(TextMessage(Eq(expected)),
-                                    ENCODED_MESSAGE(HasValues(ElementsAre(
-                                        ValueWithStr(Eq(expected))))))));
-
-  test_sink.StartCapturingLogs();
-  LOG(INFO) << loc;
-}
-
 // Ignore these test cases on GCC due to "is too small to hold all values ..."
 // warning.
 #if !defined(__GNUC__) || defined(__clang__)
@@ -329,10 +309,9 @@ enum MyUnsignedIntEnum : unsigned int {
 
 template <typename T>
 class UnsignedEnumLogFormatTest : public testing::Test {};
-using UnsignedEnumTypes =
-    std::conditional_t<std::is_signed_v<std::underlying_type_t<MyUnsignedEnum>>,
-                       Types<MyUnsignedIntEnum>,
-                       Types<MyUnsignedEnum, MyUnsignedIntEnum>>;
+using UnsignedEnumTypes = std::conditional<
+    std::is_signed<std::underlying_type<MyUnsignedEnum>::type>::value,
+    Types<MyUnsignedIntEnum>, Types<MyUnsignedEnum, MyUnsignedIntEnum>>::type;
 TYPED_TEST_SUITE(UnsignedEnumLogFormatTest, UnsignedEnumTypes);
 
 TYPED_TEST(UnsignedEnumLogFormatTest, Positive) {
@@ -391,10 +370,10 @@ enum MySignedIntEnum : signed int {
 
 template <typename T>
 class SignedEnumLogFormatTest : public testing::Test {};
-using SignedEnumTypes =
-    std::conditional_t<std::is_signed_v<std::underlying_type_t<MyUnsignedEnum>>,
-                       Types<MyUnsignedEnum, MySignedEnum, MySignedIntEnum>,
-                       Types<MySignedEnum, MySignedIntEnum>>;
+using SignedEnumTypes = std::conditional<
+    std::is_signed<std::underlying_type<MyUnsignedEnum>::type>::value,
+    Types<MyUnsignedEnum, MySignedEnum, MySignedIntEnum>,
+    Types<MySignedEnum, MySignedIntEnum>>::type;
 TYPED_TEST_SUITE(SignedEnumLogFormatTest, SignedEnumTypes);
 
 TYPED_TEST(SignedEnumLogFormatTest, Positive) {
@@ -1274,7 +1253,7 @@ struct PointWithAbslStringifiyAndOstream {
   int y = 20;
 };
 
-[[maybe_unused]] std::ostream& operator<<(
+ABSL_ATTRIBUTE_UNUSED std::ostream& operator<<(
     std::ostream& os, const PointWithAbslStringifiyAndOstream&) {
   return os << "Default to AbslStringify()";
 }
@@ -2117,7 +2096,7 @@ size_t MaxLogFieldLengthNoPrefix() {
     }
 
    private:
-    std::optional<size_t> size_;
+    absl::optional<size_t> size_;
   } extractor_sink;
   LOG(INFO).NoPrefix().ToSinkOnly(&extractor_sink)
       << std::string(2 * absl::log_internal::kLogMessageBufferSize, 'x');

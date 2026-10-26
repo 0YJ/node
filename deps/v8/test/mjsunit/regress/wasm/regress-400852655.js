@@ -2,13 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --no-wasm-lazy-compilation --no-wasm-opt
+// Flags: --no-liftoff --no-wasm-lazy-compilation --no-wasm-opt
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 const builder = new WasmModuleBuilder();
-let $struct0 = builder.addStruct(
-    {fields: [makeField(kWasmI32, false)], final: true});
+let $struct0 = builder.addStruct([makeField(kWasmI32, false)], kNoSuperType, true);
 let $sig1 = builder.addType(makeSig([kWasmI32], [wasmRefNullType($struct0)]));
 let $func0 = builder.addFunction(undefined, $sig1);
 

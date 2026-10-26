@@ -13,12 +13,11 @@
 #include "src/builtins/accessors.h"
 #include "src/common/assert-scope.h"
 #include "src/heap/heap-inl.h"
-#include "src/logging/counters.h"
 #include "src/objects/cell-inl.h"
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/js-generator-inl.h"
 #include "src/objects/module-inl.h"
-#include "src/objects/object-predicates-inl.h"
+#include "src/objects/objects-inl.h"
 #include "src/objects/property-descriptor.h"
 #include "src/objects/source-text-module.h"
 #include "src/objects/synthetic-module-inl.h"
@@ -93,7 +92,6 @@ const char* Module::StatusString(Module::Status status) {
     case Module::kErrored:
       return "Errored";
   }
-  UNREACHABLE();
 }
 #endif  // DEBUG
 
@@ -101,22 +99,22 @@ void Module::SetStatus(Status new_status) {
   DisallowGarbageCollection no_gc;
   DCHECK_LE(status(), new_status);
   DCHECK_NE(new_status, Module::kErrored);
-  SetStatusInternal(this, new_status);
+  SetStatusInternal(*this, new_status);
 }
 
 void Module::RecordError(Isolate* isolate, Tagged<Object> error) {
   DisallowGarbageCollection no_gc;
   // Allow overriding exceptions with termination exceptions.
   DCHECK_IMPLIES(isolate->is_catchable_by_javascript(error),
-                 IsTheHole(exception()));
-  DCHECK(!IsTheHole(error));
-  if (Is<SourceTextModule>(this)) {
+                 IsTheHole(exception(), isolate));
+  DCHECK(!IsTheHole(error, isolate));
+  if (IsSourceTextModule(*this)) {
     // Revert to minimal SFI in case we have already been instantiating or
     // evaluating.
-    auto self = Cast<SourceTextModule>(this);
+    auto self = Cast<SourceTextModule>(*this);
     self->set_code(self->GetSharedFunctionInfo());
   }
-  SetStatusInternal(this, Module::kErrored);
+  SetStatusInternal(*this, Module::kErrored);
   if (isolate->is_catchable_by_javascript(error)) {
     set_exception(error);
   } else {
@@ -128,11 +126,6 @@ void Module::RecordError(Isolate* isolate, Tagged<Object> error) {
 void Module::ResetGraph(Isolate* isolate, DirectHandle<Module> module) {
   DCHECK_NE(module->status(), kEvaluating);
   if (module->status() != kPreLinking && module->status() != kLinking) {
-#ifdef DEBUG
-    if (IsSourceTextModule(*module)) {
-      Cast<SourceTextModule>(*module)->VerifyRequestedModules();
-    }
-#endif  // DEBUG
     return;
   }
 
@@ -147,34 +140,34 @@ void Module::ResetGraph(Isolate* isolate, DirectHandle<Module> module) {
     DCHECK(IsSyntheticModule(*module));
     return;
   }
-  const uint32_t requested_modules_len = requested_modules->ulength().value();
-  for (uint32_t i = 0; i < requested_modules_len; ++i) {
+  for (int i = 0; i < requested_modules->length(); ++i) {
     DirectHandle<Object> descendant(requested_modules->get(i), isolate);
     if (IsModule(*descendant)) {
       ResetGraph(isolate, Cast<Module>(descendant));
     } else {
-      // Source phase imports store a JSReceiver (e.g. WasmModuleObject) in
-      // requested_modules. Pre-linking entries are Undefined.
-      CHECK(IsUndefined(*descendant) || IsJSReceiver(*descendant));
+      // The requested module is either an undefined or a WasmModule object.
+#if V8_ENABLE_WEBASSEMBLY
+      DCHECK(IsUndefined(*descendant, isolate) ||
+             IsWasmModuleObject(*descendant));
+#else
+      DCHECK(IsUndefined(*descendant, isolate));
+#endif
     }
   }
 }
 
 void Module::Reset(Isolate* isolate, DirectHandle<Module> module) {
   DCHECK(module->status() == kPreLinking || module->status() == kLinking);
-  DCHECK(IsTheHole(module->exception()));
-  // The namespace cells could have been created during ResolveExport for
-  // 'export * as ns', reset them here.
-  module->set_module_namespace(ReadOnlyRoots(isolate).undefined_value());
-  module->set_deferred_module_namespace(
-      ReadOnlyRoots(isolate).undefined_value());
-  const uint32_t export_count =
+  DCHECK(IsTheHole(module->exception(), isolate));
+  // The namespace object cannot exist, because it would have been created
+  // by RunInitializationCode, which is called only after this module's SCC
+  // succeeds instantiation.
+  DCHECK(!IsJSModuleNamespace(module->module_namespace()) &&
+         !IsJSModuleNamespace(module->deferred_module_namespace()));
+  const int export_count =
       IsSourceTextModule(*module)
-          ? Cast<SourceTextModule>(*module)
-                ->regular_exports()
-                ->ulength()
-                .value()
-          : Cast<SyntheticModule>(*module)->export_names()->ulength().value();
+          ? Cast<SourceTextModule>(*module)->regular_exports()->length()
+          : Cast<SyntheticModule>(*module)->export_names()->length();
   DirectHandle<ObjectHashTable> exports =
       ObjectHashTable::New(isolate, export_count);
 
@@ -207,8 +200,8 @@ MaybeHandle<Cell> Module::ResolveExport(Isolate* isolate, Handle<Module> module,
         loc, must_resolve, resolve_set);
   } else {
     return SyntheticModule::ResolveExport(
-        isolate, CheckedCast<SyntheticModule>(module), module_specifier,
-        export_name, loc, must_resolve);
+        isolate, Cast<SyntheticModule>(module), module_specifier, export_name,
+        loc, must_resolve);
   }
 }
 
@@ -227,17 +220,13 @@ bool Module::Instantiate(Isolate* isolate, Handle<Module> module,
   Zone zone(isolate->allocator(), ZONE_NAME);
   ZoneForwardList<Handle<SourceTextModule>> stack(&zone);
   unsigned dfs_index = 0;
-  unsigned max_depth = 0;
-  if (!FinishInstantiate(isolate, module, &stack, &dfs_index, &zone, 1,
-                         &max_depth)) {
+  if (!FinishInstantiate(isolate, module, &stack, &dfs_index, &zone)) {
     ResetGraph(isolate, module);
     DCHECK_EQ(module->status(), kUnlinked);
     return false;
   }
   DCHECK_GE(module->status(), kLinked);
   DCHECK(stack.empty());
-  isolate->counters()->esm_modules_per_page()->AddSample(dfs_index);
-  isolate->counters()->esm_import_graph_depth()->AddSample(max_depth);
   return true;
 }
 
@@ -261,26 +250,23 @@ bool Module::PrepareInstantiate(Isolate* isolate, DirectHandle<Module> module,
 
 bool Module::FinishInstantiate(Isolate* isolate, Handle<Module> module,
                                ZoneForwardList<Handle<SourceTextModule>>* stack,
-                               unsigned* dfs_index, Zone* zone, unsigned depth,
-                               unsigned* max_depth) {
+                               unsigned* dfs_index, Zone* zone) {
   DCHECK_NE(module->status(), kEvaluating);
-  if (max_depth) *max_depth = std::max(*max_depth, depth);
   if (module->status() >= kLinking) return true;
   DCHECK_EQ(module->status(), kPreLinking);
   STACK_CHECK(isolate, false);
 
   if (IsSourceTextModule(*module)) {
     return SourceTextModule::FinishInstantiate(
-        isolate, Cast<SourceTextModule>(module), stack, dfs_index, zone, depth,
-        max_depth);
+        isolate, Cast<SourceTextModule>(module), stack, dfs_index, zone);
   } else {
     return SyntheticModule::FinishInstantiate(isolate,
                                               Cast<SyntheticModule>(module));
   }
 }
 
-MaybeDirectHandle<JSPromise> Module::Evaluate(Isolate* isolate,
-                                              Handle<Module> module) {
+MaybeDirectHandle<Object> Module::Evaluate(Isolate* isolate,
+                                           Handle<Module> module) {
 #ifdef DEBUG
   PrintStatusMessage(*module, "Evaluating module ");
 #endif  // DEBUG
@@ -309,14 +295,8 @@ MaybeDirectHandle<JSPromise> Module::Evaluate(Isolate* isolate,
   CHECK(module_status == kLinked || module_status == kEvaluatingAsync ||
         module_status == kEvaluated);
 
-  // 3. If module.[[Status]] is either EVALUATING-ASYNC or EVALUATED, then
-  //    a. If module.[[CycleRoot]] is not empty, then
-  //       i. Set module to module.[[CycleRoot]].
-  //    b. Else,
-  //       i. Assert: module.[[Status]] is EVALUATED and
-  //          module.[[EvaluationError]] is a throw completion.
-  // (The early return for kErrored above handles the case where CycleRoot is
-  // empty.)
+  // 3. If module.[[Status]] is either EVALUATING-ASYNC or EVALUATED, set module
+  //    to module.[[CycleRoot]].
   // A Synthetic Module has no children so it is its own cycle root.
   if (module_status >= kEvaluatingAsync && IsSourceTextModule(*module)) {
     module = Cast<SourceTextModule>(module)->GetCycleRoot(isolate);
@@ -348,7 +328,7 @@ Handle<Cell> Module::GetModuleNamespaceCell(Isolate* isolate,
   Tagged<Object> maybe_cell = phase == ModuleImportPhase::kEvaluation
                                   ? module->module_namespace()
                                   : module->deferred_module_namespace();
-  if (!IsUndefined(maybe_cell)) {
+  if (!IsUndefined(maybe_cell, roots)) {
     return handle(Cast<Cell>(maybe_cell), isolate);
   }
   Handle<Cell> cell = isolate->factory()->NewCell();
@@ -368,7 +348,7 @@ DirectHandle<JSModuleNamespace> Module::GetModuleNamespace(
          phase == ModuleImportPhase::kDefer);
   DirectHandle<Cell> ns_cell = GetModuleNamespaceCell(isolate, module, phase);
 
-  if (auto cur = ns_cell->value(); !IsUndefined(cur)) {
+  if (auto cur = ns_cell->value(); !IsUndefined(cur, roots)) {
     return direct_handle(Cast<JSModuleNamespace>(cur), isolate);
   }
 
@@ -426,8 +406,7 @@ DirectHandle<JSModuleNamespace> Module::GetModuleNamespace(
       JSObject::SetNormalizedProperty(
           ns, name, module_namespace_property_accessor,
           PropertyDetails(PropertyKind::kAccessor, attr,
-                          PropertyCellType::kMutable))
-          .Check();
+                          PropertyCellType::kMutable));
     }
   }
   JSObject::PreventExtensions(isolate, ns, kThrowOnError).ToChecked();
@@ -446,18 +425,18 @@ DirectHandle<JSModuleNamespace> Module::GetModuleNamespace(
 
 bool JSModuleNamespace::HasExport(Isolate* isolate, DirectHandle<String> name) {
   DirectHandle<Object> object(module()->exports()->Lookup(name), isolate);
-  return !IsTheHole(*object);
+  return !IsTheHole(*object, isolate);
 }
 
 MaybeDirectHandle<Object> JSModuleNamespace::GetExport(
     Isolate* isolate, DirectHandle<String> name) {
   DirectHandle<Object> object(module()->exports()->Lookup(name), isolate);
-  if (IsTheHole(*object)) {
+  if (IsTheHole(*object, isolate)) {
     return isolate->factory()->undefined_value();
   }
 
   DirectHandle<Object> value(Cast<Cell>(*object)->value(), isolate);
-  if (IsTdzHole(*value)) {
+  if (IsTheHole(*value, isolate)) {
     // According to https://tc39.es/ecma262/#sec-InnerModuleLinking
     // step 10 and
     // https://tc39.es/ecma262/#sec-source-text-module-record-initialize-environment
@@ -472,31 +451,6 @@ MaybeDirectHandle<Object> JSModuleNamespace::GetExport(
   return value;
 }
 
-// static
-void JSModuleNamespace::MaybeCountMissingDefaultWithStarExport(
-    LookupIterator* it) {
-  DCHECK_EQ(it->state(), LookupIterator::MODULE_NAMESPACE);
-
-  if (it->IsElement()) return;
-
-  Isolate* isolate = it->isolate();
-  DirectHandle<String> default_string = isolate->factory()->default_string();
-  if (*it->name() != *default_string) return;
-
-  DirectHandle<JSModuleNamespace> ns = it->GetHolder<JSModuleNamespace>();
-  if (ns->HasExport(isolate, default_string)) return;
-
-  {
-    DisallowGarbageCollection no_gc;
-    Tagged<Module> module = ns->module();
-    if (!IsSourceTextModule(module)) return;
-    if (!Cast<SourceTextModule>(module)->info()->HasStarExports()) return;
-  }
-
-  isolate->CountUsage(
-      v8::Isolate::kModuleNamespaceMissingDefaultWithStarExport);
-}
-
 Maybe<PropertyAttributes> JSModuleNamespace::GetPropertyAttributes(
     LookupIterator* it) {
   DirectHandle<JSModuleNamespace> object = it->GetHolder<JSModuleNamespace>();
@@ -508,10 +462,10 @@ Maybe<PropertyAttributes> JSModuleNamespace::GetPropertyAttributes(
 
   DirectHandle<Object> lookup(object->module()->exports()->Lookup(name),
                               isolate);
-  if (IsTheHole(*lookup)) return Just(ABSENT);
+  if (IsTheHole(*lookup, isolate)) return Just(ABSENT);
 
   DirectHandle<Object> value(Cast<Cell>(lookup)->value(), isolate);
-  if (IsTdzHole(*value)) {
+  if (IsTheHole(*value, isolate)) {
     isolate->Throw(*isolate->factory()->NewReferenceError(
         MessageTemplate::kNotDefined, name));
     return Nothing<PropertyAttributes>();
@@ -538,13 +492,16 @@ void JSDeferredModuleNamespace::EvaluateModuleSync(
     return;
   }
 
-  MaybeDirectHandle<JSPromise> maybe_result = Module::Evaluate(isolate, module);
-  DirectHandle<JSPromise> promise;
-  if (!maybe_result.ToHandle(&promise)) {
+  MaybeDirectHandle<Object> maybe_result = Module::Evaluate(isolate, module);
+  DirectHandle<Object> result;
+  if (!maybe_result.ToHandle(&result)) {
     return;
   }
 
-  // The result is always the module's top-level capability promise.
+  // If there's a result, it needs to be a promise with either Reject or
+  // Fulfilled status.
+  DCHECK(IsJSPromise(*result));
+  DirectHandle<JSPromise> promise = Cast<JSPromise>(result);
   // 5. If promise.[[PromiseState]] is rejected, then
   if (promise->status() == Promise::kRejected) {
     // a. If promise.[[PromiseIsHandled]] is false, perform
@@ -584,15 +541,14 @@ Maybe<bool> JSModuleNamespace::DefineOwnProperty(
     Maybe<ShouldThrow> should_throw) {
   // 1. If Type(P) is Symbol, return OrdinaryDefineOwnProperty(O, P, Desc).
   if (IsSymbol(*key)) {
-    return JSReceiver::OrdinaryDefineOwnProperty(isolate, object, key, desc,
-                                                 should_throw);
+    return OrdinaryDefineOwnProperty(isolate, object, key, desc, should_throw);
   }
 
   // 2. Let current be ? O.[[GetOwnProperty]](P).
   PropertyKey lookup_key(isolate, key);
   LookupIterator it(isolate, object, lookup_key, LookupIterator::OWN);
   PropertyDescriptor current;
-  Maybe<bool> has_own = JSReceiver::GetOwnPropertyDescriptor(&it, &current);
+  Maybe<bool> has_own = GetOwnPropertyDescriptor(&it, &current);
   MAYBE_RETURN(has_own, Nothing<bool>());
 
   // 3. If current is undefined, return false.
@@ -620,8 +576,8 @@ bool Module::IsGraphAsync(Isolate* isolate) const {
   DisallowGarbageCollection no_gc;
 
   // Only SourceTextModules may be async.
-  if (!Is<SourceTextModule>(this)) return false;
-  Tagged<SourceTextModule> root = Cast<SourceTextModule>(this);
+  if (!IsSourceTextModule(*this)) return false;
+  Tagged<SourceTextModule> root = Cast<SourceTextModule>(*this);
   DCHECK_GE(root->status(), kLinked);
 
   Zone zone(isolate->allocator(), ZONE_NAME);
@@ -639,8 +595,7 @@ bool Module::IsGraphAsync(Isolate* isolate) const {
 
     if (current->has_toplevel_await()) return true;
     Tagged<FixedArray> requested_modules = current->requested_modules();
-    const uint32_t requested_modules_len = requested_modules->ulength().value();
-    for (uint32_t i = 0; i < requested_modules_len; ++i) {
+    for (int i = 0, length = requested_modules->length(); i < length; ++i) {
       Tagged<Object> raw_descendant = requested_modules->get(i);
       // The current module must have been linked as the root has been linked.
       // If the request is a source phase import, the descendant can be a

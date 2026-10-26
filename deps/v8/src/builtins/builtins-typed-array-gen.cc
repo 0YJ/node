@@ -47,9 +47,9 @@ TNode<JSArrayBuffer> TypedArrayBuiltinsAssembler::AllocateEmptyOnHeapBuffer(
   TNode<JSArrayBuffer> buffer = UncheckedCast<JSArrayBuffer>(
       Allocate(JSArrayBuffer::kSizeWithEmbedderFields));
   StoreMapNoWriteBarrier(buffer, map);
-  StoreObjectFieldNoWriteBarrier(buffer, offsetof(JSArray, properties_or_hash_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArray::kPropertiesOrHashOffset,
                                  empty_fixed_array);
-  StoreObjectFieldNoWriteBarrier(buffer, offsetof(JSObject, elements_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArray::kElementsOffset,
                                  empty_fixed_array);
   // Setup the ArrayBuffer.
   //  - Set BitField to 0.
@@ -58,33 +58,31 @@ TNode<JSArrayBuffer> TypedArrayBuiltinsAssembler::AllocateEmptyOnHeapBuffer(
   //  - Set backing_store to null/Tagged<Smi>(0).
   //  - Set extension to null.
   //  - Set all embedder fields to Tagged<Smi>(0).
-#if TAGGED_SIZE_8_BYTES
-  static_assert(FIELD_SIZE(JSArrayBuffer::kOptionalPaddingOffset) == 4);
-  StoreObjectFieldNoWriteBarrier(buffer, JSArrayBuffer::kOptionalPaddingOffset,
-                                 Int32Constant(0));
-#endif
+  if (FIELD_SIZE(JSArrayBuffer::kOptionalPaddingOffset) != 0) {
+    DCHECK_EQ(4, FIELD_SIZE(JSArrayBuffer::kOptionalPaddingOffset));
+    StoreObjectFieldNoWriteBarrier(
+        buffer, JSArrayBuffer::kOptionalPaddingOffset, Int32Constant(0));
+  }
   int32_t bitfield_value = (1 << JSArrayBuffer::IsExternalBit::kShift) |
                            (1 << JSArrayBuffer::IsDetachableBit::kShift);
-  StoreObjectFieldNoWriteBarrier(buffer, offsetof(JSArrayBuffer, bit_field_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArrayBuffer::kBitFieldOffset,
                                  Int32Constant(bitfield_value));
 
-  StoreObjectFieldNoWriteBarrier(buffer,
-                                 offsetof(JSArrayBuffer, views_or_detach_key_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArrayBuffer::kViewsOrDetachKeyOffset,
                                  SmiConstant(JSArrayBuffer::kNoView.value()));
-  StoreBoundedSizeToObject(buffer, offsetof(JSArrayBuffer, raw_byte_length_),
+  StoreBoundedSizeToObject(buffer, JSArrayBuffer::kRawByteLengthOffset,
                            UintPtrConstant(0));
-  StoreBoundedSizeToObject(buffer,
-                           offsetof(JSArrayBuffer, raw_max_byte_length_),
+  StoreBoundedSizeToObject(buffer, JSArrayBuffer::kRawMaxByteLengthOffset,
                            UintPtrConstant(0));
-  StoreSandboxedPointerToObject(buffer, offsetof(JSArrayBuffer, backing_store_),
+  StoreSandboxedPointerToObject(buffer, JSArrayBuffer::kBackingStoreOffset,
                                 EmptyBackingStoreBufferConstant());
 #ifdef V8_COMPRESS_POINTERS
   // When pointer compression is enabled, the extension slot contains a
   // (lazily-initialized) external pointer handle.
-  StoreObjectFieldNoWriteBarrier(buffer, offsetof(JSArrayBuffer, extension_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArrayBuffer::kExtensionOffset,
                                  ExternalPointerHandleNullConstant());
 #else
-  StoreObjectFieldNoWriteBarrier(buffer, offsetof(JSArrayBuffer, extension_),
+  StoreObjectFieldNoWriteBarrier(buffer, JSArrayBuffer::kExtensionOffset,
                                  IntPtrConstant(0));
 #endif
   InitializeJSAPIObjectWithEmbedderSlotsCppHeapWrapperPtr(buffer);
@@ -102,7 +100,7 @@ TF_BUILTIN(TypedArrayBaseConstructor, TypedArrayBuiltinsAssembler) {
                  "TypedArray");
 }
 
-// https://tc39.es/ecma262/#sec-typedarray-constructors
+// ES #sec-typedarray-constructors
 TF_BUILTIN(TypedArrayConstructor, TypedArrayBuiltinsAssembler) {
   auto context = Parameter<Context>(Descriptor::kContext);
   auto target = Parameter<JSFunction>(Descriptor::kJSTarget);
@@ -116,7 +114,7 @@ TF_BUILTIN(TypedArrayConstructor, TypedArrayBuiltinsAssembler) {
 
   // If NewTarget is undefined, throw a TypeError exception.
   // All the TypedArray constructors have this as the first step:
-  // https://tc39.es/ecma262/#sec-typedarray-constructors
+  // https://tc39.github.io/ecma262/#sec-typedarray-constructors
   Label throwtypeerror(this, Label::kDeferred);
   GotoIf(IsUndefined(new_target), &throwtypeerror);
 
@@ -133,7 +131,7 @@ TF_BUILTIN(TypedArrayConstructor, TypedArrayBuiltinsAssembler) {
   }
 }
 
-// https://tc39.es/ecma262/#sec-get-%typedarray%.prototype.bytelength
+// ES6 #sec-get-%typedarray%.prototype.bytelength
 TF_BUILTIN(TypedArrayPrototypeByteLength, TypedArrayBuiltinsAssembler) {
   const char* const kMethodName = "get TypedArray.prototype.byteLength";
   auto context = Parameter<Context>(Descriptor::kContext);
@@ -167,7 +165,7 @@ TF_BUILTIN(TypedArrayPrototypeByteLength, TypedArrayBuiltinsAssembler) {
   Return(SmiConstant(0));
 }
 
-// https://tc39.es/ecma262/#sec-get-%typedarray%.prototype.byteoffset
+// ES6 #sec-get-%typedarray%.prototype.byteoffset
 TF_BUILTIN(TypedArrayPrototypeByteOffset, TypedArrayBuiltinsAssembler) {
   const char* const kMethodName = "get TypedArray.prototype.byteOffset";
   auto context = Parameter<Context>(Descriptor::kContext);
@@ -189,7 +187,7 @@ TF_BUILTIN(TypedArrayPrototypeByteOffset, TypedArrayBuiltinsAssembler) {
       ChangeUintPtrToTagged(LoadJSArrayBufferViewByteOffset(CAST(receiver))));
 }
 
-// https://tc39.es/ecma262/#sec-get-%typedarray%.prototype.length
+// ES6 #sec-get-%typedarray%.prototype.length
 TF_BUILTIN(TypedArrayPrototypeLength, TypedArrayBuiltinsAssembler) {
   const char* const kMethodName = "get TypedArray.prototype.length";
   auto context = Parameter<Context>(Descriptor::kContext);
@@ -498,7 +496,7 @@ void TypedArrayBuiltinsAssembler::SetJSTypedArrayOnHeapDataPtr(
     TNode<IntPtrT> ptr_compr_cage_base =
         IntPtrSub(full_base, Signed(ChangeUint32ToWord(compressed_base)));
     // Add JSTypedArray::ExternalPointerCompensationForOnHeapArray() to offset.
-    // See JSTypedArray::InitOnHeapDataPtrAfterDeserialization().
+    // See JSTypedArray::AddExternalPointerCompensationForDeserialization().
     DCHECK_EQ(
         isolate()->cage_base(),
         JSTypedArray::ExternalPointerCompensationForOnHeapArray(isolate()));
@@ -511,7 +509,7 @@ void TypedArrayBuiltinsAssembler::SetJSTypedArrayOnHeapDataPtr(
 
 void TypedArrayBuiltinsAssembler::SetJSTypedArrayOffHeapDataPtr(
     TNode<JSTypedArray> holder, TNode<RawPtrT> base, TNode<UintPtrT> offset) {
-  StoreObjectFieldNoWriteBarrier(holder, offsetof(JSTypedArray, base_pointer_),
+  StoreObjectFieldNoWriteBarrier(holder, JSTypedArray::kBasePointerOffset,
                                  SmiConstant(0));
 
   base = RawPtrAdd(base, Signed(offset));
@@ -578,7 +576,7 @@ void TypedArrayBuiltinsAssembler::StoreJSTypedArrayElementFromPreparedValue(
   // the TypedArray out of bounds.
   TNode<UintPtrT> length = LoadJSTypedArrayLengthAndValidate(
       typed_array, TypedArrayAccessMode::kWrite,
-      if_detached_or_immutable_or_out_of_bounds, Int32Constant(elements_kind));
+      if_detached_or_immutable_or_out_of_bounds);
 
   GotoIf(UintPtrGreaterThanOrEqual(index, length),
          if_detached_or_immutable_or_out_of_bounds);
@@ -644,7 +642,7 @@ void TypedArrayBuiltinsAssembler::StoreJSTypedArrayElementFromTagged(
   }
 }
 
-// https://tc39.es/ecma262/#sec-get-%typedarray%.prototype-@@tostringtag
+// ES #sec-get-%typedarray%.prototype-@@tostringtag
 TF_BUILTIN(TypedArrayPrototypeToStringTag, TypedArrayBuiltinsAssembler) {
   auto receiver = Parameter<Object>(Descriptor::kReceiver);
   Label if_receiverisheapobject(this), return_undefined(this);

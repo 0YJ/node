@@ -45,7 +45,9 @@ class JSGenericLowering final : public AdvancedReducer {
                               Operator::Properties properties);
   void ReplaceWithRuntimeCall(Node* node, Runtime::FunctionId f, int args = -1);
 
-  void ReplaceUnaryOpWithBuiltinCall(Node* node, Builtin builtin);
+  void ReplaceUnaryOpWithBuiltinCall(Node* node,
+                                     Builtin builtin_without_feedback,
+                                     Builtin builtin_with_feedback);
   void ReplaceBinaryOpWithBuiltinCall(Node* node,
                                       Builtin builtin_without_feedback,
                                       Builtin builtin_with_feedback);

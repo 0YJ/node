@@ -5,24 +5,21 @@
 [package]
 name = "zerofrom"
 description = "ZeroFrom trait for constructing"
-version = "0.1.8"
+version = "0.1.6"
+authors = ["Manish Goregaokar <manishsmail@gmail.com>"]
 categories = ["data-structures", "caching", "no-std"]
-keywords = ["zero-copy", "serialization", "memory-efficiency"]
+keywords = ["zerocopy", "serialization", "lifetime", "borrow"]
 
-authors.workspace = true
-edition = "2021"
+edition.workspace = true
 include.workspace = true
 license.workspace = true
 repository.workspace = true
-rust-version = "1.71.1"
+rust-version.workspace = true
 
 [package.metadata.workspaces]
 independent = true
 
 [package.metadata.docs.rs]
-all-features = true
-
-[package.metadata.playground]
 all-features = true
 
 [features]
@@ -32,6 +29,3 @@ default = ["alloc"]
 
 [dependencies]
 zerofrom-derive = { workspace = true, optional = true}
-
-[lints]
-workspace = true

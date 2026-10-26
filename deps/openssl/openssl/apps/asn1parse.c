@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -82,9 +82,8 @@ int asn1parse_main(int argc, char **argv)
     const unsigned char *ctmpbuf;
     int indent = 0, noout = 0, dump = 0, informat = FORMAT_PEM;
     int offset = 0, ret = 1, i, j;
-    long num;
-    size_t tmplen;
-    const unsigned char *tmpbuf;
+    long num, tmplen;
+    unsigned char *tmpbuf;
     unsigned int length = 0;
     OPTION_CHOICE o;
     const ASN1_ITEM *it = NULL;
@@ -193,7 +192,7 @@ int asn1parse_main(int argc, char **argv)
         goto end;
     if (genconf == NULL && genstr == NULL && informat == FORMAT_PEM) {
         if (PEM_read_bio(in, &name, &header, &str, &num) != 1) {
-            BIO_puts(bio_err, "Error reading PEM file\n");
+            BIO_printf(bio_err, "Error reading PEM file\n");
             ERR_print_errors(bio_err);
             goto end;
         }
@@ -242,12 +241,12 @@ int asn1parse_main(int argc, char **argv)
 
     if (sk_OPENSSL_STRING_num(osk)) {
         tmpbuf = str;
-        tmplen = (size_t)num;
+        tmplen = num;
         for (i = 0; i < sk_OPENSSL_STRING_num(osk); i++) {
             ASN1_TYPE *atmp;
             int typ;
             j = strtol(sk_OPENSSL_STRING_value(osk, i), NULL, 0);
-            if (j <= 0 || (size_t)j >= tmplen) {
+            if (j <= 0 || j >= tmplen) {
                 BIO_printf(bio_err, "'%s' is out of range\n",
                     sk_OPENSSL_STRING_value(osk, i));
                 continue;
@@ -256,10 +255,10 @@ int asn1parse_main(int argc, char **argv)
             tmplen -= j;
             atmp = at;
             ctmpbuf = tmpbuf;
-            at = d2i_ASN1_TYPE(NULL, &ctmpbuf, (long)tmplen);
+            at = d2i_ASN1_TYPE(NULL, &ctmpbuf, tmplen);
             ASN1_TYPE_free(atmp);
             if (!at) {
-                BIO_puts(bio_err, "Error parsing structure\n");
+                BIO_printf(bio_err, "Error parsing structure\n");
                 ERR_print_errors(bio_err);
                 goto end;
             }
@@ -272,21 +271,15 @@ int asn1parse_main(int argc, char **argv)
                 goto end;
             }
             /* hmm... this is a little evil but it works */
-            tmpbuf = ASN1_STRING_get0_data(at->value.asn1_string);
-            tmplen = ASN1_STRING_get_length(at->value.asn1_string);
-            if (tmplen > INT_MAX) {
-                BIO_puts(bio_err, "ASN.1 string length exceeds INT_MAX\n");
-                ERR_print_errors(bio_err);
-                goto end;
-            }
+            tmpbuf = at->value.asn1_string->data;
+            tmplen = at->value.asn1_string->length;
         }
-        /* XXX casts away const */
-        str = (unsigned char *)tmpbuf;
-        num = (int)tmplen;
+        str = tmpbuf;
+        num = tmplen;
     }
 
     if (offset < 0 || offset >= num) {
-        BIO_puts(bio_err, "Error: offset out of range\n");
+        BIO_printf(bio_err, "Error: offset out of range\n");
         goto end;
     }
 
@@ -296,7 +289,7 @@ int asn1parse_main(int argc, char **argv)
         length = (unsigned int)num;
     if (derout != NULL) {
         if (BIO_write(derout, str + offset, length) != (int)length) {
-            BIO_puts(bio_err, "Error writing output\n");
+            BIO_printf(bio_err, "Error writing output\n");
             ERR_print_errors(bio_err);
             goto end;
         }

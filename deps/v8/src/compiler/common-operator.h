@@ -148,13 +148,12 @@ class DeoptimizeParameters final {
   FeedbackSource const feedback_;
 };
 
-V8_EXPORT_PRIVATE bool operator==(DeoptimizeParameters, DeoptimizeParameters);
-V8_EXPORT_PRIVATE bool operator!=(DeoptimizeParameters, DeoptimizeParameters);
+bool operator==(DeoptimizeParameters, DeoptimizeParameters);
+bool operator!=(DeoptimizeParameters, DeoptimizeParameters);
 
-V8_EXPORT_PRIVATE size_t hash_value(DeoptimizeParameters p);
+size_t hast_value(DeoptimizeParameters p);
 
-V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream&,
-                                           DeoptimizeParameters p);
+std::ostream& operator<<(std::ostream&, DeoptimizeParameters p);
 
 DeoptimizeParameters const& DeoptimizeParametersOf(Operator const* const)
     V8_WARN_UNUSED_RESULT;
@@ -597,8 +596,7 @@ class V8_EXPORT_PRIVATE CommonOperatorBuilder final
   const Operator* Terminate();
 
   const Operator* Start(int value_output_count);
-  const Operator* Loop(int control_input_count,
-                       const FeedbackSource& feedback = {});
+  const Operator* Loop(int control_input_count);
   const Operator* Merge(int control_input_count);
   const Operator* Parameter(int index, const char* debug_name = nullptr);
 

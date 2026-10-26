@@ -91,9 +91,8 @@ void HashSeed::InitializeRoots(Isolate* isolate) {
     seed = static_cast<uint64_t>(v8_flags.hash_seed);
   }
 
-  // Write the seed and derived secrets into the read-only roots
-  // HashSeedWrapper.
-  Data* data = ReadOnlyRoots(isolate).hash_seed()->data_.address();
+  // Write the seed and derived secrets into the read-only roots ByteArray.
+  Data* data = const_cast<Data*>(HashSeed(isolate).data_);
 
 #if V8_USE_DEFAULT_HASHER_SECRET
   // Copy from the default seed and just override the meta seed.

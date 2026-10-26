@@ -23,14 +23,12 @@
 #include <openssl/params.h>
 #include <openssl/pem.h>
 #include <openssl/proverr.h>
-#include "internal/cryptlib.h"
 #include "internal/nelem.h"
 #include "internal/sizes.h"
 #include "prov/bio.h"
 #include "prov/decoders.h"
 #include "prov/implementations.h"
-#include "prov/endecoder_local.h"
-#include "providers/implementations/encode_decode/decode_pem2der.inc"
+#include "endecoder_local.h"
 
 static int read_pem(PROV_CTX *provctx, OSSL_CORE_BIO *cin,
     char **pem_name, char **pem_header,
@@ -78,26 +76,30 @@ static void pem2der_freectx(void *vctx)
 
 static const OSSL_PARAM *pem2der_settable_ctx_params(ossl_unused void *provctx)
 {
-    return pem2der_set_ctx_params_list;
+    static const OSSL_PARAM settables[] = {
+        OSSL_PARAM_utf8_string(OSSL_DECODER_PARAM_PROPERTIES, NULL, 0),
+        OSSL_PARAM_utf8_string(OSSL_OBJECT_PARAM_DATA_STRUCTURE, NULL, 0),
+        OSSL_PARAM_END
+    };
+    return settables;
 }
 
 static int pem2der_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     struct pem2der_ctx_st *ctx = vctx;
-    struct pem2der_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     char *str;
 
-    if (ctx == NULL || !pem2der_set_ctx_params_decoder(params, &p))
-        return 0;
-
+    p = OSSL_PARAM_locate_const(params, OSSL_DECODER_PARAM_PROPERTIES);
     str = ctx->propq;
-    if (p.propq != NULL
-        && !OSSL_PARAM_get_utf8_string(p.propq, &str, sizeof(ctx->propq)))
+    if (p != NULL
+        && !OSSL_PARAM_get_utf8_string(p, &str, sizeof(ctx->propq)))
         return 0;
 
+    p = OSSL_PARAM_locate_const(params, OSSL_OBJECT_PARAM_DATA_STRUCTURE);
     str = ctx->data_structure;
-    if (p.ds != NULL
-        && !OSSL_PARAM_get_utf8_string(p.ds, &str, sizeof(ctx->data_structure)))
+    if (p != NULL
+        && !OSSL_PARAM_get_utf8_string(p, &str, sizeof(ctx->data_structure)))
         return 0;
 
     return 1;
@@ -129,7 +131,7 @@ static int pem2der_decode(void *vctx, OSSL_CORE_BIO *cin, int selection,
      * PEM names we recognise.  Other PEM names should be recognised by
      * other decoder implementations.
      */
-    static const struct pem_name_map_st {
+    static struct pem_name_map_st {
         const char *pem_name;
         int object_type;
         const char *data_type;

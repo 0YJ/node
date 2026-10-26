@@ -14,22 +14,18 @@
 
 #include "absl/strings/internal/cordz_sample_token.h"
 
-#include <cstddef>
-#include <iterator>
 #include <memory>
 #include <type_traits>
 #include <vector>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/config.h"
 #include "absl/memory/memory.h"
 #include "absl/random/random.h"
 #include "absl/strings/cordz_test_helpers.h"
 #include "absl/strings/internal/cord_rep_flat.h"
 #include "absl/strings/internal/cordz_handle.h"
 #include "absl/strings/internal/cordz_info.h"
-#include "absl/strings/internal/cordz_update_tracker.h"
 #include "absl/synchronization/internal/thread_pool.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
@@ -48,27 +44,34 @@ using ::testing::Ne;
 auto constexpr kTrackCordMethod = CordzUpdateTracker::kConstructorString;
 
 TEST(CordzSampleTokenTest, IteratorTraits) {
-  static_assert(std::is_copy_constructible_v<CordzSampleToken::Iterator>);
-  static_assert(std::is_copy_assignable_v<CordzSampleToken::Iterator>);
-  static_assert(std::is_move_constructible_v<CordzSampleToken::Iterator>);
-  static_assert(std::is_move_assignable_v<CordzSampleToken::Iterator>);
+  static_assert(std::is_copy_constructible<CordzSampleToken::Iterator>::value,
+                "");
+  static_assert(std::is_copy_assignable<CordzSampleToken::Iterator>::value, "");
+  static_assert(std::is_move_constructible<CordzSampleToken::Iterator>::value,
+                "");
+  static_assert(std::is_move_assignable<CordzSampleToken::Iterator>::value, "");
   static_assert(
-      std::is_same_v<
+      std::is_same<
           std::iterator_traits<CordzSampleToken::Iterator>::iterator_category,
-          std::input_iterator_tag>);
-  static_assert(std::is_same_v<
-                std::iterator_traits<CordzSampleToken::Iterator>::value_type,
-                const CordzInfo&>);
+          std::input_iterator_tag>::value,
+      "");
   static_assert(
-      std::is_same_v<
+      std::is_same<std::iterator_traits<CordzSampleToken::Iterator>::value_type,
+                   const CordzInfo&>::value,
+      "");
+  static_assert(
+      std::is_same<
           std::iterator_traits<CordzSampleToken::Iterator>::difference_type,
-          ptrdiff_t>);
+          ptrdiff_t>::value,
+      "");
   static_assert(
-      std::is_same_v<std::iterator_traits<CordzSampleToken::Iterator>::pointer,
-                     const CordzInfo*>);
-  static_assert(std::is_same_v<
-                std::iterator_traits<CordzSampleToken::Iterator>::reference,
-                const CordzInfo&>);
+      std::is_same<std::iterator_traits<CordzSampleToken::Iterator>::pointer,
+                   const CordzInfo*>::value,
+      "");
+  static_assert(
+      std::is_same<std::iterator_traits<CordzSampleToken::Iterator>::reference,
+                   const CordzInfo&>::value,
+      "");
 }
 
 TEST(CordzSampleTokenTest, IteratorEmpty) {
@@ -184,7 +187,7 @@ TEST(CordzSampleTokenTest, MultiThreaded) {
             }
           } else {
             // 5) Sample
-            token = std::make_unique<CordzSampleToken>();
+            token = absl::make_unique<CordzSampleToken>();
           }
         }
       }

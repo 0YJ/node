@@ -20,7 +20,8 @@ const sourceHelpers = require('./source_helpers.js');
 const { filterDifferentialFuzzFlags } = require('./exceptions.js');
 const { DifferentialFuzzMutator, DifferentialFuzzSuppressions } = require(
     './mutators/differential_fuzz_mutator.js');
-const { ScriptMutator, loadJSONFromBuild } = require('./script_mutator.js');
+const { ScriptMutator } = require('./script_mutator.js');
+
 
 const USE_ORIGINAL_FLAGS_PROB = 0.5;
 
@@ -62,6 +63,12 @@ function chooseRandomFlags(experiments, additionalFlags) {
   }
   // Unreachable.
   assert(false);
+}
+
+function loadJSONFromBuild(name) {
+  assert(process.env.APP_DIR);
+  const fullPath = path.join(path.resolve(process.env.APP_DIR), name);
+  return JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
 }
 
 function hasMjsunit(dependencies) {

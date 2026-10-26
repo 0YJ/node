@@ -6,9 +6,7 @@
 #define V8_HEAP_PRETENURING_HANDLER_H_
 
 #include <memory>
-#include <unordered_map>
 
-#include "src/heap/pending-allocations.h"
 #include "src/objects/allocation-site.h"
 #include "src/objects/heap-object.h"
 #include "src/objects/map.h"
@@ -37,14 +35,10 @@ class PretenuringHandler final {
   // return a null AllocationMemento.
   template <FindMementoMode mode>
   static inline Tagged<AllocationMemento> FindAllocationMemento(
-      Heap* heap, Tagged<Map> map, Tagged<HeapObject> object,
-      const YoungPendingAllocations::Snapshot*
-          young_pending_allocations_snapshot = nullptr);
+      Heap* heap, Tagged<Map> map, Tagged<HeapObject> object);
   template <FindMementoMode mode>
   static inline Tagged<AllocationMemento> FindAllocationMemento(
-      Heap* heap, Tagged<Map> map, Tagged<HeapObject> object, int object_size,
-      const YoungPendingAllocations::Snapshot*
-          young_pending_allocations_snapshot = nullptr);
+      Heap* heap, Tagged<Map> map, Tagged<HeapObject> object, int object_size);
 
   // ===========================================================================
   // Allocation site tracking. =================================================
@@ -54,15 +48,11 @@ class PretenuringHandler final {
   // count) is cached on the local pretenuring feedback.
   static inline void UpdateAllocationSite(
       Heap* heap, Tagged<Map> map, Tagged<HeapObject> object, int object_size,
-      PretenuringFeedbackMap* pretenuring_feedback,
-      const YoungPendingAllocations::Snapshot*
-          young_pending_allocations_snapshot = nullptr);
+      PretenuringFeedbackMap* pretenuring_feedback);
   static inline void UpdateAllocationSite(
       Heap* heap, Tagged<Map> map, Tagged<HeapObject> object,
       SafeHeapObjectSize object_size,
-      PretenuringFeedbackMap* pretenuring_feedback,
-      const YoungPendingAllocations::Snapshot*
-          young_pending_allocations_snapshot = nullptr);
+      PretenuringFeedbackMap* pretenuring_feedback);
 
   // Merges local pretenuring feedback into the global one. Note that this
   // method needs to be called after evacuation, as allocation sites may be

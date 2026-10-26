@@ -378,48 +378,52 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
  public:
   // Flags that specify which operations are available. This is useful
   // for operations that are unsupported by some back-ends.
-  enum Flag : uint8_t {
-    kFloat32RoundDown,
-    kFloat64RoundDown,
-    kFloat32RoundUp,
-    kFloat64RoundUp,
-    kFloat32RoundTruncate,
-    kFloat64RoundTruncate,
-    kFloat32RoundTiesEven,
-    kFloat64RoundTiesEven,
-    kFloat64RoundTiesAway,
-    kInt32DivIsSafe,
-    kUint32DivIsSafe,
-    kWord32ShiftIsSafe,
-    kWord32Ctz,
-    kWord64Ctz,
-    kWord64CtzLowerable,
-    kWord32Popcnt,
-    kWord64Popcnt,
-    kWord32ReverseBits,
-    kWord64ReverseBits,
-    kFloat32Select,
-    kFloat64Select,
-    kFloat64MinMax,
-    kInt32AbsWithOverflow,
-    kInt64AbsWithOverflow,
-    kWord32Rol,
-    kWord64Rol,
-    kWord64RolLowerable,
-    kSatConversionIsSafe,
-    kWord32Select,
-    kWord64Select,
-    kLoadStorePairs,
-    kFloat16RawBitsConversion,
-    kFloat16MemAccess,
-    kFloat16Arithmetic,
-
-    kNumFlags
+  enum Flag : unsigned {
+    kNoFlags = 0u,
+    kFloat32RoundDown = 1u << 0,
+    kFloat64RoundDown = 1u << 1,
+    kFloat32RoundUp = 1u << 2,
+    kFloat64RoundUp = 1u << 3,
+    kFloat32RoundTruncate = 1u << 4,
+    kFloat64RoundTruncate = 1u << 5,
+    kFloat32RoundTiesEven = 1u << 6,
+    kFloat64RoundTiesEven = 1u << 7,
+    kFloat64RoundTiesAway = 1u << 8,
+    kInt32DivIsSafe = 1u << 9,
+    kUint32DivIsSafe = 1u << 10,
+    kWord32ShiftIsSafe = 1u << 11,
+    kWord32Ctz = 1u << 12,
+    kWord64Ctz = 1u << 13,
+    kWord64CtzLowerable = 1u << 14,
+    kWord32Popcnt = 1u << 15,
+    kWord64Popcnt = 1u << 16,
+    kWord32ReverseBits = 1u << 17,
+    kWord64ReverseBits = 1u << 18,
+    kFloat32Select = 1u << 19,
+    kFloat64Select = 1u << 20,
+    kInt32AbsWithOverflow = 1u << 21,
+    kInt64AbsWithOverflow = 1u << 22,
+    kWord32Rol = 1u << 23,
+    kWord64Rol = 1u << 24,
+    kWord64RolLowerable = 1u << 25,
+    kSatConversionIsSafe = 1u << 26,
+    kWord32Select = 1u << 27,
+    kWord64Select = 1u << 28,
+    kLoadStorePairs = 1u << 29,
+    kFloat16 = 1u << 30,
+    kFloat16RawBitsConversion = 1u << 31,
+    kAllOptionalOps =
+        kFloat32RoundDown | kFloat64RoundDown | kFloat32RoundUp |
+        kFloat64RoundUp | kFloat32RoundTruncate | kFloat64RoundTruncate |
+        kFloat64RoundTiesAway | kFloat32RoundTiesEven | kFloat64RoundTiesEven |
+        kWord32Ctz | kWord64Ctz | kWord64CtzLowerable | kWord32Popcnt |
+        kWord64Popcnt | kWord32ReverseBits | kWord64ReverseBits |
+        kInt32AbsWithOverflow | kInt64AbsWithOverflow | kWord32Rol |
+        kWord64Rol | kWord64RolLowerable | kSatConversionIsSafe |
+        kFloat32Select | kFloat64Select | kWord32Select | kWord64Select |
+        kLoadStorePairs | kFloat16 | kFloat16RawBitsConversion
   };
-  using Flags = base::EnumSet<Flag, uint64_t>;
-  static_assert(kNumFlags < 64, "Too many flags for uint64_t EnumSet storage");
-
-  static constexpr Flags kNoFlags = {};
+  using Flags = base::Flags<Flag, unsigned>;
 
   class AlignmentRequirements {
    public:
@@ -527,20 +531,18 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   // Return true if the target's Word32 shift implementation is directly
   // compatible with JavaScript's specification. Otherwise, we have to manually
   // generate a mask with 0x1f on the amount ahead of generating the shift.
-  bool Word32ShiftIsSafe() const { return flags_.contains(kWord32ShiftIsSafe); }
+  bool Word32ShiftIsSafe() const { return flags_ & kWord32ShiftIsSafe; }
 
   // Return true if the target's implementation of float-to-int-conversions is a
   // saturating conversion rounding towards 0. Otherwise, we have to manually
   // generate the correct value if a saturating conversion is requested.
-  bool SatConversionIsSafe() const {
-    return flags_.contains(kSatConversionIsSafe);
-  }
+  bool SatConversionIsSafe() const { return flags_ & kSatConversionIsSafe; }
 
   // Return true if the target suppoerts performing a pair of loads/stores in
   // a single operation.
   bool SupportsLoadStorePairs() const {
     return !v8_flags.enable_unconditional_write_barriers &&
-           flags_.contains(kLoadStorePairs);
+           (flags_ & kLoadStorePairs);
   }
 
   const Operator* Word64And();
@@ -593,8 +595,8 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* Uint32LessThanOrEqual();
   const Operator* Uint32Mod();
   const Operator* Uint32MulHigh();
-  bool Int32DivIsSafe() const { return flags_.contains(kInt32DivIsSafe); }
-  bool Uint32DivIsSafe() const { return flags_.contains(kUint32DivIsSafe); }
+  bool Int32DivIsSafe() const { return flags_ & kInt32DivIsSafe; }
+  bool Uint32DivIsSafe() const { return flags_ & kUint32DivIsSafe; }
 
   const Operator* Int64Add();
   const Operator* Int64AddWithOverflow();
@@ -803,7 +805,7 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* I8x16Eq();
   const Operator* I8x16BitMask();
 
-#if V8_ENABLE_SIMD128
+#if V8_ENABLE_WEBASSEMBLY
   // SIMD operators.
   const Operator* F64x2Splat();
   const Operator* F64x2Abs();
@@ -1242,14 +1244,14 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   const Operator* StoreLane(MemoryAccessKind kind, MachineRepresentation rep,
                             uint8_t laneidx);
 
-#endif  // V8_ENABLE_SIMD128
+#endif  // V8_ENABLE_WEBASSEMBLY
 
   const Operator* TraceInstruction(uint32_t markid);
 
   // load [base + index]
   const Operator* Load(LoadRepresentation rep);
   const Operator* LoadImmutable(LoadRepresentation rep);
-  const Operator* TrappingLoad(LoadRepresentation rep);
+  const Operator* ProtectedLoad(LoadRepresentation rep);
   const Operator* LoadTrapOnNull(LoadRepresentation rep);
 
   // store [base + index], value
@@ -1257,7 +1259,7 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   std::optional<const Operator*> TryStorePair(StoreRepresentation rep1,
                                               StoreRepresentation rep2);
   const Operator* StoreIndirectPointer(WriteBarrierKind write_barrier_kind);
-  const Operator* TrappingStore(MachineRepresentation rep);
+  const Operator* ProtectedStore(MachineRepresentation rep);
   const Operator* StoreTrapOnNull(StoreRepresentation rep);
 
   // unaligned load [base + index]
@@ -1412,10 +1414,8 @@ class V8_EXPORT_PRIVATE MachineOperatorBuilder final
   AlignmentRequirements const alignment_requirements_;
 };
 
-inline constexpr MachineOperatorBuilder::Flags operator|(
-    MachineOperatorBuilder::Flag lhs, MachineOperatorBuilder::Flag rhs) {
-  return MachineOperatorBuilder::Flags{lhs, rhs};
-}
+
+DEFINE_OPERATORS_FOR_FLAGS(MachineOperatorBuilder::Flags)
 
 }  // namespace compiler
 }  // namespace internal

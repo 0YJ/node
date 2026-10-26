@@ -295,6 +295,7 @@ class ExternConstant : public Value {
 
 enum class OutputType {
   kCSA,
+  kCC,
   kCCDebug,
 };
 
@@ -315,7 +316,11 @@ class Callable : public Scope {
   bool HasReturns() const { return returns_; }
   std::optional<Statement*> body() const { return body_; }
   bool IsExternal() const { return !body_.has_value(); }
-  virtual bool ShouldBeInlined(OutputType output_type) const { return false; }
+  virtual bool ShouldBeInlined(OutputType output_type) const {
+    // C++ output doesn't support exiting to labels, so functions with labels in
+    // the signature must be inlined.
+    return output_type == OutputType::kCC && !signature().labels.empty();
+  }
   bool ShouldGenerateExternalCode(OutputType output_type) const {
     return !ShouldBeInlined(output_type);
   }
@@ -619,9 +624,8 @@ class GenericDeclarable : public Declarable {
   }
 
   const std::vector<TypeConstraint>& Constraints() {
-    if (!constraints_) {
+    if (!constraints_)
       constraints_ = {ComputeConstraints(ParentScope(), generic_parameters())};
-    }
     return *constraints_;
   }
 

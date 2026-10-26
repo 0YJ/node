@@ -54,7 +54,6 @@ int GetValue(const ImmediateOperand* imm) {
     case ImmediateOperand::INDEXED_IMM:
       return imm->indexed_value();
   }
-  UNREACHABLE();
 }
 
 }  // namespace
@@ -276,7 +275,6 @@ void RegisterAllocatorVerifier::CheckConstraint(
       CHECK_WITH_MSG(false, caller_info_);
       return;
   }
-  UNREACHABLE();
 }
 
 void BlockAssessments::PerformMoves(const Instruction* instruction) {

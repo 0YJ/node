@@ -12,6 +12,7 @@
 #include "src/compiler/simplified-operator.h"
 #include "src/compiler/wasm-compiler-definitions.h"
 #include "src/utils/utils.h"
+#include "src/wasm/object-access.h"
 #include "src/wasm/wasm-objects.h"
 #include "src/wasm/wasm-subtyping.h"
 
@@ -144,8 +145,7 @@ Reduction WasmTyper::Reduce(Node* node) {
       TypeInModule object_type = NodeProperties::GetType(object).AsWasm();
       // {is_uninhabited} can happen in unreachable branches.
       if (object_type.type.is_uninhabited() ||
-          object_type.type == wasm::kWasmNullRef ||
-          object_type.type == wasm::kWasmSharedNullRef) {
+          object_type.type == wasm::kWasmNullRef) {
         computed_type = {wasm::kWasmBottom, object_type.module};
         break;
       }
@@ -159,13 +159,12 @@ Reduction WasmTyper::Reduce(Node* node) {
     }
     case IrOpcode::kWasmStructGet: {
       Node* object = NodeProperties::GetValueInput(node, 0);
-      // This can happen because the object has not been typed yet.
+      // This can happen either because the object has not been typed yet.
       if (!NodeProperties::IsTyped(object)) return NoChange();
       TypeInModule object_type = NodeProperties::GetType(object).AsWasm();
       // {is_uninhabited} can happen in unreachable branches.
       if (object_type.type.is_uninhabited() ||
-          object_type.type == wasm::kWasmNullRef ||
-          object_type.type == wasm::kWasmSharedNullRef) {
+          object_type.type == wasm::kWasmNullRef) {
         computed_type = {wasm::kWasmBottom, object_type.module};
         break;
       }
@@ -218,7 +217,7 @@ Reduction WasmTyper::Reduce(Node* node) {
 
   TRACE("function: %d, node: %d:%s, from: %s, to: %s\n", function_index_,
         node->id(), node->op()->mnemonic(),
-        NodeProperties::IsTyped(node) && NodeProperties::GetType(node).IsWasm()
+        NodeProperties::IsTyped(node)
             ? NodeProperties::GetType(node).AsWasm().type.name().c_str()
             : "<untyped>",
         computed_type.type.name().c_str());

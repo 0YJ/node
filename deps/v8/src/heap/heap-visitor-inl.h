@@ -30,6 +30,7 @@
 #include "src/objects/ordered-hash-table.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/synthetic-module-inl.h"
+#include "src/objects/torque-defined-classes.h"
 #include "src/objects/visitors.h"
 
 namespace v8 {
@@ -49,17 +50,17 @@ constexpr bool SupportsRightTrim() {
 }
 
 template <VisitorId visitor_id>
-inline bool ContainsReadOnlyMap(Tagged<HeapObject>) {
+inline bool ContainsReadOnlyMap(PtrComprCageBase, Tagged<HeapObject>) {
   return false;
 }
 
 #define DEFINE_READ_ONLY_MAP_SPECIALIZATION(VisitorIdType)                    \
   template <>                                                                 \
   inline bool ContainsReadOnlyMap<VisitorId::kVisit##VisitorIdType>(          \
-      Tagged<HeapObject> object) {                                            \
+      PtrComprCageBase cage_base, Tagged<HeapObject> object) {                \
     /* If you see this DCHECK fail we encountered a Map with a VisitorId that \
      * should have only ever appeared in read-only space. */                  \
-    DCHECK(HeapLayout::InReadOnlySpace(object->map()));                       \
+    DCHECK(HeapLayout::InReadOnlySpace(object->map(cage_base)));              \
     return true;                                                              \
   }
 VISITOR_IDS_WITH_READ_ONLY_MAPS_LIST(DEFINE_READ_ONLY_MAP_SPECIALIZATION)
@@ -93,7 +94,7 @@ template <typename ConcreteVisitor>
 size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<HeapObject> object)
   requires(!ConcreteVisitor::UsePrecomputedObjectSize())
 {
-  return Visit(object->map(), object);
+  return Visit(object->map(cage_base()), object);
 }
 
 template <typename ConcreteVisitor>
@@ -149,6 +150,7 @@ size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
         maybe_object_size);
     TYPED_VISITOR_ID_LIST(CASE)
     TYPED_VISITOR_WITH_SLACK_ID_LIST(CASE)
+    TORQUE_VISITOR_ID_LIST(CASE)
 #undef CASE
 #define CASE(TypeName)                                                     \
   case kVisit##TypeName:                                                   \
@@ -201,7 +203,6 @@ size_t HeapVisitor<ConcreteVisitor>::Visit(Tagged<Map> map,
     Isolate* isolate;
     if (GetIsolateFromHeapObject(object, &isolate)) {
       isolate->PushParamsAndDie(
-          "unknown visitor id in heap object iteration",
           reinterpret_cast<void*>(object.ptr()),
           reinterpret_cast<void*>(map.ptr()),
           reinterpret_cast<void*>(static_cast<intptr_t>(map->visitor_id())));
@@ -218,7 +219,7 @@ void HeapVisitor<ConcreteVisitor>::VisitMapPointerIfNeeded(
     return;
   }
   if constexpr (!ConcreteVisitor::ShouldVisitReadOnlyMapPointer()) {
-    if (ContainsReadOnlyMap<visitor_id>(host)) {
+    if (ContainsReadOnlyMap<visitor_id>(cage_base(), host)) {
       return;
     }
   }
@@ -238,6 +239,7 @@ void HeapVisitor<ConcreteVisitor>::VisitMapPointerIfNeeded(
   }
 
 TYPED_VISITOR_ID_LIST(VISIT)
+TORQUE_VISITOR_ID_LIST(VISIT)
 TRUSTED_VISITOR_ID_LIST(VISIT)
 #undef VISIT
 
@@ -273,7 +275,7 @@ size_t HeapVisitor<ConcreteVisitor>::VisitFiller(
   visitor->template VisitMapPointerIfNeeded<VisitorId::kVisitFiller>(object);
   return ConcreteVisitor::UsePrecomputedObjectSize()
              ? maybe_object_size.AssumeSize()
-             : static_cast<uint32_t>(map->instance_size());
+             : map->instance_size();
 }
 
 template <typename ConcreteVisitor>
@@ -285,7 +287,7 @@ size_t HeapVisitor<ConcreteVisitor>::VisitFreeSpace(
   }
   ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);
   visitor->template VisitMapPointerIfNeeded<VisitorId::kVisitFreeSpace>(object);
-  return static_cast<uint32_t>(object->size(kRelaxedLoad));
+  return object->size(kRelaxedLoad);
 }
 
 template <typename ConcreteVisitor>
@@ -328,12 +330,11 @@ size_t HeapVisitor<ConcreteVisitor>::VisitStruct(
     Tagged<Map> map, Tagged<HeapObject> object,
     MaybeObjectSize maybe_object_size) {
   ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);
-  const size_t size = ConcreteVisitor::UsePrecomputedObjectSize()
-                          ? maybe_object_size.AssumeSize()
-                          : static_cast<uint32_t>(map->instance_size());
+  int size = ConcreteVisitor::UsePrecomputedObjectSize()
+                 ? static_cast<int>(maybe_object_size.AssumeSize())
+                 : map->instance_size();
   visitor->template VisitMapPointerIfNeeded<VisitorId::kVisitStruct>(object);
-  StructBodyDescriptor::IterateBody(map, object, static_cast<int>(size),
-                                    visitor);
+  StructBodyDescriptor::IterateBody(map, object, size, visitor);
   return size;
 }
 
@@ -350,10 +351,9 @@ size_t HeapVisitor<ConcreteVisitor>::VisitJSObjectSubclass(
   ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);
   visitor->template VisitMapPointerIfNeeded<VisitorId::kVisitJSObject>(object);
 
-  const size_t size =
-      ConcreteVisitor::UsePrecomputedObjectSize()
-          ? maybe_object_size.AssumeSize()
-          : static_cast<uint32_t>(TBodyDescriptor::SizeOf(map, object));
+  const size_t size = ConcreteVisitor::UsePrecomputedObjectSize()
+                          ? maybe_object_size.AssumeSize()
+                          : TBodyDescriptor::SizeOf(map, object);
 
   int visitation_size = static_cast<int>(size);
 
@@ -395,11 +395,10 @@ size_t HeapVisitor<ConcreteVisitor>::VisitWithBodyDescriptor(
 
   ConcreteVisitor* visitor = static_cast<ConcreteVisitor*>(this);
   visitor->template VisitMapPointerIfNeeded<visitor_id>(object);
-  const size_t size =
-      ConcreteVisitor::UsePrecomputedObjectSize()
-          ? maybe_object_size.AssumeSize()
-          : static_cast<uint32_t>(TBodyDescriptor::SizeOf(map, object));
-  TBodyDescriptor::IterateBody(map, object, static_cast<int>(size), visitor);
+  const int size = ConcreteVisitor::UsePrecomputedObjectSize()
+                       ? static_cast<int>(maybe_object_size.AssumeSize())
+                       : TBodyDescriptor::SizeOf(map, object);
+  TBodyDescriptor::IterateBody(map, object, size, visitor);
   return size;
 }
 
@@ -475,18 +474,16 @@ size_t ConcurrentHeapVisitor<ConcreteVisitor>::VisitStringLocked(
   // guaranteed but we must re-read the map and check whether the string has
   // transitioned.
   Tagged<Map> map = object->map();
-  uint32_t size;
+  int size;
   switch (map->visitor_id()) {
 #define UNSAFE_STRING_TRANSITION_TARGET_CASE(VisitorIdType, TypeName)         \
   case kVisit##VisitorIdType:                                                 \
     visitor                                                                   \
         ->template VisitMapPointerIfNeeded<VisitorId::kVisit##VisitorIdType>( \
             object);                                                          \
-    size = static_cast<uint32_t>(                                             \
-        ObjectTraits<TypeName>::BodyDescriptor::SizeOf(map, object));         \
+    size = ObjectTraits<TypeName>::BodyDescriptor::SizeOf(map, object);       \
     ObjectTraits<TypeName>::BodyDescriptor::IterateBody(                      \
-        map, UncheckedCast<TypeName>(object), static_cast<int>(size),         \
-        visitor);                                                             \
+        map, UncheckedCast<TypeName>(object), size, visitor);                 \
     break;
 
     UNSAFE_STRING_TRANSITION_TARGETS(UNSAFE_STRING_TRANSITION_TARGET_CASE)

@@ -6,12 +6,10 @@
 
 type JSRelativeTimeFormatNumeric extends int32
     constexpr 'JSRelativeTimeFormat::Numeric';
-@cppScope('JSRelativeTimeFormat')
 bitfield struct JSRelativeTimeFormatFlags extends uint31 {
   numeric: JSRelativeTimeFormatNumeric: 1 bit;
 }
 
-@cppObjectLayoutDefinition
 extern class JSRelativeTimeFormat extends JSObject {
   locale: String;
   numberingSystem: String;

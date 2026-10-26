@@ -47,22 +47,23 @@ function run_test(algorithmNames, slowTest) {
                 assert_unreached("generateKey threw an unexpected error: " + err.toString());
             })
             .then(async function (result) {
-                if (resultType === "CryptoKeyPair") {
-                    // TODO: enable ML-KEM JWK when its definition is done in IETF JOSE WG.
-                    const isMlKem = result.publicKey.algorithm.name.startsWith('ML-KEM');
-                    const isHybridKem = result.publicKey.algorithm.name.startsWith('MLKEM');
-                    const promises = [];
-
-                    if (!isMlKem) {
-                        promises.push(subtle.exportKey('jwk', result.publicKey));
-                        promises.push(extractable ? subtle.exportKey('jwk', result.privateKey) : undefined);
-                    }
-
-                    if (!isHybridKem) {
-                        promises.push(subtle.exportKey('spki', result.publicKey));
-                        if (extractable)
-                            promises.push(subtle.exportKey('pkcs8', result.privateKey));
-                    }
+                // TODO: remove this block to enable ML-KEM JWK when its definition is done in IETF JOSE WG
+                if (result.publicKey?.algorithm.name.startsWith('ML-KEM')) {
+                    const promises = [
+                        subtle.exportKey('spki', result.publicKey),
+                        extractable ? subtle.exportKey('pkcs8', result.privateKey) : undefined,
+                        subtle.exportKey('raw-public', result.publicKey),
+                    ];
+                    if (extractable)
+                        promises.push(subtle.exportKey('raw-seed', result.privateKey));
+                    await Promise.all(promises);
+                } else if (resultType === "CryptoKeyPair") {
+                    const promises = [
+                        subtle.exportKey('jwk', result.publicKey),
+                        extractable ? subtle.exportKey('jwk', result.privateKey) : undefined,
+                        subtle.exportKey('spki', result.publicKey),
+                        extractable ? subtle.exportKey('pkcs8', result.privateKey) : undefined,
+                    ];
 
                     switch (result.publicKey.algorithm.name.substring(0, 2)) {
                         case 'ML':
@@ -89,7 +90,7 @@ function run_test(algorithmNames, slowTest) {
 
                     const [jwkPub, jwkPriv] = await Promise.all(promises);
 
-                    if (extractable && !isMlKem) {
+                    if (extractable) {
                         // Test that the JWK public key is a superset of the JWK private key.
                         for (const [prop, value] of Object.entries(jwkPub)) {
                             if (prop !== 'key_ops') {

@@ -20,27 +20,12 @@
 namespace v8 {
 namespace internal {
 
-int JSDurationFormat::style_flags() const {
-  return style_flags_.load().value();
-}
-void JSDurationFormat::set_style_flags(int value) {
-  style_flags_.store(this, Smi::FromInt(value));
-}
+#include "torque-generated/src/objects/js-duration-format-tq-inl.inc"
 
-int JSDurationFormat::display_flags() const {
-  return display_flags_.load().value();
-}
-void JSDurationFormat::set_display_flags(int value) {
-  display_flags_.store(this, Smi::FromInt(value));
-}
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSDurationFormat)
 
-Tagged<Managed<icu::Locale>> JSDurationFormat::icu_locale() const {
-  return Cast<Managed<icu::Locale>>(icu_locale_.load());
-}
-void JSDurationFormat::set_icu_locale(Tagged<Managed<icu::Locale>> value,
-                                      WriteBarrierMode mode) {
-  icu_locale_.store(this, value, mode);
-}
+ACCESSORS(JSDurationFormat, icu_locale, Tagged<Managed<icu::Locale>>,
+          kIcuLocaleOffset)
 
 #define IMPL_INLINE_SETTER_GETTER(T, n, B, f, M)           \
   inline void JSDurationFormat::set_##n(T value) {         \
@@ -111,16 +96,9 @@ inline int32_t JSDurationFormat::fractional_digits() const {
   return v;
 }
 
-Tagged<Managed<icu::number::LocalizedNumberFormatter>>
-JSDurationFormat::icu_number_formatter() const {
-  return Cast<Managed<icu::number::LocalizedNumberFormatter>>(
-      icu_number_formatter_.load());
-}
-void JSDurationFormat::set_icu_number_formatter(
-    Tagged<Managed<icu::number::LocalizedNumberFormatter>> value,
-    WriteBarrierMode mode) {
-  icu_number_formatter_.store(this, value, mode);
-}
+ACCESSORS(JSDurationFormat, icu_number_formatter,
+          Tagged<Managed<icu::number::LocalizedNumberFormatter>>,
+          kIcuNumberFormatterOffset)
 }  // namespace internal
 }  // namespace v8
 

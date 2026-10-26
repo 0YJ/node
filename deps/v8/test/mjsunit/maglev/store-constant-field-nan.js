@@ -24,6 +24,6 @@ function foo() {
 
 %OptimizeMaglevOnNextCall(foo);
 foo(NaN);
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 assertEquals(x, NaN);
 assertEquals(x, custom_nan);

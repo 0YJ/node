@@ -15,7 +15,6 @@
 #ifndef ABSL_CRC_INTERNAL_CRC32C_INLINE_H_
 #define ABSL_CRC_INTERNAL_CRC32C_INLINE_H_
 
-#include <cstddef>
 #include <cstdint>
 
 #include "absl/base/config.h"

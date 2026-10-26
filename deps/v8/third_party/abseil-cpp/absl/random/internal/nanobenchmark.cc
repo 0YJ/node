@@ -17,6 +17,7 @@
 #include <sys/types.h>
 
 #include <algorithm>  // sort
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -26,9 +27,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
 #include "absl/base/internal/raw_logging.h"
 #include "absl/random/internal/platform.h"
 #include "absl/random/internal/randen_engine.h"
@@ -549,7 +548,7 @@ using InputVec = std::vector<FuncInput>;
 // Returns vector of unique input values.
 InputVec UniqueInputs(const FuncInput* inputs, const size_t num_inputs) {
   InputVec unique(inputs, inputs + num_inputs);
-  absl::c_sort(unique);
+  std::sort(unique.begin(), unique.end());
   unique.erase(std::unique(unique.begin(), unique.end()), unique.end());
   return unique;
 }
@@ -608,7 +607,7 @@ InputVec ReplicateInputs(const FuncInput* inputs, const size_t num_inputs,
     full.insert(full.end(), inputs, inputs + num_inputs);
   }
   absl::random_internal::randen_engine<uint32_t> rng;
-  absl::c_shuffle(full, rng);
+  std::shuffle(full.begin(), full.end(), rng);
   return full;
 }
 
@@ -616,20 +615,20 @@ InputVec ReplicateInputs(const FuncInput* inputs, const size_t num_inputs,
 // randomly selected occurrences of "input_to_skip" removed.
 void FillSubset(const InputVec& full, const FuncInput input_to_skip,
                 const size_t num_skip, InputVec* subset) {
-  const ptrdiff_t count = absl::c_count(full, input_to_skip);
+  const size_t count = std::count(full.begin(), full.end(), input_to_skip);
   // Generate num_skip random indices: which occurrence to skip.
   std::vector<uint32_t> omit;
   // Replacement for std::iota, not yet available in MSVC builds.
   omit.reserve(count);
-  for (ptrdiff_t i = 0; i < count; ++i) {
+  for (size_t i = 0; i < count; ++i) {
     omit.push_back(i);
   }
   // omit[] is the same on every call, but that's OK because they identify the
   // Nth instance of input_to_skip, so the position within full[] differs.
   absl::random_internal::randen_engine<uint32_t> rng;
-  absl::c_shuffle(omit, rng);
+  std::shuffle(omit.begin(), omit.end(), rng);
   omit.resize(num_skip);
-  absl::c_sort(omit);
+  std::sort(omit.begin(), omit.end());
 
   uint32_t occurrence = ~0u;  // 0 after preincrement
   size_t idx_omit = 0;        // cursor within omit[]

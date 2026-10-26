@@ -864,7 +864,7 @@ Simulator* Simulator::current(Isolate* isolate) {
   return sim;
 }
 
-#define FLOATPOINT_CONVERT_F32(func)                 \
+#define FloatPoint_Covert_F32(func)                  \
   float Simulator::func(float value) {               \
     float result = std::func(value);                 \
     if (std::isnan(result)) {                        \
@@ -875,8 +875,8 @@ Simulator* Simulator::current(Isolate* isolate) {
     }                                                \
     return result;                                   \
   }
-
-#define FLOATPOINT_CONVERT_F64(func)                 \
+#define FloatPoint_Covert_F64(func)                  \
+  FloatPoint_Covert_F32(func)                        \
   double Simulator::func(double value) {             \
     double result = std::func(value);                \
     if (std::isnan(result)) {                        \
@@ -888,52 +888,11 @@ Simulator* Simulator::current(Isolate* isolate) {
     return result;                                   \
   }
 
-FLOATPOINT_CONVERT_F32(ceil)
-FLOATPOINT_CONVERT_F32(floor)
-FLOATPOINT_CONVERT_F32(trunc)
-FLOATPOINT_CONVERT_F64(ceil)
-FLOATPOINT_CONVERT_F64(floor)
-FLOATPOINT_CONVERT_F64(trunc)
-#undef FLOATPOINT_CONVERT_F32
-#undef FLOATPOINT_CONVERT_F64
-
-float Simulator::roundeven(float value) {
-  if (std::isnan(value)) {
-    float result;
-    uint32_t q_nan, nan;
-    nan = *reinterpret_cast<uint32_t*>(&value);
-    q_nan = nan | 0x400000;
-    *reinterpret_cast<uint32_t*>(&result) = q_nan;
-    return result;
-  }
-  float result = std::floor(value);
-  float error = value - result;
-  if ((-0.5 <= value) && (value < 0.0)) {
-    result = -0.0;
-  } else if ((error > 0.5) || ((error == 0.5) && (std::fmod(result, 2) != 0))) {
-    result++;
-  }
-  return result;
-}
-
-double Simulator::roundeven(double value) {
-  if (std::isnan(value)) {
-    double result;
-    uint64_t q_nan, nan;
-    nan = *reinterpret_cast<uint64_t*>(&value);
-    q_nan = nan | 0x8000000000000;
-    *reinterpret_cast<uint64_t*>(&result) = q_nan;
-    return result;
-  }
-  double result = std::floor(value);
-  double error = value - result;
-  if ((-0.5 <= value) && (value < 0.0)) {
-    result = -0.0;
-  } else if ((error > 0.5) || ((error == 0.5) && (std::fmod(result, 2) != 0))) {
-    result++;
-  }
-  return result;
-}
+FloatPoint_Covert_F64(ceil)
+FloatPoint_Covert_F64(floor)
+FloatPoint_Covert_F64(trunc)
+#undef FloatPoint_Covert_F32
+#undef FloatPoint_Covert_F64
 
 // Sets the register in the architecture state. It will also deal with updating
 // Simulator internal state for special registers such as PC.
@@ -1324,9 +1283,9 @@ bool Simulator::set_fcsr_round64_error(float original, float rounded) {
 // For ftint instructions only
 void Simulator::round_according_to_fcsr(double toRound, double* rounded,
                                         int32_t* rounded_int) {
-  // 0 RNE (round to nearest): Round a result to the nearest
+  // 0 RN (round to nearest): Round a result to the nearest
   // representable value; if the result is exactly halfway between
-  // two representable values, round to even.
+  // two representable values, round to zero.
 
   // 1 RZ (round toward zero): Round a result to the closest
   // representable value whose absolute value is less than or
@@ -1335,34 +1294,40 @@ void Simulator::round_according_to_fcsr(double toRound, double* rounded,
   // 2 RP (round up, or toward +infinity): Round a result to the
   // next representable value up.
 
-  // 3 RM (round down, or toward -infinity): Round a result to
+  // 3 RN (round down, or toward −infinity): Round a result to
   // the next representable value down.
   // switch ((FCSR_ >> 8) & 3) {
   switch (FCSR_ & kFPURoundingModeMask) {
     case kRoundToNearest:
-      *rounded = roundeven(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded = floor(toRound + 0.5);
+      *rounded_int = static_cast<int32_t>(*rounded);
+      if ((*rounded_int & 1) != 0 && *rounded_int - toRound == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        *rounded_int -= 1;
+        *rounded -= 1.;
+      }
       break;
     case kRoundToZero:
       *rounded = trunc(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
     case kRoundToPlusInf:
       *rounded = ceil(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
     case kRoundToMinusInf:
       *rounded = floor(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
   }
 }
 
 void Simulator::round64_according_to_fcsr(double toRound, double* rounded,
                                           int64_t* rounded_int) {
-  // 0 RNE (round to nearest): Round a result to the nearest
+  // 0 RN (round to nearest): Round a result to the nearest
   // representable value; if the result is exactly halfway between
-  // two representable values, round to even.
+  // two representable values, round to zero.
 
   // 1 RZ (round toward zero): Round a result to the closest
   // representable value whose absolute value is less than or.
@@ -1371,33 +1336,39 @@ void Simulator::round64_according_to_fcsr(double toRound, double* rounded,
   // 2 RP (round up, or toward +infinity): Round a result to the
   // next representable value up.
 
-  // 3 RM (round down, or toward -infinity): Round a result to
+  // 3 RN (round down, or toward −infinity): Round a result to
   // the next representable value down.
   switch (FCSR_ & kFPURoundingModeMask) {
     case kRoundToNearest:
-      *rounded = roundeven(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded = floor(toRound + 0.5);
+      *rounded_int = static_cast<int64_t>(*rounded);
+      if ((*rounded_int & 1) != 0 && *rounded_int - toRound == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        *rounded_int -= 1;
+        *rounded -= 1.;
+      }
       break;
     case kRoundToZero:
       *rounded = trunc(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
     case kRoundToPlusInf:
       *rounded = ceil(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
     case kRoundToMinusInf:
       *rounded = floor(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
   }
 }
 
 void Simulator::round_according_to_fcsr(float toRound, float* rounded,
                                         int32_t* rounded_int) {
-  // 0 RNE (round to nearest): Round a result to the nearest
+  // 0 RN (round to nearest): Round a result to the nearest
   // representable value; if the result is exactly halfway between
-  // two representable values, round to even.
+  // two representable values, round to zero.
 
   // 1 RZ (round toward zero): Round a result to the closest
   // representable value whose absolute value is less than or
@@ -1406,33 +1377,39 @@ void Simulator::round_according_to_fcsr(float toRound, float* rounded,
   // 2 RP (round up, or toward +infinity): Round a result to the
   // next representable value up.
 
-  // 3 RM (round down, or toward -infinity): Round a result to
+  // 3 RN (round down, or toward −infinity): Round a result to
   // the next representable value down.
   switch (FCSR_ & kFPURoundingModeMask) {
     case kRoundToNearest:
-      *rounded = roundeven(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded = floor(toRound + 0.5);
+      *rounded_int = static_cast<int32_t>(*rounded);
+      if ((*rounded_int & 1) != 0 && *rounded_int - toRound == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        *rounded_int -= 1;
+        *rounded -= 1.f;
+      }
       break;
     case kRoundToZero:
       *rounded = trunc(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
     case kRoundToPlusInf:
       *rounded = ceil(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
     case kRoundToMinusInf:
       *rounded = floor(toRound);
-      *rounded_int = base::saturated_cast<int32_t>(*rounded);
+      *rounded_int = static_cast<int32_t>(*rounded);
       break;
   }
 }
 
 void Simulator::round64_according_to_fcsr(float toRound, float* rounded,
                                           int64_t* rounded_int) {
-  // 0 RNE (round to nearest): Round a result to the nearest
+  // 0 RN (round to nearest): Round a result to the nearest
   // representable value; if the result is exactly halfway between
-  // two representable values, round to even.
+  // two representable values, round to zero.
 
   // 1 RZ (round toward zero): Round a result to the closest
   // representable value whose absolute value is less than or.
@@ -1441,24 +1418,30 @@ void Simulator::round64_according_to_fcsr(float toRound, float* rounded,
   // 2 RP (round up, or toward +infinity): Round a result to the
   // next representable value up.
 
-  // 3 RM (round down, or toward -infinity): Round a result to
+  // 3 RN (round down, or toward −infinity): Round a result to
   // the next representable value down.
   switch (FCSR_ & kFPURoundingModeMask) {
     case kRoundToNearest:
-      *rounded = roundeven(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded = floor(toRound + 0.5);
+      *rounded_int = static_cast<int64_t>(*rounded);
+      if ((*rounded_int & 1) != 0 && *rounded_int - toRound == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        *rounded_int -= 1;
+        *rounded -= 1.f;
+      }
       break;
     case kRoundToZero:
       *rounded = trunc(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
     case kRoundToPlusInf:
       *rounded = ceil(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
     case kRoundToMinusInf:
       *rounded = floor(toRound);
-      *rounded_int = base::saturated_cast<int64_t>(*rounded);
+      *rounded_int = static_cast<int64_t>(*rounded);
       break;
   }
 }
@@ -4954,7 +4937,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = floor(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_word_invalid_result(fj, rounded);
@@ -4967,7 +4950,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = floor(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_invalid_result(fj, rounded);
@@ -4980,7 +4963,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = floor(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -4993,7 +4976,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = floor(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5006,7 +4989,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = ceil(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_word_invalid_result(fj, rounded);
@@ -5019,7 +5002,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = ceil(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_invalid_result(fj, rounded);
@@ -5032,7 +5015,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = ceil(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5045,7 +5028,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = ceil(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5058,7 +5041,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = trunc(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_word_invalid_result(fj, rounded);
@@ -5071,7 +5054,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = trunc(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      int32_t result = static_cast<int32_t>(rounded);
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_invalid_result(fj, rounded);
@@ -5084,7 +5067,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
       float rounded = trunc(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5097,7 +5080,7 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
       double rounded = trunc(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      int64_t result = static_cast<int64_t>(rounded);
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5109,8 +5092,13 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fd_reg()), fd_double(),
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
-      float rounded = roundeven(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      float rounded = floor(fj + 0.5);
+      int32_t result = static_cast<int32_t>(rounded);
+      if ((result & 1) != 0 && result - fj == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        result--;
+      }
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_word_invalid_result(fj, rounded);
@@ -5122,8 +5110,13 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fd_reg()), fd_double(),
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
-      double rounded = roundeven(fj);
-      int32_t result = base::saturated_cast<int32_t>(rounded);
+      double rounded = floor(fj + 0.5);
+      int32_t result = static_cast<int32_t>(rounded);
+      if ((result & 1) != 0 && result - fj == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        result--;
+      }
       SetFPUWordResult(fd_reg(), result);
       if (set_fcsr_round_error(fj, rounded)) {
         set_fpu_register_invalid_result(fj, rounded);
@@ -5135,8 +5128,13 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fd_reg()), fd_double(),
                    FPURegisters::Name(fj_reg()), fj_float());
       float fj = fj_float();
-      float rounded = roundeven(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      float rounded = floor(fj + 0.5);
+      int64_t result = static_cast<int64_t>(rounded);
+      if ((result & 1) != 0 && result - fj == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        result--;
+      }
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);
@@ -5148,8 +5146,13 @@ void Simulator::DecodeTypeOp22() {
                    FPURegisters::Name(fd_reg()), fd_double(),
                    FPURegisters::Name(fj_reg()), fj_double());
       double fj = fj_double();
-      double rounded = roundeven(fj);
-      int64_t result = base::saturated_cast<int64_t>(rounded);
+      double rounded = floor(fj + 0.5);
+      int64_t result = static_cast<int64_t>(rounded);
+      if ((result & 1) != 0 && result - fj == 0.5) {
+        // If the number is halfway between two integers,
+        // round to the even one.
+        result--;
+      }
       SetFPUResult(fd_reg(), result);
       if (set_fcsr_round64_error(fj, rounded)) {
         set_fpu_register_invalid_result64(fj, rounded);

@@ -22,7 +22,7 @@
 namespace v8 {
 namespace internal {
 
-// https://tc39.es/ecma402/#sec-formatlist
+// ecma402 #sec-formatlist
 RUNTIME_FUNCTION(Runtime_FormatList) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());
@@ -32,7 +32,7 @@ RUNTIME_FUNCTION(Runtime_FormatList) {
       isolate, JSListFormat::FormatList(isolate, list_format, list));
 }
 
-// https://tc39.es/ecma402/#sec-formatlisttoparts
+// ecma402 #sec-formatlisttoparts
 RUNTIME_FUNCTION(Runtime_FormatListToParts) {
   HandleScope scope(isolate);
   DCHECK_EQ(2, args.length());

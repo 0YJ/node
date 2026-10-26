@@ -11,7 +11,6 @@ import assert from 'node:assert';
 
 if (!common.hasCrypto) common.skip('missing crypto');
 
-const { untrustedLeafErrorCode } = await import('../common/tls.js');
 const { default: https } = await import('node:https');
 const { default: tls } = await import('node:tls');
 
@@ -40,7 +39,7 @@ tls.setDefaultCACertificates([]);
 await assert.rejects(
   fetch(`https://127.0.0.1:${server.address().port}/empty-ca-test`),
   (err) => {
-    assert.strictEqual(err.cause.code, untrustedLeafErrorCode);
+    assert.strictEqual(err.cause.code, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
     return true;
   },
 );

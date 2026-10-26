@@ -14,7 +14,6 @@
 #include "src/compiler/turboshaft/maglev-assert-types-reducer.h"
 #include "src/compiler/turboshaft/phase.h"
 #include "src/compiler/turboshaft/stack-check-lowering-reducer.h"
-#include "src/compiler/turboshaft/store-store-elimination-reducer-inl.h"
 #include "src/objects/objects-inl.h"
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -25,12 +24,9 @@ namespace v8::internal::compiler::turboshaft {
 
 void CodeEliminationAndSimplificationPhase::Run(PipelineData* data,
                                                 Zone* temp_zone) {
-  // StoreStoreElimination needs the broken unparked in order to combine
-  // consecutive stores of read-only objects (for the RO check).
-  UnparkedScopeIfNeeded scope(data->broker());
-
+  UnparkedScopeIfNeeded scope(data->broker(), DEBUG_BOOL);
   CopyingPhase<MaglevAssertTypesReducer, DeadCodeEliminationReducer,
-               StackCheckLoweringReducer, StoreStoreEliminationReducer,
+               StackCheckLoweringReducer,
 #ifdef DEBUG
                StoreLoadVerificationReducer,
 #endif

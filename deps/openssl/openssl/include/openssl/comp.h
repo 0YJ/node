@@ -1,1 +1,1 @@
-#include "../../../config/openssl_comp.h"
+#include "../../../config/comp.h"

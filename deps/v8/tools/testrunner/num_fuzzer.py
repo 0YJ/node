@@ -141,8 +141,6 @@ class NumFuzzer(base_runner.BaseTestRunner):
     variables = (
         super(NumFuzzer, self)._get_statusfile_variables(context))
     variables.update({
-        'num_fuzzer':
-            True,
         'deopt_fuzzer':
             bool(self.options.stress_deopt),
         'interrupt_fuzzer':

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,17 +25,16 @@ namespace PE {
 /// This class represents the `IMAGE_DEBUG_TYPE_VC_FEATURE` debug entry
 class LIEF_API VCFeature : public Debug {
   public:
-  static std::unique_ptr<VCFeature> parse(const details::pe_debug& hdr,
-                                          Section* section, span<uint8_t> payload);
+  static std::unique_ptr<VCFeature>
+    parse(const details::pe_debug& hdr, Section* section, span<uint8_t> payload);
 
-  VCFeature(const details::pe_debug& debug, Section* sec, uint32_t pre_vc,
-            uint32_t c_cpp, uint32_t gs, uint32_t sdl, uint32_t guards) :
+  VCFeature(const details::pe_debug& debug, Section* sec,
+            uint32_t pre_vc, uint32_t c_cpp, uint32_t gs, uint32_t sdl,
+            uint32_t guards) :
     Debug(debug, sec),
-    pre_vc_(pre_vc),
-    c_cpp_(c_cpp),
-    gs_(gs),
-    sdl_(sdl),
-    guards_(guards) {}
+    pre_vc_(pre_vc), c_cpp_(c_cpp),
+    gs_(gs), sdl_(sdl), guards_(guards)
+  {}
 
   VCFeature(const VCFeature& other) = default;
   VCFeature& operator=(const VCFeature& other) = default;
@@ -76,27 +75,27 @@ class LIEF_API VCFeature : public Debug {
     return guards_;
   }
 
-  VCFeature& pre_vcpp(uint32_t value) LIEF_LIFETIMEBOUND {
+  VCFeature& pre_vcpp(uint32_t value) {
     pre_vc_ = value;
     return *this;
   }
 
-  VCFeature& c_cpp(uint32_t value) LIEF_LIFETIMEBOUND {
+  VCFeature& c_cpp(uint32_t value) {
     c_cpp_ = value;
     return *this;
   }
 
-  VCFeature& gs(uint32_t value) LIEF_LIFETIMEBOUND {
+  VCFeature& gs(uint32_t value) {
     gs_ = value;
     return *this;
   }
 
-  VCFeature& sdl(uint32_t value) LIEF_LIFETIMEBOUND {
+  VCFeature& sdl(uint32_t value) {
     sdl_ = value;
     return *this;
   }
 
-  VCFeature& guards(uint32_t value) LIEF_LIFETIMEBOUND {
+  VCFeature& guards(uint32_t value) {
     guards_ = value;
     return *this;
   }
@@ -108,7 +107,6 @@ class LIEF_API VCFeature : public Debug {
   ~VCFeature() override = default;
 
   std::string to_string() const override;
-
   private:
   uint32_t pre_vc_ = 0;
   uint32_t c_cpp_ = 0;

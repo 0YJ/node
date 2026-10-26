@@ -8,7 +8,6 @@
 
 import { hasQuic, skip, mustCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -60,7 +59,7 @@ await client1.opened;
 const s1 = await client1.createBidirectionalStream({
   body: encoder.encode('session1'),
 });
-await dump(s1);
+for await (const _ of s1) { /* drain */ } // eslint-disable-line no-unused-vars
 await s1.closed;
 
 await serverDone1.promise;
@@ -85,7 +84,7 @@ await client2.opened;
 const s2 = await client2.createBidirectionalStream({
   body: encoder.encode('session2'),
 });
-await dump(s2);
+for await (const _ of s2) { /* drain */ } // eslint-disable-line no-unused-vars
 await s2.closed;
 
 // If the bug is present, this never resolves and the test hangs.

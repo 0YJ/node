@@ -90,7 +90,6 @@ Lk_deskew:
 .byte	0x00,0x69,0xea,0x83,0xdc,0xb5,0x36,0x5f,0x77,0x1e,0x9d,0xf4,0xab,0xc2,0x41,0x28
 .align	5
 Lconsts:
-vpaes_const_fn:
 	mflr	0
 	bcl	20,31,$+4
 	mflr	12
@@ -111,7 +110,7 @@ vpaes_const_fn:
 .align	4
 _vpaes_encrypt_preheat:
 	mflr	8
-	bl	vpaes_const_fn
+	bl	Lconsts
 	mtlr	8
 	li	11, 0xc0
 	li	10, 0xd0
@@ -328,7 +327,7 @@ Lenc_done:
 .align	4
 _vpaes_decrypt_preheat:
 	mflr	8
-	bl	vpaes_const_fn
+	bl	Lconsts
 	mtlr	8
 	li	11, 0xc0
 	li	10, 0xd0
@@ -791,7 +790,7 @@ Lcbc_abort:
 .align	4
 _vpaes_key_preheat:
 	mflr	8
-	bl	vpaes_const_fn
+	bl	Lconsts
 	mtlr	8
 	li	11, 0xc0
 	li	10, 0xd0

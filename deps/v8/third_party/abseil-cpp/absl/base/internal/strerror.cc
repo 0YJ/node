@@ -22,7 +22,6 @@
 #include <string>
 #include <type_traits>
 
-#include "absl/base/config.h"
 #include "absl/base/internal/errno_saver.h"
 
 namespace absl {
@@ -40,7 +39,7 @@ const char* StrErrorAdaptor(int errnum, char* buf, size_t buflen) {
   // The type of `ret` is platform-specific; both of these branches must compile
   // either way but only one will execute on any given platform:
   auto ret = strerror_r(errnum, buf, buflen);
-  if (std::is_same_v<decltype(ret), int>) {
+  if (std::is_same<decltype(ret), int>::value) {
     // XSI `strerror_r`; `ret` is `int`:
     if (ret) *buf = '\0';
     return buf;
@@ -62,7 +61,7 @@ std::string StrErrorInternal(int errnum) {
 }
 
 // kSysNerr is the number of errors from a recent glibc. `StrError()` falls back
-// to `StrErrorInternal()` if the value is larger than this.
+// to `StrErrorAdaptor()` if the value is larger than this.
 constexpr int kSysNerr = 135;
 
 std::array<std::string, kSysNerr>* NewStrErrorTable() {

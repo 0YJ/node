@@ -2,7 +2,6 @@
 
 const assert = require('node:assert')
 const { runtimeFeatures } = require('../../util/runtime-features.js')
-const { asciiLowercase } = require('../infra/index.js')
 
 /**
  * @typedef {object} Metadata
@@ -67,12 +66,14 @@ const getSRIHashAlgorithmIndex = /** @type {GetSRIHashAlgorithmIndex} */ (Map.pr
 
 /**
  * @typedef IsValidSRIHashAlgorithm
- * @see https://w3c.github.io/webappsec-subresource-integrity/#valid-sri-hash-algorithm-token
  * @type {(algorithm: string) => algorithm is SRIHashAlgorithm}
  * @param {*} algorithm
  * @returns {algorithm is SRIHashAlgorithm}
  */
-const isValidSRIHashAlgorithm = (algorithm) => validSRIHashAlgorithmTokenSet.has(asciiLowercase(algorithm))
+
+const isValidSRIHashAlgorithm = /** @type {IsValidSRIHashAlgorithm} */ (
+  Map.prototype.has.bind(validSRIHashAlgorithmTokenSet)
+)
 
 /**
  * @param {Uint8Array} bytes
@@ -228,8 +229,7 @@ function parseMetadata (metadata) {
     // 8. Let metadata be the ordered map
     // «["alg" → algorithm, "val" → base64-value]».
     const metadata = {
-      // Possible spec bug?
-      alg: asciiLowercase(algorithm),
+      alg: algorithm,
       val: base64Value
     }
 

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,8 @@
 #include "LIEF/ART/File.hpp"
 #include "LIEF/ART/EnumToString.hpp"
 
-
-namespace LIEF::ART {
+namespace LIEF {
+namespace ART {
 
 template<typename ART_T>
 void Parser::parse_file() {
@@ -40,9 +40,8 @@ size_t Parser::parse_header() {
   const auto hdr = std::move(*res_hdr);
   imagebase_ = hdr.image_begin;
 
-  if (hdr.pointer_size != sizeof(uint32_t) && hdr.pointer_size != sizeof(uint64_t))
-  {
-    LIEF_WARN("Inconsistent ART header pointer size");
+  if (hdr.pointer_size != sizeof(uint32_t) && hdr.pointer_size != sizeof(uint64_t)) {
+    LIEF_WARN("ART Header pointer_size is not consistent");
     return 0;
   }
   file_->header_ = &hdr;
@@ -289,7 +288,7 @@ void Parser::parse_methods() {
   const art_header_t* hdr = reinterpret_cast<const art_header_t*>(stream_->read(0, sizeof(art_header_t)));
 
   uint32_t nb_methods = file_->header().nb_methods_;
-  // TODO: check against ART::nb_methods for extra validation
+  //TODO check with ART::nb_methods... (more secure)
   for (size_t i = 0; i < nb_methods; ++i) {
     IMAGE_METHODS type = static_cast<IMAGE_METHODS>(i);
     uint64_t address = hdr->image_methods[i];
@@ -333,4 +332,5 @@ void Parser::parse_interned_strings(size_t offset, size_t size) {
 }
 #endif
 
+}
 }

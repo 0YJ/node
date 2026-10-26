@@ -35,7 +35,9 @@ class LiveObjectRange final {
     bool operator!=(iterator other) const { return !(*this == other); }
 
     value_type operator*() {
-      return std::make_pair(current_object_, SafeHeapObjectSize(current_size_));
+      return std::make_pair(
+          current_object_,
+          SafeHeapObjectSize(static_cast<uint32_t>(current_size_)));
     }
 
    private:
@@ -49,7 +51,7 @@ class LiveObjectRange final {
     MarkingBitmap::CellType current_cell_ = 0;
     Tagged<HeapObject> current_object_;
     Tagged<Map> current_map_;
-    uint32_t current_size_ = 0;
+    int current_size_ = 0;
   };
 
   explicit LiveObjectRange(const NormalPage* page) : page_(page) {}

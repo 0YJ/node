@@ -141,8 +141,7 @@ static_assert(SortConstants::MaxBufBytes<2>(64) <= 1664, "Unexpectedly high");
 // vqsort isn't available on HWY_SCALAR, and builds time out on MSVC opt and
 // Armv7 debug, and Armv8 GCC 11 asan hits an internal compiler error likely
 // due to https://gcc.gnu.org/bugzilla/show_bug.cgi?id=97696. Armv8 Clang
-// hwasan/msan/tsan/asan also fail to build SVE (b/335157772), and SVE2
-// hits a compiler crash, though SVE2_128 is fine.
+// hwasan/msan/tsan/asan also fail to build SVE (b/335157772).
 #undef VQSORT_ENABLED
 #undef VQSORT_COMPILER_COMPATIBLE
 
@@ -155,10 +154,7 @@ static_assert(SortConstants::MaxBufBytes<2>(64) <= 1664, "Unexpectedly high");
 #define VQSORT_COMPILER_COMPATIBLE 1
 #endif
 
-#if (HWY_TARGET == HWY_SCALAR) || !VQSORT_COMPILER_COMPATIBLE ||    \
-    ((HWY_TARGET & HWY_ALL_SVE) && defined(SAFESTACK_SANITIZER)) || \
-    ((HWY_TARGET & HWY_ALL_SVE) && HWY_HAVE_SCALABLE) ||            \
-    defined(HWY_DISABLE_VQSORT)
+#if (HWY_TARGET == HWY_SCALAR) || !VQSORT_COMPILER_COMPATIBLE
 #define VQSORT_ENABLED 0
 #else
 #define VQSORT_ENABLED 1

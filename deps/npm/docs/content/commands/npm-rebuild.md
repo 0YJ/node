@@ -98,9 +98,6 @@ Note that commands explicitly intended to run a particular script, such as
 run their intended script if `ignore-scripts` is set, but they will *not*
 run any pre- or post-scripts.
 
-Setting `ignore-scripts` also disables `.npm-extension` execution, as if
-`ignore-extension` were set.
-
 
 
 #### `allow-scripts`
@@ -123,7 +120,7 @@ Each name is matched against a dependency's resolved identity, not against
 the package's self-reported name. `--ignore-scripts` and
 `--dangerously-allow-all-scripts` both override this setting.
 
-This value is not exported to the environment for child processes.
+
 
 #### `strict-allow-scripts`
 
@@ -131,12 +128,11 @@ This value is not exported to the environment for child processes.
 * Type: Boolean
 
 If `true`, turn the install-script policy from a warning into a hard error:
-any dependency with install scripts that is not covered by `allowScripts`
-will fail the install instead of being blocked with a warning.
+any dependency with install scripts not covered by `allowScripts` will fail
+the install instead of running with a notice.
 
 Dependencies explicitly denied with `false` in `allowScripts` are always
-silently skipped; this setting only affects unreviewed entries (packages
-with install scripts that are neither approved nor denied).
+silently skipped; this setting only affects unreviewed entries.
 `--ignore-scripts` and `--dangerously-allow-all-scripts` both override this
 setting.
 

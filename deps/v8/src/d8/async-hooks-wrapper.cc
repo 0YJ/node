@@ -17,7 +17,7 @@
 namespace v8 {
 
 namespace {
-i::CppGCManaged<AsyncHooksWrap>::Ptr UnwrapHook(
+std::shared_ptr<AsyncHooksWrap> UnwrapHook(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   DCHECK(i::ValidateCallbackInfo(info));
   v8::Isolate* v8_isolate = info.GetIsolate();
@@ -29,12 +29,12 @@ i::CppGCManaged<AsyncHooksWrap>::Ptr UnwrapHook(
   if (!hooks->async_hook_ctor.Get(v8_isolate)->HasInstance(hook)) {
     v8_isolate->ThrowError(
         "Invalid 'this' passed instead of AsyncHooks instance");
-    return {};
+    return nullptr;
   }
 
   i::DirectHandle<i::Object> handle =
       Utils::OpenDirectHandle(*hook->GetInternalField(0));
-  return Cast<i::CppGCManaged<AsyncHooksWrap>>(handle)->ptr();
+  return Cast<i::Managed<AsyncHooksWrap>>(handle)->get();
 }
 
 void EnableHook(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -165,10 +165,8 @@ Local<Object> AsyncHooks::CreateHook(
   Local<Object> obj = async_hooks_templ.Get(v8_isolate)
                           ->NewInstance(currentContext)
                           .ToLocalChecked();
-  i::DirectHandle<i::Object> managed =
-      i::CppGCManaged<AsyncHooksWrap>::Create(
-          reinterpret_cast<i::Isolate*>(v8_isolate), sizeof(AsyncHooksWrap),
-          wrap);
+  i::DirectHandle<i::Object> managed = i::Managed<AsyncHooksWrap>::From(
+      reinterpret_cast<i::Isolate*>(v8_isolate), sizeof(AsyncHooksWrap), wrap);
   obj->SetInternalField(0, Utils::ToLocal(managed));
 
   async_wraps_.push_back(std::move(wrap));

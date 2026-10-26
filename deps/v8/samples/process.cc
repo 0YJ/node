@@ -52,7 +52,6 @@ using std::map;
 using std::pair;
 using std::string;
 
-using v8::Boolean;
 using v8::Context;
 using v8::EscapableHandleScope;
 using v8::External;
@@ -154,7 +153,7 @@ class JsHttpRequestProcessor : public HttpRequestProcessor {
   static v8::Intercepted MapGet(Local<Name> name,
                                 const PropertyCallbackInfo<Value>& info);
   static v8::Intercepted MapSet(Local<Name> name, Local<Value> value,
-                                const PropertyCallbackInfo<Boolean>& info);
+                                const PropertyCallbackInfo<void>& info);
 
   // Utility methods for wrapping C++ objects as JavaScript objects,
   // and going back again.
@@ -408,7 +407,7 @@ v8::Intercepted JsHttpRequestProcessor::MapGet(
   if (name->IsSymbol()) return v8::Intercepted::kNo;
 
   // Fetch the map wrapped by this object.
-  map<string, string>* obj = UnwrapMap(info.Holder());
+  map<string, string>* obj = UnwrapMap(info.HolderV2());
 
   // Convert the JavaScript string to a std::string.
   string key = ObjectToString(info.GetIsolate(), name.As<String>());
@@ -430,11 +429,11 @@ v8::Intercepted JsHttpRequestProcessor::MapGet(
 
 v8::Intercepted JsHttpRequestProcessor::MapSet(
     Local<Name> name, Local<Value> value_obj,
-    const PropertyCallbackInfo<Boolean>& info) {
+    const PropertyCallbackInfo<void>& info) {
   if (name->IsSymbol()) return v8::Intercepted::kNo;
 
   // Fetch the map wrapped by this object.
-  map<string, string>* obj = UnwrapMap(info.Holder());
+  map<string, string>* obj = UnwrapMap(info.HolderV2());
 
   // Convert the key and value to std::strings.
   string key = ObjectToString(info.GetIsolate(), name.As<String>());
@@ -514,7 +513,7 @@ HttpRequest* JsHttpRequestProcessor::UnwrapRequest(Local<Object> obj) {
 void JsHttpRequestProcessor::GetPath(Local<Name> name,
                                      const PropertyCallbackInfo<Value>& info) {
   // Extract the C++ request object from the JavaScript wrapper.
-  HttpRequest* request = UnwrapRequest(info.Holder());
+  HttpRequest* request = UnwrapRequest(info.HolderV2());
 
   // Fetch the path.
   const string& path = request->Path();
@@ -528,7 +527,7 @@ void JsHttpRequestProcessor::GetPath(Local<Name> name,
 
 void JsHttpRequestProcessor::GetReferrer(
     Local<Name> name, const PropertyCallbackInfo<Value>& info) {
-  HttpRequest* request = UnwrapRequest(info.Holder());
+  HttpRequest* request = UnwrapRequest(info.HolderV2());
   const string& path = request->Referrer();
   info.GetReturnValue().Set(
       String::NewFromUtf8(info.GetIsolate(), path.c_str(),
@@ -538,7 +537,7 @@ void JsHttpRequestProcessor::GetReferrer(
 
 void JsHttpRequestProcessor::GetHost(Local<Name> name,
                                      const PropertyCallbackInfo<Value>& info) {
-  HttpRequest* request = UnwrapRequest(info.Holder());
+  HttpRequest* request = UnwrapRequest(info.HolderV2());
   const string& path = request->Host();
   info.GetReturnValue().Set(
       String::NewFromUtf8(info.GetIsolate(), path.c_str(),
@@ -548,7 +547,7 @@ void JsHttpRequestProcessor::GetHost(Local<Name> name,
 
 void JsHttpRequestProcessor::GetUserAgent(
     Local<Name> name, const PropertyCallbackInfo<Value>& info) {
-  HttpRequest* request = UnwrapRequest(info.Holder());
+  HttpRequest* request = UnwrapRequest(info.HolderV2());
   const string& path = request->UserAgent();
   info.GetReturnValue().Set(
       String::NewFromUtf8(info.GetIsolate(), path.c_str(),
@@ -696,10 +695,7 @@ void PrintMap(map<string, string>* m) {
 
 
 int main(int argc, char* argv[]) {
-  if (!v8::V8::InitializeICUDefaultLocation(argv[0])) {
-    fprintf(stderr, "Failed to initialize ICU\n");
-    return 1;
-  }
+  v8::V8::InitializeICUDefaultLocation(argv[0]);
   v8::V8::InitializeExternalStartupData(argv[0]);
   std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(platform.get());

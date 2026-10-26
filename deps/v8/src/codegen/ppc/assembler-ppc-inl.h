@@ -149,7 +149,7 @@ Handle<Object> Assembler::code_target_object_handle_at(Address pc,
   return GetCodeTarget(index);
 }
 
-Tagged<HeapObject> RelocInfo::target_object() {
+Tagged<HeapObject> RelocInfo::target_object(PtrComprCageBase cage_base) {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
   if (IsCompressedEmbeddedObject(rmode_)) {
     return Cast<HeapObject>(
@@ -205,17 +205,6 @@ void WritableRelocInfo::set_target_external_reference(
   DCHECK(rmode_ == RelocInfo::EXTERNAL_REFERENCE);
   Assembler::set_target_address_at(pc_, constant_pool_, target,
                                    &jit_allocation_, icache_flush_mode);
-}
-
-Address RelocInfo::wasm_code_pointer() const {
-  DCHECK(rmode_ == RelocInfo::WASM_CODE_POINTER);
-  return Assembler::target_address_at(pc_, constant_pool_);
-}
-
-void WritableRelocInfo::set_wasm_code_pointer(Address target) {
-  DCHECK(rmode_ == RelocInfo::WASM_CODE_POINTER);
-  Assembler::set_target_address_at(pc_, constant_pool_, target,
-                                   &jit_allocation_, SKIP_ICACHE_FLUSH);
 }
 
 WasmCodePointer RelocInfo::wasm_code_pointer_table_entry() const {
@@ -406,7 +395,7 @@ void Assembler::deserialization_set_target_internal_reference_at(
     set_target_address_at(pc, kNullAddress, target, &jit_allocation,
                           SKIP_ICACHE_FLUSH);
   } else {
-    jit_allocation.WriteValue<Address>(pc, target);
+    jit_allocation.WriteUnalignedValue<Address>(pc, target);
   }
 }
 
@@ -419,7 +408,7 @@ void Assembler::set_target_address_at(Address pc, Address constant_pool,
     ConstantPoolEntry::Access access;
     if (IsConstantPoolLoadStart(pc, &access)) {
       if (jit_allocation) {
-        jit_allocation->WriteValue<Address>(
+        jit_allocation->WriteUnalignedValue<Address>(
             target_constant_pool_address_at(pc, constant_pool, access,
                                             ConstantPoolEntry::INTPTR),
             target);
@@ -458,10 +447,14 @@ void Assembler::set_target_address_at(Address pc, Address constant_pool,
     itarget = itarget >> 16;
 
     if (jit_allocation) {
-      jit_allocation->WriteValue(reinterpret_cast<Address>(&p[0]), instr1);
-      jit_allocation->WriteValue(reinterpret_cast<Address>(&p[1]), instr2);
-      jit_allocation->WriteValue(reinterpret_cast<Address>(&p[3]), instr4);
-      jit_allocation->WriteValue(reinterpret_cast<Address>(&p[4]), instr5);
+      jit_allocation->WriteUnalignedValue(reinterpret_cast<Address>(&p[0]),
+                                          instr1);
+      jit_allocation->WriteUnalignedValue(reinterpret_cast<Address>(&p[1]),
+                                          instr2);
+      jit_allocation->WriteUnalignedValue(reinterpret_cast<Address>(&p[3]),
+                                          instr4);
+      jit_allocation->WriteUnalignedValue(reinterpret_cast<Address>(&p[4]),
+                                          instr5);
     } else {
       *p = instr1;
       *(p + 1) = instr2;

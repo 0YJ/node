@@ -25,6 +25,7 @@ const {
 } = require('crypto');
 
 const {
+  hasOpenSSL,
   hasFIPS,
   isBoringSSL,
 } = require('../common/crypto');
@@ -349,14 +350,20 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
   // This should not cause a crash: https://github.com/nodejs/node/issues/25247
   assert.throws(() => {
     createPrivateKey({ key: '' });
-  }, isBoringSSL ? {
+  }, hasOpenSSL(3) ? {
+    message: 'error:1E08010C:DECODER routines::unsupported',
+  } : isBoringSSL ? {
     message: 'error:0900006e:PEM routines:OPENSSL_internal:NO_START_LINE',
     code: 'ERR_OSSL_PEM_NO_START_LINE',
     reason: 'NO_START_LINE',
     library: 'PEM routines',
     function: 'OPENSSL_internal',
   } : {
-    message: 'error:1E08010C:DECODER routines::unsupported',
+    message: 'error:0909006C:PEM routines:get_name:no start line',
+    code: 'ERR_OSSL_PEM_NO_START_LINE',
+    reason: 'no start line',
+    library: 'PEM routines',
+    function: 'get_name',
   });
 
   // This should not abort either: https://github.com/nodejs/node/issues/29904
@@ -375,12 +382,15 @@ const privateDsa = fixtures.readKey('dsa_private_encrypted_1025.pem',
       type: 'pkcs1'
     });
     createPrivateKey({ key, format: 'der', type: 'pkcs1' });
-  }, isBoringSSL ? {
+  }, hasOpenSSL(3) ? {
+    message: /error:1E08010C:DECODER routines::unsupported/,
+    library: 'DECODER routines'
+  } : isBoringSSL ? {
     library: 'public key routines',
     message: 'error:06000066:public key routines:OPENSSL_internal:DECODE_ERROR'
   } : {
-    message: /error:1E08010C:DECODER routines::unsupported/,
-    library: 'DECODER routines'
+    message: /asn1 encoding/,
+    library: 'asn1 encoding routines'
   });
 }
 
@@ -781,14 +791,14 @@ for (const info of [
 
 {
   // Reading an encrypted key without a passphrase should fail.
-  assert.throws(() => createPrivateKey(privateDsa), isBoringSSL ? {
-    name: 'TypeError',
-    code: 'ERR_MISSING_PASSPHRASE',
-    message: 'Passphrase required for encrypted key'
-  } : {
+  assert.throws(() => createPrivateKey(privateDsa), hasOpenSSL(3) ? {
     name: 'Error',
     message: 'error:07880109:common libcrypto routines::interrupted or ' +
              'cancelled',
+  } : {
+    name: 'TypeError',
+    code: 'ERR_MISSING_PASSPHRASE',
+    message: 'Passphrase required for encrypted key'
   });
 
   // Reading an encrypted key with a passphrase that exceeds OpenSSL's buffer
@@ -797,10 +807,10 @@ for (const info of [
     key: privateDsa,
     format: 'pem',
     passphrase: Buffer.alloc(1025, 'a')
-  }), isBoringSSL ? {
+  }), hasOpenSSL(3) ? { name: 'Error' } : {
     code: 'ERR_OSSL_PEM_BAD_PASSWORD_READ',
     name: 'Error'
-  } : { name: 'Error' });
+  });
 
   // The buffer has a size of 1024 bytes, so this passphrase should be permitted
   // (but will fail decryption).
@@ -1137,10 +1147,9 @@ if (!isBoringSSL) {
 {
   // Exporting a JWK unsupported curve EC key
   const supported = ['prime256v1', 'secp256k1', 'secp384r1', 'secp521r1'];
-  // FIPS-disallowed curves are omitted from getCurves(). Select one explicitly
-  // to keep checking their rejection; otherwise find a curve JWK cannot encode.
-  const namedCurve = fips3 ? 'secp256k1' :
-    getCurves().find((curve) => !supported.includes(curve));
+  // Find an unsupported curve regardless of whether a FIPS compliant crypto
+  // provider is currently in use.
+  const namedCurve = getCurves().find((curve) => !supported.includes(curve));
   assert(namedCurve);
   if (fips3) {
     assert.throws(() => generateKeyPairSync('ec', { namedCurve }), {
@@ -1206,7 +1215,7 @@ if (!isBoringSSL) {
   const first = generateKeyPairSync('ed25519');
   if (rejectsXCurves) {
     assert.throws(() => generateKeyPairSync('x25519'), {
-      code: 'ERR_INVALID_ARG_VALUE',
+      code: 'ERR_OSSL_EVP_UNSUPPORTED',
     });
   } else {
     const second = generateKeyPairSync('x25519');

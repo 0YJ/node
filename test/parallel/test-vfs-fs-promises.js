@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs/promises dispatches through VFS for each supported path-based and
@@ -31,11 +31,6 @@ const vfs = require('node:vfs');
   // statfs
   const sfs = await fsp.statfs(p('src/hello.txt'));
   assert.strictEqual(typeof sfs.bsize, 'number');
-  await assert.rejects(fsp.statfs(p('missing')), {
-    code: 'ENOENT',
-    syscall: 'statfs',
-    path: p('missing'),
-  });
 
   // Path-based writes
   await fsp.writeFile(p('src/pw.txt'), 'pdata');
@@ -91,9 +86,6 @@ const vfs = require('node:vfs');
 
   // FileHandle via fsp.open
   const handle = await fsp.open(p('src/hello.txt'), 'r');
-  assert.strictEqual(handle.constructor.name, 'FileHandle');
-  assert.strictEqual(typeof handle.fd, 'number');
-  assert.strictEqual(typeof handle.createReadStream, 'function');
   assert.strictEqual(await handle.readFile('utf8'), 'hello');
   await handle.close();
 

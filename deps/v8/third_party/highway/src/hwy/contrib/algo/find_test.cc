@@ -31,6 +31,14 @@
 #include "hwy/tests/test_util-inl.h"
 // clang-format on
 
+// If your project requires C++14 or later, you can ignore this and pass lambdas
+// directly to FindIf, without requiring an lvalue as we do here for C++11.
+#if __cplusplus < 201402L
+#define HWY_GENERIC_LAMBDA 0
+#else
+#define HWY_GENERIC_LAMBDA 1
+#endif
+
 HWY_BEFORE_NAMESPACE();
 namespace hwy {
 namespace HWY_NAMESPACE {
@@ -48,6 +56,24 @@ T Random(RandomState& rng) {
   }
   return ConvertScalarTo<T>(val);
 }
+
+// In C++14, we can instead define these as generic lambdas next to where they
+// are invoked.
+#if !HWY_GENERIC_LAMBDA
+
+class GreaterThan {
+ public:
+  GreaterThan(int val) : val_(val) {}
+  template <class D, class V>
+  Mask<D> operator()(D d, V v) const {
+    return Gt(v, Set(d, ConvertScalarTo<TFromD<D>>(val_)));
+  }
+
+ private:
+  int val_;
+};
+
+#endif  // !HWY_GENERIC_LAMBDA
 
 // Invokes Test (e.g. TestFind) with all arg combinations.
 template <class Test>
@@ -146,9 +172,13 @@ struct TestFindIf {
     const int min_val = IsSigned<T>() ? -9 : 0;
     // Includes out-of-range value 9 to test the not-found path.
     for (int val = min_val; val <= 9; ++val) {
-      const auto greater = [val](const auto d2, const auto v) HWY_ATTR {
-        return Gt(v, Set(d2, ConvertScalarTo<T>(val)));
+#if HWY_GENERIC_LAMBDA
+      const auto greater = [val](const auto d, const auto v) HWY_ATTR {
+        return Gt(v, Set(d, ConvertScalarTo<T>(val)));
       };
+#else
+      const GreaterThan greater(val);
+#endif
       const size_t actual = FindIf(d, in, count, greater);
       found_any |= actual < count;
       not_found_any |= actual == count;

@@ -24,9 +24,7 @@ namespace {
 
 class GCStackTest : public ::testing::Test {
  public:
-  GCStackTest() : stack_(std::make_unique<Stack>()) {
-    stack_->SetStackStart(v8::base::Stack::GetStackStart());
-  }
+  GCStackTest() : stack_(std::make_unique<Stack>()) { stack_->SetStackStart(); }
 
   Stack* GetStack() const { return stack_.get(); }
 

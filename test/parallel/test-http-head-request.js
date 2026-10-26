@@ -35,7 +35,6 @@ function test(headers) {
 
   server.listen(0, common.mustCall(function() {
     const request = http.request({
-      agent: false,
       port: this.address().port,
       method: 'HEAD',
       path: '/'

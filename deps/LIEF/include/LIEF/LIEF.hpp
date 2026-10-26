@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 
 #include <LIEF/Abstract.hpp>
 
-#include <LIEF/runtime.hpp>
 #include <LIEF/OAT.hpp>
 #include <LIEF/VDEX.hpp>
 #include <LIEF/ART.hpp>
@@ -36,7 +35,6 @@
 #include <LIEF/logging.hpp>
 #include <LIEF/platforms.hpp>
 #include <LIEF/debug_loc.hpp>
-#include <LIEF/DebugDeclOpt.hpp>
 
 
 #endif

@@ -6,23 +6,21 @@
       "url": "original_0.js",
       "content": null,
       "ignored": false,
-      "rootScopes": [
-        {
-          "start": {
-            "line": 0,
-            "column": 0
-          },
-          "end": {
-            "line": 10,
-            "column": 0
-          },
-          "name": null,
-          "kind": "global",
-          "isStackFrame": false,
-          "variables": [],
-          "children": []
-        }
-      ]
+      "scope": {
+        "start": {
+          "line": 0,
+          "column": 0
+        },
+        "end": {
+          "line": 10,
+          "column": 0
+        },
+        "name": null,
+        "kind": "global",
+        "isStackFrame": false,
+        "variables": [],
+        "children": []
+      }
     }
   ],
   "ranges": [
@@ -35,10 +33,7 @@
         "line": 0,
         "column": 10
       },
-      "definition": {
-        "source": 0,
-        "scope": 0
-      },
+      "definitionIndex": 0,
       "stackFrameType": "none",
       "callSite": null,
       "bindings": [],

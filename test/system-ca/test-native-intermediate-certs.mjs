@@ -11,8 +11,6 @@ if (!common.hasCrypto) {
   common.skip('requires crypto');
 }
 
-const { untrustedLeafErrorCode } = await import('../common/tls.js');
-
 // To run this test, the system needs to be configured to trust
 // the CA certificate first (which needs an interactive GUI approval, e.g. TouchID):
 // see the README.md in this folder for instructions on how to do this.
@@ -74,7 +72,7 @@ describe('use-system-ca', function() {
         if (common.isWindows) {
           assert.strictEqual(err.cause.code, 'UNABLE_TO_GET_ISSUER_CERT');
         } else {
-          assert.strictEqual(err.cause.code, untrustedLeafErrorCode);
+          assert.strictEqual(err.cause.code, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
         }
       }
     });

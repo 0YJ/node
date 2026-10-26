@@ -63,7 +63,7 @@ MaybeDirectHandle<Object> HasEnumerableProperty(
           DirectHandle<Object> prototype;
           ASSIGN_RETURN_ON_EXCEPTION(isolate, prototype,
                                      JSProxy::GetPrototype(proxy));
-          if (IsNull(*prototype)) {
+          if (IsNull(*prototype, isolate)) {
             return isolate->factory()->undefined_value();
           }
           // We already have a stack-check in JSProxy::GetPrototype.
@@ -76,14 +76,12 @@ MaybeDirectHandle<Object> HasEnumerableProperty(
         }
       }
       case LookupIterator::MODULE_NAMESPACE: {
-        // It triggers evaluation, because this access is like calling
-        // [[GetOwnProperty]] on deferred namespace object.
-        if (JSDeferredModuleNamespace::TriggersEvaluation(&it)) {
-          DirectHandle<JSDeferredModuleNamespace> holder =
-              it.GetHolder<JSDeferredModuleNamespace>();
-          JSDeferredModuleNamespace::EvaluateModuleSync(isolate, holder);
-          RETURN_EXCEPTION_IF_EXCEPTION(isolate);
+#ifdef DEBUG
+        DirectHandle<JSModuleNamespace> ns = it.GetHolder<JSModuleNamespace>();
+        if (IsJSDeferredModuleNamespace(*ns)) {
+          DCHECK_EQ(ns->module()->status(), Module::kEvaluated);
         }
+#endif
         continue;
       }
       case LookupIterator::STRING_LOOKUP_START_OBJECT:
@@ -140,7 +138,7 @@ RUNTIME_FUNCTION(Runtime_ForInHasProperty) {
   DirectHandle<Object> result;
   ASSIGN_RETURN_FAILURE_ON_EXCEPTION(
       isolate, result, HasEnumerableProperty(isolate, receiver, key));
-  return ReadOnlyRoots(isolate).boolean_value(!IsUndefined(*result));
+  return ReadOnlyRoots(isolate).boolean_value(!IsUndefined(*result, isolate));
 }
 
 }  // namespace internal

@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <string>
 #include <utility>
-
 #include "absl/status/status.h"
-#include "absl/types/source_location.h"
 #include "benchmark/benchmark.h"
 
 namespace {
@@ -36,35 +33,5 @@ void BM_CreateBad(benchmark::State& state) {
   }
 }
 BENCHMARK(BM_CreateBad);
-
-void BM_AppendSourceLocation(benchmark::State& state) {
-  for (auto _ : state) {
-    absl::Status s(absl::StatusCode::kInvalidArgument, "message");
-    benchmark::DoNotOptimize(s);
-    absl::Status s2(std::move(s), absl::SourceLocation::current());
-    benchmark::DoNotOptimize(s2);
-  }
-}
-BENCHMARK(BM_AppendSourceLocation);
-
-void BM_LongMessageRValue(benchmark::State& state) {
-  for (auto _ : state) {
-    std::string msg(100, 'X');
-    benchmark::DoNotOptimize(msg);
-    absl::Status s(absl::StatusCode::kInvalidArgument, std::move(msg));
-    benchmark::DoNotOptimize(s);
-  }
-}
-BENCHMARK(BM_LongMessageRValue);
-
-void BM_LongMessageRValueConvenienceFn(benchmark::State& state) {
-  for (auto _ : state) {
-    std::string msg(100, 'X');
-    benchmark::DoNotOptimize(msg);
-    absl::Status s = absl::InvalidArgumentError(std::move(msg));
-    benchmark::DoNotOptimize(s);
-  }
-}
-BENCHMARK(BM_LongMessageRValueConvenienceFn);
 
 }  // namespace

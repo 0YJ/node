@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -224,9 +224,8 @@ static int x509_name_ex_i2d(const ASN1_VALUE **val, unsigned char **out,
         ret = x509_name_canon(a);
         if (!ret)
             return -1;
-        a->modified = 0;
     }
-    ret = (int)a->bytes->length;
+    ret = a->bytes->length;
     if (out != NULL) {
         memcpy(*out, a->bytes->data, ret);
         *out += ret;
@@ -242,8 +241,8 @@ static int x509_name_encode(X509_NAME *a)
     } intname = {
         NULL
     };
-    int len, outlen;
-    unsigned char *p, *start;
+    int len;
+    unsigned char *p;
     STACK_OF(X509_NAME_ENTRY) *entries = NULL;
     X509_NAME_ENTRY *entry;
     int i, set = -1;
@@ -268,20 +267,16 @@ static int x509_name_encode(X509_NAME *a)
     }
     len = ASN1_item_ex_i2d(&intname.a, NULL,
         ASN1_ITEM_rptr(X509_NAME_INTERNAL), -1, -1);
-    if (len < 0)
-        goto err;
     if (!BUF_MEM_grow(a->bytes, len)) {
         ERR_raise(ERR_LIB_ASN1, ERR_R_BUF_LIB);
         goto err;
     }
     p = (unsigned char *)a->bytes->data;
-    start = p;
-    outlen = ASN1_item_ex_i2d(&intname.a,
+    ASN1_item_ex_i2d(&intname.a,
         &p, ASN1_ITEM_rptr(X509_NAME_INTERNAL), -1, -1);
-    if (outlen != len || p != start + len)
-        goto err;
     sk_STACK_OF_X509_NAME_ENTRY_pop_free(intname.s,
         local_sk_X509_NAME_ENTRY_free);
+    a->modified = 0;
     return len;
 cerr:
     ERR_raise(ERR_LIB_ASN1, ERR_R_CRYPTO_LIB);
@@ -315,15 +310,14 @@ static int x509_name_ex_print(BIO *out, const ASN1_VALUE **pval,
 
 static int x509_name_canon(X509_NAME *a)
 {
-    unsigned char *buf = NULL, *p;
+    unsigned char *p;
     STACK_OF(STACK_OF_X509_NAME_ENTRY) *intname;
     STACK_OF(X509_NAME_ENTRY) *entries = NULL;
     X509_NAME_ENTRY *entry, *tmpentry = NULL;
-    int i, set = -1, ret = 0, len, outlen;
+    int i, set = -1, ret = 0, len;
 
     OPENSSL_free(a->canon_enc);
     a->canon_enc = NULL;
-    a->canon_enclen = 0;
     /* Special case: empty X509_NAME => null encoding */
     if (sk_X509_NAME_ENTRY_num(a->entries) == 0) {
         a->canon_enclen = 0;
@@ -370,23 +364,19 @@ static int x509_name_canon(X509_NAME *a)
     len = i2d_name_canon(intname, NULL);
     if (len < 0)
         goto err;
-
-    buf = OPENSSL_malloc(len);
-    if (buf == NULL)
-        goto err;
-    p = buf;
-
-    outlen = i2d_name_canon(intname, &p);
-    if (outlen != len || p != buf + len)
-        goto err;
-
-    a->canon_enc = buf;
     a->canon_enclen = len;
-    buf = NULL;
+
+    p = OPENSSL_malloc(a->canon_enclen);
+    if (p == NULL)
+        goto err;
+
+    a->canon_enc = p;
+
+    i2d_name_canon(intname, &p);
+
     ret = 1;
 
 err:
-    OPENSSL_free(buf);
     X509_NAME_ENTRY_free(tmpentry);
     sk_STACK_OF_X509_NAME_ENTRY_pop_free(intname,
         local_sk_X509_NAME_ENTRY_pop_free);
@@ -414,10 +404,8 @@ static int asn1_string_canon(ASN1_STRING *out, const ASN1_STRING *in)
 
     out->type = V_ASN1_UTF8STRING;
     out->length = ASN1_STRING_to_UTF8(&out->data, in);
-    if (out->length < 0)
+    if (out->length == -1)
         return 0;
-    if (out->length == 0)
-        return 1;
 
     to = out->data;
     from = to;
@@ -474,7 +462,7 @@ static int asn1_string_canon(ASN1_STRING *out, const ASN1_STRING *in)
         }
     }
 
-    out->length = (int)(to - out->data);
+    out->length = to - out->data;
 
     return 1;
 }
@@ -528,7 +516,7 @@ int X509_NAME_print(BIO *bp, const X509_NAME *name, int obase)
     c = s;
     for (;;) {
         if (((*s == '/') && (ossl_isupper(s[1]) && ((s[2] == '=') || (ossl_isupper(s[2]) && (s[3] == '='))))) || (*s == '\0')) {
-            i = (int)(s - c);
+            i = s - c;
             if (BIO_write(bp, c, i) != i)
                 goto err;
             c = s + 1; /* skip following slash */

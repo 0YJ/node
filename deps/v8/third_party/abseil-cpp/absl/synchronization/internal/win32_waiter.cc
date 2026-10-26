@@ -52,14 +52,14 @@ class Win32Waiter::WinHelper {
 
   // The SRWLOCK and CONDITION_VARIABLE types must be trivially constructible
   // and destructible because we never call their constructors or destructors.
-  static_assert(std::is_trivially_constructible_v<SRWLOCK>,
+  static_assert(std::is_trivially_constructible<SRWLOCK>::value,
                 "The `SRWLOCK` type must be trivially constructible");
   static_assert(
-      std::is_trivially_constructible_v<CONDITION_VARIABLE>,
+      std::is_trivially_constructible<CONDITION_VARIABLE>::value,
       "The `CONDITION_VARIABLE` type must be trivially constructible");
-  static_assert(std::is_trivially_destructible_v<SRWLOCK>,
+  static_assert(std::is_trivially_destructible<SRWLOCK>::value,
                 "The `SRWLOCK` type must be trivially destructible");
-  static_assert(std::is_trivially_destructible_v<CONDITION_VARIABLE>,
+  static_assert(std::is_trivially_destructible<CONDITION_VARIABLE>::value,
                 "The `CONDITION_VARIABLE` type must be trivially destructible");
 };
 

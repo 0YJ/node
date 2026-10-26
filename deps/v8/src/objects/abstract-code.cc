@@ -10,7 +10,8 @@ namespace v8 {
 namespace internal {
 
 int AbstractCode::SourcePosition(Isolate* isolate, int offset) {
-  Tagged<Map> map_object = map();
+  PtrComprCageBase cage_base(isolate);
+  Tagged<Map> map_object = map(cage_base);
   if (InstanceTypeChecker::IsCode(map_object)) {
     return GetCode()->SourcePosition(offset);
   } else {
@@ -19,7 +20,8 @@ int AbstractCode::SourcePosition(Isolate* isolate, int offset) {
 }
 
 int AbstractCode::SourceStatementPosition(Isolate* isolate, int offset) {
-  Tagged<Map> map_object = map();
+  PtrComprCageBase cage_base(isolate);
+  Tagged<Map> map_object = map(cage_base);
   if (InstanceTypeChecker::IsCode(map_object)) {
     return GetCode()->SourceStatementPosition(offset);
   } else {
@@ -27,8 +29,8 @@ int AbstractCode::SourceStatementPosition(Isolate* isolate, int offset) {
   }
 }
 
-bool AbstractCode::is_context_specialized() {
-  Tagged<Map> map_object = map();
+bool AbstractCode::is_context_specialized(PtrComprCageBase cage_base) {
+  Tagged<Map> map_object = map(cage_base);
   if (InstanceTypeChecker::IsCode(map_object)) {
     return GetCode()->is_context_specialized();
   } else {
@@ -37,8 +39,8 @@ bool AbstractCode::is_context_specialized() {
   }
 }
 
-BytecodeOffset AbstractCode::osr_offset() {
-  Tagged<Map> map_object = map();
+BytecodeOffset AbstractCode::osr_offset(PtrComprCageBase cage_base) {
+  Tagged<Map> map_object = map(cage_base);
   if (InstanceTypeChecker::IsCode(map_object)) {
     return GetCode()->osr_offset();
   } else {

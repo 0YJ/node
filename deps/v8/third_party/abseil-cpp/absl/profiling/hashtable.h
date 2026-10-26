@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <string>
 
-#include "absl/base/config.h"
 #include "absl/container/internal/hashtablez_sampler.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/string_view.h"

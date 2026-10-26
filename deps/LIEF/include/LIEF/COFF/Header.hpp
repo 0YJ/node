@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,10 +32,11 @@ namespace COFF {
 /// `/bigobj` files
 class LIEF_API Header {
   public:
+
   enum class KIND {
     UNKNOWN = 0,
     REGULAR,
-    BIGOBJ,
+    BIGOBJ
   };
 
   /// The different architectures (mirrored from PE)
@@ -47,7 +48,8 @@ class LIEF_API Header {
 
   Header() = default;
   Header(KIND kind) :
-    kind_(kind) {}
+    kind_(kind)
+  {}
 
   Header& operator=(const Header&) = default;
   Header(const Header&) = default;
@@ -117,7 +119,8 @@ class LIEF_API Header {
 
   template<class T>
   const T* as() const {
-    static_assert(std::is_base_of<Header, T>::value, "Require Header inheritance");
+    static_assert(std::is_base_of<Header, T>::value,
+                  "Require Header inheritance");
     if (T::classof(this)) {
       return static_cast<const T*>(this);
     }

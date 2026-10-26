@@ -29,21 +29,11 @@ server.on('session', common.mustCall(function(session) {
     stream.on('error', common.mustCall((err) => {
       assert.strictEqual(err.code, 'ERR_HTTP2_STREAM_ABORTED');
     }));
-
-    // Every write dispatched before close must have its callback invoked.
-    let writes = 0;
-    let writeCallbacks = 0;
+    stream.resume();
     stream.on('data', function() {
-      writes++;
-      this.write(Buffer.alloc(1), () => {
-        writeCallbacks++;
-      });
+      this.write(Buffer.alloc(1));
       process.nextTick(() => client_stream.destroy());
     });
-    stream.on('close', common.mustCall(() => {
-      assert.strictEqual(writeCallbacks, writes);
-    }));
-    stream.resume();
   }));
 }));
 

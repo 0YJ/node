@@ -26,7 +26,6 @@
 #include <openssl/sha.h>
 #include <openssl/rand.h>
 #include <openssl/proverr.h>
-#include "internal/cryptlib.h"
 #include "prov/provider_ctx.h"
 #include "prov/implementations.h"
 #include "prov/securitycheck.h"
@@ -35,8 +34,7 @@
 #include "crypto/ecx.h"
 #include <openssl/hpke.h>
 #include "internal/hpke_util.h"
-#include "prov/eckem.h"
-#include "providers/implementations/kem/ecx_kem.inc"
+#include "eckem.h"
 
 #define MAX_ECX_KEYLEN X448_KEYLEN
 
@@ -132,15 +130,16 @@ static ECX_KEY *ecxkey_pubfromdata(PROV_ECX_CTX *ctx,
     const unsigned char *pubbuf, size_t pubbuflen)
 {
     ECX_KEY *ecx = NULL;
-    OSSL_PARAM pub;
+    OSSL_PARAM params[2], *p = params;
 
-    pub = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
+    *p++ = OSSL_PARAM_construct_octet_string(OSSL_PKEY_PARAM_PUB_KEY,
         (char *)pubbuf, pubbuflen);
+    *p = OSSL_PARAM_construct_end();
 
     ecx = ossl_ecx_key_new(ctx->libctx, ctx->recipient_key->type, 1, ctx->propq);
     if (ecx == NULL)
         return NULL;
-    if (ossl_ecx_key_fromdata(ecx, &pub, NULL, 0) <= 0) {
+    if (ossl_ecx_key_fromdata(ecx, params, 0) <= 0) {
         ossl_ecx_key_free(ecx);
         ecx = NULL;
     }
@@ -245,29 +244,32 @@ static int ecxkem_auth_decapsulate_init(void *vctx, void *vecx, void *vauthpub,
 static int ecxkem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_ECX_CTX *ctx = (PROV_ECX_CTX *)vctx;
-    struct ecxkem_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     int mode;
 
-    if (ctx == NULL || !ecxkem_set_ctx_params_decoder(params, &p))
+    if (ctx == NULL)
         return 0;
+    if (ossl_param_is_empty(params))
+        return 1;
 
-    if (p.ikme != NULL) {
+    p = OSSL_PARAM_locate_const(params, OSSL_KEM_PARAM_IKME);
+    if (p != NULL) {
         void *tmp = NULL;
         size_t tmplen = 0;
 
-        if (p.ikme->data != NULL && p.ikme->data_size != 0) {
-            if (!OSSL_PARAM_get_octet_string(p.ikme, &tmp, 0, &tmplen))
+        if (p->data != NULL && p->data_size != 0) {
+            if (!OSSL_PARAM_get_octet_string(p, &tmp, 0, &tmplen))
                 return 0;
         }
         OPENSSL_clear_free(ctx->ikm, ctx->ikmlen);
         ctx->ikm = tmp;
         ctx->ikmlen = tmplen;
     }
-
-    if (p.op != NULL) {
-        if (p.op->data_type != OSSL_PARAM_UTF8_STRING)
+    p = OSSL_PARAM_locate_const(params, OSSL_KEM_PARAM_OPERATION);
+    if (p != NULL) {
+        if (p->data_type != OSSL_PARAM_UTF8_STRING)
             return 0;
-        mode = ossl_eckem_modename2id(p.op->data);
+        mode = ossl_eckem_modename2id(p->data);
         if (mode == KEM_MODE_UNDEFINED)
             return 0;
         ctx->mode = mode;
@@ -275,10 +277,16 @@ static int ecxkem_set_ctx_params(void *vctx, const OSSL_PARAM params[])
     return 1;
 }
 
+static const OSSL_PARAM known_settable_ecxkem_ctx_params[] = {
+    OSSL_PARAM_utf8_string(OSSL_KEM_PARAM_OPERATION, NULL, 0),
+    OSSL_PARAM_octet_string(OSSL_KEM_PARAM_IKME, NULL, 0),
+    OSSL_PARAM_END
+};
+
 static const OSSL_PARAM *ecxkem_settable_ctx_params(ossl_unused void *vctx,
     ossl_unused void *provctx)
 {
-    return ecxkem_set_ctx_params_list;
+    return known_settable_ecxkem_ctx_params;
 }
 
 /*
@@ -477,8 +485,7 @@ static int derive_secret(PROV_ECX_CTX *ctx, unsigned char *secret,
     int auth = ctx->sender_authkey != NULL;
     size_t encodedkeylen = info->Npk;
 
-    if (!generate_ecxdhkm(privkey1, peerkey1, dhkm, sizeof(dhkm),
-            (unsigned int)encodedkeylen))
+    if (!generate_ecxdhkm(privkey1, peerkey1, dhkm, sizeof(dhkm), encodedkeylen))
         goto err;
     dhkmlen = encodedkeylen;
 
@@ -486,7 +493,7 @@ static int derive_secret(PROV_ECX_CTX *ctx, unsigned char *secret,
     if (auth) {
         if (!generate_ecxdhkm(privkey2, peerkey2,
                 dhkm + dhkmlen, sizeof(dhkm) - dhkmlen,
-                (unsigned int)encodedkeylen))
+                encodedkeylen))
             goto err;
         /* Get the public key of the auth sender in encoded form */
         sender_authpub = ecx_pubkey(ctx->sender_authkey);

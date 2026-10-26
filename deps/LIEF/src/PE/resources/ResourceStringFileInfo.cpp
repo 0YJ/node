@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,12 +25,11 @@
 #include "logging.hpp"
 #include "internal_utils.hpp"
 
+namespace LIEF {
+namespace PE {
 
-namespace LIEF::PE {
 
-
-result<ResourceStringFileInfo>
-    ResourceStringFileInfo::parse(BinaryStream& stream) {
+result<ResourceStringFileInfo> ResourceStringFileInfo::parse(BinaryStream& stream) {
   // typedef struct {
   //   WORD        wLength;
   //   WORD        wValueLength;
@@ -74,14 +73,15 @@ result<ResourceStringFileInfo>
     return make_error_code(lief_errors::corrupted);
   }
 
-  info.type(*wType).key(std::move(*szKey));
+  info
+    .type(*wType)
+    .key(std::move(*szKey));
 
   stream.align(sizeof(uint32_t));
   while (stream) {
     auto item = ResourceStringTable::parse(stream);
     if (!item) {
-      LIEF_WARN("Failed to parse StringFileInfo.Children[{}]",
-                info.children_.size());
+      LIEF_WARN("Can't parse StringFileInfo.Children[{}]", info.children_.size());
       break;
     }
     info.add_child(std::move(*item));
@@ -110,4 +110,5 @@ std::ostream& operator<<(std::ostream& os, const ResourceStringFileInfo& info) {
 }
 
 
+}
 }

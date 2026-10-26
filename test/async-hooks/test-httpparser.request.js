@@ -1,5 +1,3 @@
-// Flags: --expose-internals --no-warnings
-
 'use strict';
 
 const common = require('../common');
@@ -11,7 +9,7 @@ const { checkInvocations } = require('./hook-checks');
 const hooks = initHooks();
 hooks.enable();
 
-const { HTTPParser } = require('internal/http/common');
+const { HTTPParser } = require('_http_common');
 
 const REQUEST = HTTPParser.REQUEST;
 

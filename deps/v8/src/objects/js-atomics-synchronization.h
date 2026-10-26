@@ -13,13 +13,14 @@
 #include "src/objects/js-objects.h"
 #include "src/objects/js-struct.h"
 #include "src/objects/struct.h"
-#include "src/sandbox/external-pointer.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
 namespace v8 {
 namespace internal {
+
+#include "torque-generated/src/objects/js-atomics-synchronization-tq.inc"
 
 namespace detail {
 class WaiterQueueLockGuard;
@@ -34,22 +35,19 @@ using detail::WaiterQueueNode;
 // waiter queue head, used to manage the queue of waiting threads for both: the
 // mutex and the condition variable.
 
-V8_OBJECT class JSSynchronizationPrimitive : public AlwaysSharedSpaceJSObject {
-  V8_IT_ABSTRACT;
-
+class JSSynchronizationPrimitive
+    : public TorqueGeneratedJSSynchronizationPrimitive<
+          JSSynchronizationPrimitive, AlwaysSharedSpaceJSObject> {
  public:
+  // Synchronization only store raw data as state.
+  static constexpr int kEndOfTaggedFieldsOffset = JSObject::kHeaderSize;
   class BodyDescriptor;
 
   static void IsolateDeinit(Isolate* isolate);
   Tagged<Object> NumWaitersForTesting(Isolate* requester);
 
-  inline uint32_t state() const;
-  inline void set_state(uint32_t value);
-
+  TQ_OBJECT_CONSTRUCTORS(JSSynchronizationPrimitive)
   inline void SetNullWaiterQueueHead();
-
-  static const int kEndOfTaggedFieldsOffset;
-  static const int kHeaderSize;
 
  protected:
   using StateT = uint32_t;
@@ -91,6 +89,10 @@ V8_OBJECT class JSSynchronizationPrimitive : public AlwaysSharedSpaceJSObject {
   static bool TryLockWaiterQueueExplicit(std::atomic<StateT>* state,
                                          StateT& expected);
 
+  using TorqueGeneratedJSSynchronizationPrimitive<
+      JSSynchronizationPrimitive, AlwaysSharedSpaceJSObject>::state;
+  using TorqueGeneratedJSSynchronizationPrimitive<
+      JSSynchronizationPrimitive, AlwaysSharedSpaceJSObject>::set_state;
   using DequeueMatcher = std::function<bool(WaiterQueueNode*)>;
 
   static constexpr StateT kEmptyState = 0;
@@ -108,18 +110,7 @@ V8_OBJECT class JSSynchronizationPrimitive : public AlwaysSharedSpaceJSObject {
 #else
   inline WaiterQueueNode** waiter_queue_head_location() const;
 #endif
-
- public:
-  ExternalPointerMember<kWaiterQueueNodeTag> waiter_queue_head_;
-  std::atomic<uint32_t> state_;
-} V8_OBJECT_END;
-
-// Synchronization primitives only store raw data past JSObject; no tagged
-// fields beyond the inherited JSObject header.
-inline constexpr int JSSynchronizationPrimitive::kEndOfTaggedFieldsOffset =
-    AlwaysSharedSpaceJSObject::kHeaderSize;
-inline constexpr int JSSynchronizationPrimitive::kHeaderSize =
-    sizeof(JSSynchronizationPrimitive);
+};
 
 // A non-recursive mutex that is exposed to JS.
 //
@@ -171,11 +162,13 @@ inline constexpr int JSSynchronizationPrimitive::kHeaderSize =
 //    g. Release the Q bit and clear the L bit (set current state & ~0b100).
 //       (The W and Q bits must be set in a single CAS operation).
 //    h. If the list was not empty, notify the dequeued head.
-V8_OBJECT class JSAtomicsMutex : public JSSynchronizationPrimitive {
+class JSAtomicsMutex
+    : public TorqueGeneratedJSAtomicsMutex<JSAtomicsMutex,
+                                           JSSynchronizationPrimitive> {
  public:
   // A non-copyable wrapper class that provides an RAII-style mechanism for
   // owning the `JSAtomicsMutex`.
-  V8_OBJECT_INNER_CLASS class V8_NODISCARD LockGuardBase {
+  class V8_NODISCARD LockGuardBase {
    public:
     LockGuardBase(const LockGuardBase&) = delete;
     LockGuardBase& operator=(const LockGuardBase&) = delete;
@@ -190,27 +183,25 @@ V8_OBJECT class JSAtomicsMutex : public JSSynchronizationPrimitive {
     Isolate* isolate_;
     DirectHandle<JSAtomicsMutex> mutex_;
     bool locked_;
-  } V8_OBJECT_INNER_CLASS_END;
+  };
 
   // The mutex is attempted to be locked via `Lock` when a `LockGuard`
   // object is created, the lock will be acquired unless the timeout is reached.
   // If the mutex was acquired, then it is released when the `LockGuard` object
   // is destructed.
-  V8_OBJECT_INNER_CLASS class V8_NODISCARD LockGuard final
-      : public LockGuardBase {
+  class V8_NODISCARD LockGuard final : public LockGuardBase {
    public:
     inline LockGuard(Isolate* isolate, DirectHandle<JSAtomicsMutex> mutex,
                      std::optional<base::TimeDelta> timeout = std::nullopt);
-  } V8_OBJECT_INNER_CLASS_END;
+  };
 
   // The mutex is attempted to be locked via `TryLock` when a `TryLockGuard`
   // object is created. If the mutex was acquired, then it is released when the
   // `TryLockGuard` object is destructed.
-  V8_OBJECT_INNER_CLASS class V8_NODISCARD TryLockGuard final
-      : public LockGuardBase {
+  class V8_NODISCARD TryLockGuard final : public LockGuardBase {
    public:
     inline TryLockGuard(Isolate* isolate, DirectHandle<JSAtomicsMutex> mutex);
-  } V8_OBJECT_INNER_CLASS_END;
+  };
 
   DECL_PRINTER(JSAtomicsMutex)
   EXPORT_DECL_VERIFIER(JSAtomicsMutex)
@@ -231,8 +222,7 @@ V8_OBJECT class JSAtomicsMutex : public JSSynchronizationPrimitive {
   V8_EXPORT_PRIVATE static DirectHandle<JSObject> CreateResultObject(
       Isolate* isolate, DirectHandle<Object> value, bool success);
 
-  inline int32_t owner_thread_id() const;
-  inline void set_owner_thread_id(int32_t value);
+  TQ_OBJECT_CONSTRUCTORS(JSAtomicsMutex)
 
  private:
   friend class Factory;
@@ -286,13 +276,11 @@ V8_OBJECT class JSAtomicsMutex : public JSSynchronizationPrimitive {
                               std::optional<base::TimeDelta> timeout,
                               LockSlowPathWrapper slow_path_wrapper);
 
- public:
-  std::atomic<int32_t> owner_thread_id_;
-
-  static const int kHeaderSize;
-} V8_OBJECT_END;
-
-inline constexpr int JSAtomicsMutex::kHeaderSize = sizeof(JSAtomicsMutex);
+  using TorqueGeneratedJSAtomicsMutex<
+      JSAtomicsMutex, JSSynchronizationPrimitive>::owner_thread_id;
+  using TorqueGeneratedJSAtomicsMutex<
+      JSAtomicsMutex, JSSynchronizationPrimitive>::set_owner_thread_id;
+};
 
 // A condition variable that is exposed to JS.
 //
@@ -330,7 +318,9 @@ inline constexpr int JSAtomicsMutex::kHeaderSize = sizeof(JSAtomicsMutex);
 //    (The W and Q bits must be set in a single CAS operation).
 // 7. If the list was not empty, notify the dequeued head.
 
-V8_OBJECT class JSAtomicsCondition : public JSSynchronizationPrimitive {
+class JSAtomicsCondition
+    : public TorqueGeneratedJSAtomicsCondition<JSAtomicsCondition,
+                                               JSSynchronizationPrimitive> {
  public:
   DECL_PRINTER(JSAtomicsCondition)
   EXPORT_DECL_VERIFIER(JSAtomicsCondition)
@@ -347,6 +337,8 @@ V8_OBJECT class JSAtomicsCondition : public JSSynchronizationPrimitive {
                                            DirectHandle<JSAtomicsCondition> cv,
                                            uint32_t count);
 
+  TQ_OBJECT_CONSTRUCTORS(JSAtomicsCondition)
+
  private:
   friend class Factory;
 
@@ -359,17 +351,7 @@ V8_OBJECT class JSAtomicsCondition : public JSSynchronizationPrimitive {
                                   DirectHandle<JSAtomicsCondition> cv,
                                   std::atomic<StateT>* state,
                                   const DequeueAction& dequeue_action);
-
- public:
-#if TAGGED_SIZE_8_BYTES
-  uint32_t optional_padding_;
-#endif  // TAGGED_SIZE_8_BYTES
-
-  static const int kHeaderSize;
-} V8_OBJECT_END;
-
-inline constexpr int JSAtomicsCondition::kHeaderSize =
-    sizeof(JSAtomicsCondition);
+};
 
 }  // namespace internal
 }  // namespace v8

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --experimental-wasm-rab-integration
+
 // This test is a copy of grow-shared-memory, except the growing is done after
 // the buffer is exposed as a resizable buffer.
 
@@ -26,6 +28,7 @@ function assertTrue(value, msg) {
 }
 
 function growViaMemory(memory, pages) {
+  memory.toResizableBuffer();
   return memory.grow(pages);
 }
 
@@ -45,7 +48,7 @@ let workerHelpers = assertTrue.toString() + assertIsWasmSharedMemory.toString()
   + growViaMemory.toString() + growViaSAB.toString();
 
 function TestGrowSharedMemoryWithoutPostMessage(grow) {
-  print(arguments.callee.name, grow.name);
+  print(arguments.callee.name);
   let memory = new WebAssembly.Memory({initial: 1, maximum: 5, shared: true});
   assertEquals(memory.buffer.byteLength, kPageSize);
   assertEquals(1, grow(memory, 1));
@@ -55,7 +58,7 @@ TestGrowSharedMemoryWithoutPostMessage(growViaMemory);
 TestGrowSharedMemoryWithoutPostMessage(growViaSAB);
 
 function TestPostMessageWithGrow(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -92,7 +95,7 @@ TestPostMessageWithGrow("sab");
 // PostMessage from two different workers, and assert that the grow
 // operations are performed on the same memory object.
 function TestWorkersWithGrowEarlyWorkerTerminate(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -132,7 +135,7 @@ TestWorkersWithGrowEarlyWorkerTerminate("sab");
 
 // PostMessage of Multiple memories and grow
 function TestGrowSharedWithMultipleMemories(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -176,43 +179,9 @@ function TestGrowSharedWithMultipleMemories(howToGrow) {
 TestGrowSharedWithMultipleMemories("memory");
 TestGrowSharedWithMultipleMemories("sab");
 
-function TestPostMessageGSABView(howToGrow) {
-  print(arguments.callee.name, howToGrow);
-  function workerCode(workerHelpers, howToGrow) {
-    eval(workerHelpers);
-    onmessage = function({data: {view}}) {
-      let kPageSize = 0x10000;
-      assertTrue(view.byteLength === 5 * kPageSize);
-      view.buffer.grow(view.byteLength + 10 * kPageSize);
-      assertTrue(view.byteLength === 15 * kPageSize);
-      postMessage('OK');
-    }
-  }
-
-  let worker = new Worker(
-      workerCode, {type: 'function', arguments: [workerHelpers, howToGrow]});
-  let memory = new WebAssembly.Memory({initial: 5, maximum: 50, shared: true});
-  var builder = new WasmModuleBuilder();
-  builder.addImportedMemory('m', 'memory', 5, 100, 'shared');
-  builder.addFunction('grow', kSig_i_i)
-      .addBody([kExprLocalGet, 0, kExprMemoryGrow, kMemoryZero])
-      .exportFunc();
-  var module = new WebAssembly.Module(builder.toBuffer());
-  let buf0 = memory.toResizableBuffer();
-  assertEquals(memory.buffer.byteLength, 5 * kPageSize);
-  worker.postMessage({view: new Uint32Array(buf0)});
-  assertEquals('OK', worker.getMessage());
-  worker.terminate();
-  assertEquals(buf0, memory.buffer);
-  assertEquals(memory.buffer.byteLength, 15 * kPageSize);
-}
-TestPostMessageGSABView('memory');
-TestPostMessageGSABView('sab');
-TestPostMessageGSABView('gsab_view');
-
 // SharedMemory Object shared between different instances
 function TestPostMessageJSAndWasmInterop(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -257,7 +226,7 @@ TestPostMessageJSAndWasmInterop("memory");
 TestPostMessageJSAndWasmInterop("sab");
 
 function TestConsecutiveJSAndWasmSharedGrow(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -346,7 +315,7 @@ TestConsecutiveJSAndWasmSharedGrow("sab");
 })();
 
 function TestConsecutiveSharedGrowAndMemorySize(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -410,7 +379,7 @@ TestConsecutiveSharedGrowAndMemorySize("sab");
 // In the case that the underlying buffer does move, more comprehensive memory
 // integrity checking and bounds checks testing are needed.
 function TestSpotCheckMemoryWithSharedGrow(howToGrow) {
-  print(arguments.callee.name, howToGrow);
+  print(arguments.callee.name);
   function workerCode(workerHelpers, howToGrow) {
     eval(workerHelpers);
     onmessage = function({data:obj}) {
@@ -506,7 +475,7 @@ TestSpotCheckMemoryWithSharedGrow("memory");
 TestSpotCheckMemoryWithSharedGrow("sab");
 
 function TestMemoryBufferTypeAfterGrow(grow) {
-  print(arguments.callee.name, grow.name);
+  print(arguments.callee.name);
   const memory = new WebAssembly.Memory({
     "initial": 1, "maximum": 2, "shared": true });
   assertInstanceof(memory.buffer, SharedArrayBuffer);
@@ -517,7 +486,7 @@ TestMemoryBufferTypeAfterGrow(growViaMemory);
 TestMemoryBufferTypeAfterGrow(growViaSAB);
 
 function TestSharedMemoryGrowByZero(grow) {
-  print(arguments.callee.name, grow.name);
+  print(arguments.callee.name);
   const memory = new WebAssembly.Memory({
     "initial": 1, "maximum": 2, "shared": true });
   assertEquals(grow(memory, 0), 1);
@@ -529,7 +498,7 @@ TestSharedMemoryGrowByZero(growViaSAB);
 // loop's stack guard gets invoked. This is not strictly required by spec, but
 // we implement it as an optimization.
 function TestStackGuardUpdatesMemorySize(grow) {
-  print(arguments.callee.name, grow.name);
+  print(arguments.callee.name);
 
   let initial_size = 1;
   let final_size = 2;

@@ -9,9 +9,6 @@
 #include <memory>
 #include <vector>
 
-#include "include/cppgc/persistent.h"
-#include "include/v8-data.h"
-#include "include/v8-external.h"
 #include "include/v8-function.h"
 #include "src/heap/factory.h"
 #include "src/objects/foreign.h"
@@ -20,7 +17,6 @@
 #include "src/objects/objects-inl.h"
 #include "src/objects/promise-inl.h"
 #include "src/objects/visitors.h"
-#include "test/unittests/heap/heap-utils.h"
 #include "test/unittests/test-utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -29,20 +25,8 @@ namespace internal {
 
 using Closure = std::function<void()>;
 
-template <typename T>
-T* GetRaw(const cppgc::Persistent<T>& ptr) {
-  return ptr.Get();
-}
-
 void RunStdFunction(void* data) {
   std::unique_ptr<Closure> f(static_cast<Closure*>(data));
-  (*f)();
-}
-
-void RunStdFunctionWithData(v8::Local<v8::Data> data) {
-  v8::Local<v8::External> ext = data.As<v8::External>();
-  std::unique_ptr<Closure> f(
-      static_cast<Closure*>(ext->Value(v8::kExternalPointerTypeTagDefault)));
   (*f)();
 }
 
@@ -93,54 +77,24 @@ void DummyPromiseHook(PromiseHookType type, Local<Promise> promise,
 
 }  // namespace
 
-struct MicrotaskQueueTestConfig {
-  bool runtime_promise_hook;
-  bool callback_v8_data;
-};
-
-class MicrotaskQueueTest
-    : public TestWithNativeContextAndFinalizationRegistry,
-      public ::testing::WithParamInterface<MicrotaskQueueTestConfig> {
+class MicrotaskQueueTest : public TestWithNativeContextAndFinalizationRegistry,
+                           public ::testing::WithParamInterface<bool> {
  public:
   template <typename F>
   DirectHandle<Microtask> NewMicrotask(F&& f) {
-    auto* closure = new Closure(std::forward<F>(f));
     DirectHandle<Foreign> runner = factory()->NewForeign<kMicrotaskCallbackTag>(
-        GetParam().callback_v8_data
-            ? reinterpret_cast<Address>(&RunStdFunctionWithData)
-            : reinterpret_cast<Address>(&RunStdFunction));
-
-    DirectHandle<Object> data;
-    if (GetParam().callback_v8_data) {
-      v8::Local<v8::External> ext_data = v8::External::New(
-          v8_isolate(), closure, v8::kExternalPointerTypeTagDefault);
-      data = Utils::OpenDirectHandle(*ext_data);
-    } else {
-      data = factory()->NewForeign<kMicrotaskCallbackDataTag>(
-          reinterpret_cast<Address>(closure));
-    }
+        reinterpret_cast<Address>(&RunStdFunction));
+    DirectHandle<Foreign> data =
+        factory()->NewForeign<kMicrotaskCallbackDataTag>(
+            reinterpret_cast<Address>(new Closure(std::forward<F>(f))));
     return factory()->NewCallbackTask(runner, data);
-  }
-
-  template <typename F>
-  void Enqueue(F&& f) {
-    auto* closure = new Closure(std::forward<F>(f));
-    if (GetParam().callback_v8_data) {
-      v8::Local<v8::External> data = v8::External::New(
-          v8_isolate(), closure, v8::kExternalPointerTypeTagDefault);
-      microtask_queue()->EnqueueMicrotask(v8_isolate(), &RunStdFunctionWithData,
-                                          data);
-    } else {
-      microtask_queue()->EnqueueMicrotask(v8_isolate(), &RunStdFunction,
-                                          closure);
-    }
   }
 
   void SetUp() override {
     microtask_queue_ = MicrotaskQueue::New(isolate());
     native_context()->set_microtask_queue(isolate(), microtask_queue());
 
-    if (GetParam().runtime_promise_hook) {
+    if (GetParam()) {
       // Use a PromiseHook to switch the implementation to ResolvePromise
       // runtime, instead of ResolvePromise builtin.
       v8_isolate()->SetPromiseHook(&DummyPromiseHook);
@@ -154,7 +108,7 @@ class MicrotaskQueueTest
     }
   }
 
-  MicrotaskQueue* microtask_queue() const { return GetRaw(microtask_queue_); }
+  MicrotaskQueue* microtask_queue() const { return microtask_queue_.get(); }
 
   void ClearTestMicrotaskQueue() {
     context()->DetachGlobal();
@@ -167,7 +121,7 @@ class MicrotaskQueueTest
   }
 
  private:
-  cppgc::Persistent<MicrotaskQueue> microtask_queue_;
+  std::unique_ptr<MicrotaskQueue> microtask_queue_;
 };
 
 class RecordingVisitor : public RootVisitor {
@@ -193,38 +147,14 @@ TEST_P(MicrotaskQueueTest, EnqueueAndRun) {
   bool ran = false;
   EXPECT_EQ(0, microtask_queue()->capacity());
   EXPECT_EQ(0, microtask_queue()->size());
-  Enqueue([this, &ran] {
+  microtask_queue()->EnqueueMicrotask(*NewMicrotask([this, &ran] {
     EXPECT_FALSE(ran);
     ran = true;
     EXPECT_TRUE(microtask_queue()->HasMicrotasksSuppressions());
-  });
+  }));
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity, microtask_queue()->capacity());
   EXPECT_EQ(1, microtask_queue()->size());
   EXPECT_EQ(1, microtask_queue()->RunMicrotasks(isolate()));
-  EXPECT_TRUE(ran);
-  EXPECT_EQ(0, microtask_queue()->size());
-}
-
-// The public v8::MicrotaskQueue policy accessors control auto-running for
-// this queue, independently of Isolate::SetMicrotasksPolicy().
-TEST_P(MicrotaskQueueTest, SetMicrotasksPolicy) {
-  v8::MicrotaskQueue* api_queue = microtask_queue();
-  api_queue->SetMicrotasksPolicy(MicrotasksPolicy::kExplicit);
-  EXPECT_EQ(MicrotasksPolicy::kExplicit, api_queue->GetMicrotasksPolicy());
-  EXPECT_EQ(MicrotasksPolicy::kExplicit,
-            microtask_queue()->microtasks_policy());
-
-  bool ran = false;
-  Enqueue([&ran] { ran = true; });
-  // With kExplicit, completing a script run does not drain this queue.
-  RunJS("0");
-  EXPECT_FALSE(ran);
-  EXPECT_EQ(1, microtask_queue()->size());
-
-  // With kAuto it does.
-  api_queue->SetMicrotasksPolicy(MicrotasksPolicy::kAuto);
-  EXPECT_EQ(MicrotasksPolicy::kAuto, api_queue->GetMicrotasksPolicy());
-  RunJS("0");
   EXPECT_TRUE(ran);
   EXPECT_EQ(0, microtask_queue()->size());
 }
@@ -234,7 +164,8 @@ TEST_P(MicrotaskQueueTest, BufferGrowth) {
   int count = 0;
 
   // Enqueue and flush the queue first to have non-zero |start_|.
-  Enqueue([&count] { EXPECT_EQ(0, count++); });
+  microtask_queue()->EnqueueMicrotask(
+      *NewMicrotask([&count] { EXPECT_EQ(0, count++); }));
   EXPECT_EQ(1, microtask_queue()->RunMicrotasks(isolate()));
 
   EXPECT_LT(0, microtask_queue()->capacity());
@@ -243,13 +174,15 @@ TEST_P(MicrotaskQueueTest, BufferGrowth) {
 
   // Fill the queue with Microtasks.
   for (int i = 1; i <= MicrotaskQueue::kMinimumCapacity; ++i) {
-    Enqueue([&count, i] { EXPECT_EQ(i, count++); });
+    microtask_queue()->EnqueueMicrotask(
+        *NewMicrotask([&count, i] { EXPECT_EQ(i, count++); }));
   }
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity, microtask_queue()->capacity());
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity, microtask_queue()->size());
 
   // Add another to grow the ring buffer.
-  Enqueue([&] { EXPECT_EQ(MicrotaskQueue::kMinimumCapacity + 1, count++); });
+  microtask_queue()->EnqueueMicrotask(*NewMicrotask(
+      [&] { EXPECT_EQ(MicrotaskQueue::kMinimumCapacity + 1, count++); }));
 
   EXPECT_LT(MicrotaskQueue::kMinimumCapacity, microtask_queue()->capacity());
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity + 1, microtask_queue()->size());
@@ -260,12 +193,42 @@ TEST_P(MicrotaskQueueTest, BufferGrowth) {
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity + 2, count);
 }
 
+// MicrotaskQueue instances form a doubly linked list.
+TEST_P(MicrotaskQueueTest, InstanceChain) {
+  ClearTestMicrotaskQueue();
+
+  MicrotaskQueue* default_mtq = isolate()->default_microtask_queue();
+  ASSERT_TRUE(default_mtq);
+  EXPECT_EQ(default_mtq, default_mtq->next());
+  EXPECT_EQ(default_mtq, default_mtq->prev());
+
+  // Create two instances, and check their connection.
+  // The list contains all instances in the creation order, and the next of the
+  // last instance is the first instance:
+  //   default_mtq -> mtq1 -> mtq2 -> default_mtq.
+  std::unique_ptr<MicrotaskQueue> mtq1 = MicrotaskQueue::New(isolate());
+  std::unique_ptr<MicrotaskQueue> mtq2 = MicrotaskQueue::New(isolate());
+  EXPECT_EQ(default_mtq->next(), mtq1.get());
+  EXPECT_EQ(mtq1->next(), mtq2.get());
+  EXPECT_EQ(mtq2->next(), default_mtq);
+  EXPECT_EQ(default_mtq, mtq1->prev());
+  EXPECT_EQ(mtq1.get(), mtq2->prev());
+  EXPECT_EQ(mtq2.get(), default_mtq->prev());
+
+  // Deleted item should be also removed from the list.
+  mtq1 = nullptr;
+  EXPECT_EQ(default_mtq->next(), mtq2.get());
+  EXPECT_EQ(mtq2->next(), default_mtq);
+  EXPECT_EQ(default_mtq, mtq2->prev());
+  EXPECT_EQ(mtq2.get(), default_mtq->prev());
+}
+
 // Pending Microtasks in MicrotaskQueues are strong roots. Ensure they are
 // visited exactly once.
 TEST_P(MicrotaskQueueTest, VisitRoot) {
   // Ensure that the ring buffer has separate in-use region.
   for (int i = 0; i < MicrotaskQueue::kMinimumCapacity / 2 + 1; ++i) {
-    Enqueue([] {});
+    microtask_queue()->EnqueueMicrotask(*NewMicrotask([] {}));
   }
   EXPECT_EQ(MicrotaskQueue::kMinimumCapacity / 2 + 1,
             microtask_queue()->RunMicrotasks(isolate()));
@@ -472,9 +435,8 @@ TEST_P(MicrotaskQueueTest, DetachGlobal_ResolveThenableForeignThen) {
 
   {
     // Create a context with its own microtask queue.
-    cppgc::Persistent<MicrotaskQueue> sub_microtask_queue =
+    std::unique_ptr<MicrotaskQueue> sub_microtask_queue =
         MicrotaskQueue::New(isolate());
-
     sub_microtask_queue->set_microtasks_policy(MicrotasksPolicy::kExplicit);
     Local<v8::Context> sub_context = v8::Context::New(
         v8_isolate(),
@@ -482,7 +444,7 @@ TEST_P(MicrotaskQueueTest, DetachGlobal_ResolveThenableForeignThen) {
         /* global_template= */ MaybeLocal<ObjectTemplate>(),
         /* global_object= */ MaybeLocal<Value>(),
         /* internal_fields_deserializer= */ DeserializeInternalFieldsCallback(),
-        GetRaw(sub_microtask_queue));
+        sub_microtask_queue.get());
 
     {
       v8::Context::Scope scope(sub_context);
@@ -534,7 +496,7 @@ TEST_P(MicrotaskQueueTest, DetachGlobal_ResolveThenableNativeThen) {
 
   {
     // Create a context with its own microtask queue.
-    cppgc::Persistent<MicrotaskQueue> sub_microtask_queue =
+    std::unique_ptr<MicrotaskQueue> sub_microtask_queue =
         MicrotaskQueue::New(isolate());
     sub_microtask_queue->set_microtasks_policy(MicrotasksPolicy::kExplicit);
     Local<v8::Context> sub_context = v8::Context::New(
@@ -543,7 +505,7 @@ TEST_P(MicrotaskQueueTest, DetachGlobal_ResolveThenableNativeThen) {
         /* global_template= */ MaybeLocal<ObjectTemplate>(),
         /* global_object= */ MaybeLocal<Value>(),
         /* internal_fields_deserializer= */ DeserializeInternalFieldsCallback(),
-        GetRaw(sub_microtask_queue));
+        sub_microtask_queue.get());
 
     {
       v8::Context::Scope scope(sub_context);
@@ -714,6 +676,8 @@ TEST_P(MicrotaskQueueTest, DetachGlobal_InactiveHandler) {
   SetGlobalProperty("stale_handler", Utils::ToLocal(stale_handler));
   RunJS("%EnqueueMicrotask(stale_handler)");
 
+  v8_isolate()->EnqueueMicrotask(Utils::ToLocal(stale_handler));
+
   JSPromise::Fulfill(
       stale_promise,
       direct_handle(ReadOnlyRoots(isolate()).undefined_value(), isolate()));
@@ -733,26 +697,18 @@ TEST_P(MicrotaskQueueTest, MicrotasksScope) {
   {
     MicrotasksScope scope(v8_isolate(), microtask_queue(),
                           MicrotasksScope::kRunMicrotasks);
-    Enqueue([&ran]() {
+    microtask_queue()->EnqueueMicrotask(*NewMicrotask([&ran]() {
       EXPECT_FALSE(ran);
       ran = true;
-    });
+    }));
   }
   EXPECT_TRUE(ran);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    , MicrotaskQueueTest,
-    ::testing::Values(MicrotaskQueueTestConfig{false, false},
-                      MicrotaskQueueTestConfig{false, true},
-                      MicrotaskQueueTestConfig{true, false},
-                      MicrotaskQueueTestConfig{true, true}),
+    , MicrotaskQueueTest, ::testing::Values(false, true),
     [](const ::testing::TestParamInfo<MicrotaskQueueTest::ParamType>& info) {
-      std::string name =
-          info.param.runtime_promise_hook ? "runtime" : "builtin";
-      name += "_";
-      name += info.param.callback_v8_data ? "v8data" : "rawptr";
-      return name;
+      return info.param ? "runtime" : "builtin";
     });
 
 }  // namespace internal

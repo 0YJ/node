@@ -1,1 +1,1 @@
-#include "../../../config/openssl_lhash.h"
+#include "../../../config/lhash.h"

@@ -12,7 +12,6 @@
 import { hasQuic, skip, mustCall, mustCallAtLeast } from '../common/index.mjs';
 import assert from 'node:assert';
 import dc from 'node:diagnostics_channel';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -62,7 +61,7 @@ stream.onblocked = mustCallAtLeast(() => {
 // NGTCP2_ERR_STREAM_DATA_BLOCKED, triggering onblocked.
 stream.setBody(body);
 
-await dump(stream);
+for await (const _ of stream) { /* drain readable side */ } // eslint-disable-line no-unused-vars
 await stream.closed;
 await serverDone.promise;
 

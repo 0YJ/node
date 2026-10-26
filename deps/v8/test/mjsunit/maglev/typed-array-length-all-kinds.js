@@ -77,7 +77,7 @@ function test(f, size) {
 
   %OptimizeMaglevOnNextCall(f);
   assertEquals(size, f(size));
-  assertMaglevved(f);
+  assertTrue(isMaglevved(f));
 }
 
 test(test_int8, 100);

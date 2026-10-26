@@ -27,7 +27,7 @@ void RunI8x16UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       Int8UnOp expected_op) {
   WasmRunner<int32_t, int32_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int8_t* g = r.builder().AddGlobal<int8_t>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -38,9 +38,8 @@ void RunI8x16UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   FOR_INT8_INPUTS(x) {
     r.Call(x);
     int8_t expected = expected_op(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 16; i++) {
-      CHECK_EQ(expected, LANE(actual.to_i8x16(), i));
+      CHECK_EQ(expected, LANE(g, i));
     }
   }
 }
@@ -50,7 +49,7 @@ void RunI8x16BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        OpType expected_op) {
   WasmRunner<int32_t, T, T> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  T* g = r.builder().template AddGlobal<T>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -65,9 +64,8 @@ void RunI8x16BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     for (T y : compiler::ValueHelper::GetVector<T>()) {
       r.Call(x, y);
       T expected = expected_op(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 16; i++) {
-        CHECK_EQ(expected, static_cast<T>(LANE(actual.to_i8x16(), i)));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -86,8 +84,8 @@ void RunI8x16ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   for (int shift = 1; shift <= 8; shift++) {
     WasmRunner<int32_t, int32_t> r(execution_tier);
     int32_t* memory = r.builder().AddMemoryElems<int32_t>(1);
-    const WasmGlobal* g_imm = r.builder().AddGlobal(kWasmS128);
-    const WasmGlobal* g_mem = r.builder().AddGlobal(kWasmS128);
+    int8_t* g_imm = r.builder().AddGlobal<int8_t>(kWasmS128);
+    int8_t* g_mem = r.builder().AddGlobal<int8_t>(kWasmS128);
     uint8_t value = 0;
     uint8_t simd = r.AllocateLocal(kWasmS128);
     // Shift using an immediate, and shift using a value loaded from memory.
@@ -104,11 +102,9 @@ void RunI8x16ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT8_INPUTS(x) {
       r.Call(x);
       int8_t expected = expected_op(x, shift);
-      Simd128 actual_imm = r.builder().ReadGlobal(*g_imm).to_s128();
-      Simd128 actual_mem = r.builder().ReadGlobal(*g_mem).to_s128();
       for (int i = 0; i < 16; i++) {
-        CHECK_EQ(expected, LANE(actual_imm.to_i8x16(), i));
-        CHECK_EQ(expected, LANE(actual_mem.to_i8x16(), i));
+        CHECK_EQ(expected, LANE(g_imm, i));
+        CHECK_EQ(expected, LANE(g_mem, i));
       }
     }
   }
@@ -139,7 +135,7 @@ void RunI16x8UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       Int16UnOp expected_op) {
   WasmRunner<int32_t, int32_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int16_t* g = r.builder().AddGlobal<int16_t>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -150,9 +146,8 @@ void RunI16x8UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   FOR_INT16_INPUTS(x) {
     r.Call(x);
     int16_t expected = expected_op(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 8; i++) {
-      CHECK_EQ(expected, LANE(actual.to_i16x8(), i));
+      CHECK_EQ(expected, LANE(g, i));
     }
   }
 }
@@ -162,7 +157,7 @@ void RunI16x8BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        OpType expected_op) {
   WasmRunner<int32_t, T, T> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  T* g = r.builder().template AddGlobal<T>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -177,9 +172,8 @@ void RunI16x8BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     for (T y : compiler::ValueHelper::GetVector<T>()) {
       r.Call(x, y);
       T expected = expected_op(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 8; i++) {
-        CHECK_EQ(expected, static_cast<T>(LANE(actual.to_i16x8(), i)));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -197,8 +191,8 @@ void RunI16x8ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   for (int shift = 1; shift <= 16; shift++) {
     WasmRunner<int32_t, int32_t> r(execution_tier);
     int32_t* memory = r.builder().AddMemoryElems<int32_t>(1);
-    const WasmGlobal* g_imm = r.builder().AddGlobal(kWasmS128);
-    const WasmGlobal* g_mem = r.builder().AddGlobal(kWasmS128);
+    int16_t* g_imm = r.builder().AddGlobal<int16_t>(kWasmS128);
+    int16_t* g_mem = r.builder().AddGlobal<int16_t>(kWasmS128);
     uint8_t value = 0;
     uint8_t simd = r.AllocateLocal(kWasmS128);
     // Shift using an immediate, and shift using a value loaded from memory.
@@ -215,11 +209,9 @@ void RunI16x8ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT16_INPUTS(x) {
       r.Call(x);
       int16_t expected = expected_op(x, shift);
-      Simd128 actual_imm = r.builder().ReadGlobal(*g_imm).to_s128();
-      Simd128 actual_mem = r.builder().ReadGlobal(*g_mem).to_s128();
       for (int i = 0; i < 8; i++) {
-        CHECK_EQ(expected, LANE(actual_imm.to_i16x8(), i));
-        CHECK_EQ(expected, LANE(actual_mem.to_i16x8(), i));
+        CHECK_EQ(expected, LANE(g_imm, i));
+        CHECK_EQ(expected, LANE(g_mem, i));
       }
     }
   }
@@ -250,7 +242,7 @@ void RunI32x4UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       Int32UnOp expected_op) {
   WasmRunner<int32_t, int32_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int32_t* g = r.builder().AddGlobal<int32_t>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -261,9 +253,8 @@ void RunI32x4UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   FOR_INT32_INPUTS(x) {
     r.Call(x);
     int32_t expected = expected_op(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 4; i++) {
-      CHECK_EQ(expected, LANE(actual.to_i32x4(), i));
+      CHECK_EQ(expected, LANE(g, i));
     }
   }
 }
@@ -272,7 +263,7 @@ void RunI32x4BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        Int32BinOp expected_op) {
   WasmRunner<int32_t, int32_t, int32_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int32_t* g = r.builder().AddGlobal<int32_t>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -287,9 +278,8 @@ void RunI32x4BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT32_INPUTS(y) {
       r.Call(x, y);
       int32_t expected = expected_op(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 4; i++) {
-        CHECK_EQ(expected, LANE(actual.to_i32x4(), i));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -301,8 +291,8 @@ void RunI32x4ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   for (int shift = 1; shift <= 32; shift++) {
     WasmRunner<int32_t, int32_t> r(execution_tier);
     int32_t* memory = r.builder().AddMemoryElems<int32_t>(1);
-    const WasmGlobal* g_imm = r.builder().AddGlobal(kWasmS128);
-    const WasmGlobal* g_mem = r.builder().AddGlobal(kWasmS128);
+    int32_t* g_imm = r.builder().AddGlobal<int32_t>(kWasmS128);
+    int32_t* g_mem = r.builder().AddGlobal<int32_t>(kWasmS128);
     uint8_t value = 0;
     uint8_t simd = r.AllocateLocal(kWasmS128);
     // Shift using an immediate, and shift using a value loaded from memory.
@@ -319,11 +309,9 @@ void RunI32x4ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT32_INPUTS(x) {
       r.Call(x);
       int32_t expected = expected_op(x, shift);
-      Simd128 actual_imm = r.builder().ReadGlobal(*g_imm).to_s128();
-      Simd128 actual_mem = r.builder().ReadGlobal(*g_mem).to_s128();
       for (int i = 0; i < 4; i++) {
-        CHECK_EQ(expected, LANE(actual_imm.to_i32x4(), i));
-        CHECK_EQ(expected, LANE(actual_mem.to_i32x4(), i));
+        CHECK_EQ(expected, LANE(g_imm, i));
+        CHECK_EQ(expected, LANE(g_mem, i));
       }
     }
   }
@@ -333,7 +321,7 @@ void RunI64x2UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       Int64UnOp expected_op) {
   WasmRunner<int32_t, int64_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int64_t* g = r.builder().AddGlobal<int64_t>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -344,9 +332,8 @@ void RunI64x2UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   FOR_INT64_INPUTS(x) {
     r.Call(x);
     int64_t expected = expected_op(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 2; i++) {
-      CHECK_EQ(expected, LANE(actual.to_i64x2(), i));
+      CHECK_EQ(expected, LANE(g, i));
     }
   }
 }
@@ -355,7 +342,7 @@ void RunI64x2BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        Int64BinOp expected_op) {
   WasmRunner<int32_t, int64_t, int64_t> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int64_t* g = r.builder().AddGlobal<int64_t>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -370,9 +357,8 @@ void RunI64x2BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT64_INPUTS(y) {
       r.Call(x, y);
       int64_t expected = expected_op(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 2; i++) {
-        CHECK_EQ(expected, LANE(actual.to_i64x2(), i));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -384,8 +370,8 @@ void RunI64x2ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
   for (int shift = 1; shift <= 64; shift++) {
     WasmRunner<int32_t, int64_t> r(execution_tier);
     int32_t* memory = r.builder().AddMemoryElems<int32_t>(1);
-    const WasmGlobal* g_imm = r.builder().AddGlobal(kWasmS128);
-    const WasmGlobal* g_mem = r.builder().AddGlobal(kWasmS128);
+    int64_t* g_imm = r.builder().AddGlobal<int64_t>(kWasmS128);
+    int64_t* g_mem = r.builder().AddGlobal<int64_t>(kWasmS128);
     uint8_t value = 0;
     uint8_t simd = r.AllocateLocal(kWasmS128);
     // Shift using an immediate, and shift using a value loaded from memory.
@@ -402,11 +388,9 @@ void RunI64x2ShiftOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     FOR_INT64_INPUTS(x) {
       r.Call(x);
       int64_t expected = expected_op(x, shift);
-      Simd128 actual_imm = r.builder().ReadGlobal(*g_imm).to_s128();
-      Simd128 actual_mem = r.builder().ReadGlobal(*g_mem).to_s128();
       for (int i = 0; i < 2; i++) {
-        CHECK_EQ(expected, LANE(actual_imm.to_i64x2(), i));
-        CHECK_EQ(expected, LANE(actual_mem.to_i64x2(), i));
+        CHECK_EQ(expected, LANE(g_imm, i));
+        CHECK_EQ(expected, LANE(g_mem, i));
       }
     }
   }
@@ -466,7 +450,7 @@ void RunF16x8UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       HalfUnOp expected_op, bool exact) {
   WasmRunner<int32_t, float> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  uint16_t* g = r.builder().AddGlobal<uint16_t>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -481,10 +465,9 @@ void RunF16x8UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     uint16_t expected = expected_op(fp16_ieee_from_fp32_value(x));
     if (!PlatformCanRepresent(expected)) continue;
     r.Call(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 8; i++) {
-      uint16_t actual_lane = LANE(actual.to_i16x8(), i);
-      CheckFloat16LaneResult(x, x, expected, actual_lane, exact);
+      uint16_t actual = LANE(g, i);
+      CheckFloat16LaneResult(x, x, expected, actual, exact);
     }
   }
 }
@@ -493,7 +476,7 @@ void RunF16x8BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        HalfBinOp expected_op) {
   WasmRunner<int32_t, float, float> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  uint16_t* g = r.builder().AddGlobal<uint16_t>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -512,10 +495,9 @@ void RunF16x8BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                                       fp16_ieee_from_fp32_value(y));
       if (!PlatformCanRepresent(expected)) continue;
       r.Call(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 8; i++) {
-        uint16_t actual_lane = LANE(actual.to_i16x8(), i);
-        CheckFloat16LaneResult(x, y, expected, actual_lane, true /* exact */);
+        uint16_t actual = LANE(g, i);
+        CheckFloat16LaneResult(x, y, expected, actual, true /* exact */);
       }
     }
   }
@@ -525,7 +507,7 @@ void RunF16x8CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                            HalfCompareOp expected_op) {
   WasmRunner<int32_t, float, float> r(execution_tier);
   // Set up global to hold mask output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int16_t* g = r.builder().AddGlobal<int16_t>(kWasmS128);
   // Build fn to splat test values, perform compare op, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -545,9 +527,8 @@ void RunF16x8CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       r.Call(x, y);
       int16_t expected = expected_op(fp16_ieee_from_fp32_value(x),
                                      fp16_ieee_from_fp32_value(y));
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 8; i++) {
-        CHECK_EQ(expected, LANE(actual.to_i16x8(), i));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -603,7 +584,7 @@ void RunF32x4UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       FloatUnOp expected_op, bool exact) {
   WasmRunner<int32_t, float> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  float* g = r.builder().AddGlobal<float>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -622,10 +603,9 @@ void RunF32x4UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
 #endif
     if (!PlatformCanRepresent(expected)) continue;
     r.Call(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 4; i++) {
-      float actual_lane = LANE(actual.to_f32x4(), i);
-      CheckFloatResult(x, x, expected, actual_lane, exact);
+      float actual = LANE(g, i);
+      CheckFloatResult(x, x, expected, actual, exact);
     }
   }
 
@@ -637,10 +617,9 @@ void RunF32x4UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     float expected = expected_op(x);
     if (!PlatformCanRepresent(expected)) continue;
     r.Call(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 4; i++) {
-      float actual_lane = LANE(actual.to_f32x4(), i);
-      CheckFloatResult(x, x, expected, actual_lane, exact);
+      float actual = LANE(g, i);
+      CheckFloatResult(x, x, expected, actual, exact);
     }
   }
 }
@@ -664,7 +643,7 @@ void RunF32x4BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        FloatBinOp expected_op) {
   WasmRunner<int32_t, float, float> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  float* g = r.builder().AddGlobal<float>(kWasmS128);
   // Build fn to splat test values, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -683,10 +662,9 @@ void RunF32x4BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       float expected = expected_op(x, y);
       if (!PlatformCanRepresent(expected)) continue;
       r.Call(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 4; i++) {
-        float actual_lane = LANE(actual.to_f32x4(), i);
-        CheckFloatResult(x, y, expected, actual_lane, true /* exact */);
+        float actual = g[i];
+        CheckFloatResult(x, y, expected, actual, true /* exact */);
       }
     }
   }
@@ -701,10 +679,9 @@ void RunF32x4BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       float expected = expected_op(x, y);
       if (!PlatformCanRepresent(expected)) continue;
       r.Call(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 4; i++) {
-        float actual_lane = LANE(actual.to_f32x4(), i);
-        CheckFloatResult(x, y, expected, actual_lane, true /* exact */);
+        float actual = LANE(g, i);
+        CheckFloatResult(x, y, expected, actual, true /* exact */);
       }
     }
   }
@@ -714,7 +691,7 @@ void RunF32x4CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                            FloatCompareOp expected_op) {
   WasmRunner<int32_t, float, float> r(execution_tier);
   // Set up global to hold mask output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int32_t* g = r.builder().AddGlobal<int32_t>(kWasmS128);
   // Build fn to splat test values, perform compare op, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -733,9 +710,8 @@ void RunF32x4CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       if (!PlatformCanRepresent(diff)) continue;
       r.Call(x, y);
       int32_t expected = expected_op(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 4; i++) {
-        CHECK_EQ(expected, LANE(actual.to_i32x4(), i));
+        CHECK_EQ(expected, LANE(g, i));
       }
     }
   }
@@ -790,7 +766,7 @@ void RunF64x2UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                       DoubleUnOp expected_op, bool exact) {
   WasmRunner<int32_t, double> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  double* g = r.builder().AddGlobal<double>(kWasmS128);
   // Build fn to splat test value, perform unop, and write the result.
   uint8_t value = 0;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -809,10 +785,9 @@ void RunF64x2UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
 #endif
     if (!PlatformCanRepresent(expected)) continue;
     r.Call(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 2; i++) {
-      double actual_lane = LANE(actual.to_f64x2(), i);
-      CheckDoubleResult(x, x, expected, actual_lane, exact);
+      double actual = LANE(g, i);
+      CheckDoubleResult(x, x, expected, actual, exact);
     }
   }
 
@@ -824,10 +799,9 @@ void RunF64x2UnOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
     double expected = expected_op(x);
     if (!PlatformCanRepresent(expected)) continue;
     r.Call(x);
-    Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
     for (int i = 0; i < 2; i++) {
-      double actual_lane = LANE(actual.to_f64x2(), i);
-      CheckDoubleResult(x, x, expected, actual_lane, exact);
+      double actual = LANE(g, i);
+      CheckDoubleResult(x, x, expected, actual, exact);
     }
   }
 }
@@ -836,7 +810,7 @@ void RunF64x2BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                        DoubleBinOp expected_op) {
   WasmRunner<int32_t, double, double> r(execution_tier);
   // Global to hold output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  double* g = r.builder().AddGlobal<double>(kWasmS128);
   // Build fn to splat test value, perform binop, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -855,10 +829,9 @@ void RunF64x2BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       double expected = expected_op(x, y);
       if (!PlatformCanRepresent(expected)) continue;
       r.Call(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 2; i++) {
-        double actual_lane = LANE(actual.to_f64x2(), i);
-        CheckDoubleResult(x, y, expected, actual_lane, true /* exact */);
+        double actual = LANE(g, i);
+        CheckDoubleResult(x, y, expected, actual, true /* exact */);
       }
     }
   }
@@ -872,10 +845,9 @@ void RunF64x2BinOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       if (!PlatformCanRepresent(expected)) continue;
       if (ShouldSkipTestingConstants(opcode, x, y)) continue;
       r.Call(x, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
       for (int i = 0; i < 2; i++) {
-        double actual_lane = LANE(actual.to_f64x2(), i);
-        CheckDoubleResult(x, y, expected, actual_lane, true /* exact */);
+        double actual = LANE(g, i);
+        CheckDoubleResult(x, y, expected, actual, true /* exact */);
       }
     }
   }
@@ -885,7 +857,7 @@ void RunF64x2CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
                            DoubleCompareOp expected_op) {
   WasmRunner<int32_t, double, double> r(execution_tier);
   // Set up global to hold mask output.
-  const WasmGlobal* g = r.builder().AddGlobal(kWasmS128);
+  int64_t* g = r.builder().AddGlobal<int64_t>(kWasmS128);
   // Build fn to splat test values, perform compare op, and write the result.
   uint8_t value1 = 0, value2 = 1;
   uint8_t temp1 = r.AllocateLocal(kWasmS128);
@@ -910,9 +882,8 @@ void RunF64x2CompareOpTest(TestExecutionTier execution_tier, WasmOpcode opcode,
       r.Call(x, y);
       int64_t expected0 = expected_op(x, y);
       int64_t expected1 = expected_op(y, y);
-      Simd128 actual = r.builder().ReadGlobal(*g).to_s128();
-      CHECK_EQ(expected0, LANE(actual.to_i64x2(), 0));
-      CHECK_EQ(expected1, LANE(actual.to_i64x2(), 1));
+      CHECK_EQ(expected0, LANE(g, 0));
+      CHECK_EQ(expected1, LANE(g, 1));
     }
   }
 }
@@ -1913,8 +1884,8 @@ template void RunF32x8ConvertI32x8RevecTest<uint32_t>(WasmOpcode);
 template void RunF32x8ConvertI32x8RevecTest<int32_t>(WasmOpcode);
 
 template <typename NarrowIntType, typename WideIntType>
-void RunIntExtensionRevecTest(WasmOpcode opcode_low, WasmOpcode opcode_high,
-                              WasmOpcode splat_op) {
+void RunIntSignExtensionRevecTest(WasmOpcode opcode_low, WasmOpcode opcode_high,
+                                  WasmOpcode splat_op) {
   EXPERIMENTAL_FLAG_SCOPE(revectorize);
   if (!CpuFeatures::IsSupported(AVX2)) return;
   WasmRunner<int32_t, int32_t> r(TestExecutionTier::kTurbofan);
@@ -1952,21 +1923,24 @@ void RunIntExtensionRevecTest(WasmOpcode opcode_low, WasmOpcode opcode_high,
 }
 
 // Explicit instantiations of uses.
-template void RunIntExtensionRevecTest<int16_t, int32_t>(WasmOpcode, WasmOpcode,
-                                                         WasmOpcode);
-template void RunIntExtensionRevecTest<uint16_t, uint32_t>(WasmOpcode,
-                                                           WasmOpcode,
-                                                           WasmOpcode);
-template void RunIntExtensionRevecTest<int32_t, int64_t>(WasmOpcode, WasmOpcode,
-                                                         WasmOpcode);
-template void RunIntExtensionRevecTest<uint32_t, uint64_t>(WasmOpcode,
-                                                           WasmOpcode,
-                                                           WasmOpcode);
-template void RunIntExtensionRevecTest<int8_t, int16_t>(WasmOpcode, WasmOpcode,
-                                                        WasmOpcode);
-template void RunIntExtensionRevecTest<uint8_t, uint16_t>(WasmOpcode,
-                                                          WasmOpcode,
-                                                          WasmOpcode);
+template void RunIntSignExtensionRevecTest<int16_t, int32_t>(WasmOpcode,
+                                                             WasmOpcode,
+                                                             WasmOpcode);
+template void RunIntSignExtensionRevecTest<uint16_t, uint32_t>(WasmOpcode,
+                                                               WasmOpcode,
+                                                               WasmOpcode);
+template void RunIntSignExtensionRevecTest<int32_t, int64_t>(WasmOpcode,
+                                                             WasmOpcode,
+                                                             WasmOpcode);
+template void RunIntSignExtensionRevecTest<uint32_t, uint64_t>(WasmOpcode,
+                                                               WasmOpcode,
+                                                               WasmOpcode);
+template void RunIntSignExtensionRevecTest<int8_t, int16_t>(WasmOpcode,
+                                                            WasmOpcode,
+                                                            WasmOpcode);
+template void RunIntSignExtensionRevecTest<uint8_t, uint16_t>(WasmOpcode,
+                                                              WasmOpcode,
+                                                              WasmOpcode);
 
 template <typename S, typename T>
 void RunIntToIntNarrowingRevecTest(WasmOpcode opcode) {

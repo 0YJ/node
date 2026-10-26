@@ -126,7 +126,7 @@ class ProgressIndicator(object):
     if failure.output.stdout:
       output += ["--- stdout ---"]
       output += [failure.output.stdout.strip()]
-    output += ["Command: %s" % failure.test.GetFailureCommand(failure.command)]
+    output += ["Command: %s" % EscapeCommand(failure.command)]
     if failure.HasCrashed():
       output += ["--- %s ---" % PrintCrashed(failure.output.exit_code)]
     if failure.HasTimedOut():
@@ -151,12 +151,6 @@ class ProgressIndicator(object):
   def Run(self, tasks) -> Dict:
     self.Starting()
     threads = []
-    # Flag the shutdown from the signal handler itself so that workers whose
-    # child died from the same ctrl-c do not report it as a failure first.
-    def on_sigint(signum, frame):
-      self.shutdown_event.set()
-      raise KeyboardInterrupt
-    previous_handler = signal.signal(signal.SIGINT, on_sigint)
     # Spawn N-1 threads and then use this thread as the last one.
     # That way -j1 avoids threading altogether which is a nice fallback
     # in case of threading problems.
@@ -178,8 +172,6 @@ class ProgressIndicator(object):
       self.shutdown_event.set()
       # ...and then reraise the exception to bail out
       raise
-    finally:
-      signal.signal(signal.SIGINT, previous_handler)
     self.Done()
     return {
       'allPassed': not self.failed and not self.shutdown_event.is_set(),
@@ -368,7 +360,9 @@ class TapProgressIndicator(SimpleProgressIndicator):
     # Print test name as (for example) "parallel/test-assert".  Tests that are
     # scraped from the addons documentation are all named test.js, making it
     # hard to decipher what test is running when only the filename is printed.
-    command = output.test.GetReportingName(output.command)
+    prefix = abspath(join(dirname(__file__), '../test')) + os.sep
+    command = output.command[-1]
+    command = NormalizePath(command, prefix)
 
     if output.UnexpectedOutput():
       status_line = 'not ok %i %s' % (self._done, command)
@@ -431,7 +425,9 @@ class DeoptsCheckProgressIndicator(SimpleProgressIndicator):
     # Print test name as (for example) "parallel/test-assert".  Tests that are
     # scraped from the addons documentation are all named test.js, making it
     # hard to decipher what test is running when only the filename is printed.
-    command = output.test.GetReportingName(output.command)
+    prefix = abspath(join(dirname(__file__), '../test')) + os.sep
+    command = output.command[-1]
+    command = NormalizePath(command, prefix)
 
     stdout = output.output.stdout.strip()
     printed_file = False
@@ -477,7 +473,7 @@ class CompactProgressIndicator(ProgressIndicator):
       stderr = output.output.stderr.strip()
       if len(stderr):
         print(self.templates['stderr'] % stderr)
-      print("Command: %s" % output.test.GetFailureCommand(output.command))
+      print("Command: %s" % EscapeCommand(output.command))
       if output.HasCrashed():
         print("--- %s ---" % PrintCrashed(output.output.exit_code))
       if output.HasTimedOut():
@@ -576,13 +572,6 @@ class TestCase(object):
     self.max_virtual_memory = None
     self.serial_id = 0
     self.thread_id = 0
-
-  def GetReportingName(self, command):
-    prefix = abspath(join(dirname(__file__), '../test')) + os.sep
-    return NormalizePath(command[-1], prefix)
-
-  def GetFailureCommand(self, command):
-    return EscapeCommand(command)
 
   def IsNegative(self):
     return self.context.expect_fail
@@ -688,6 +677,10 @@ def KillProcessWithID(pid, signal_to_send=signal.SIGTERM):
     os.kill(pid, signal_to_send)
 
 
+MAX_SLEEP_TIME = 0.1
+INITIAL_SLEEP_TIME = 0.0001
+SLEEP_TIME_FACTOR = 1.25
+
 SEM_INVALID_VALUE = -1
 SEM_NOGPFAULTERRORBOX = 0x0002 # Microsoft Platform SDK WinBase.h
 
@@ -730,28 +723,28 @@ def RunProcess(context, timeout, args, **rest):
   )
   if utils.IsWindows() and context.suppress_dialogs and prev_error_mode != SEM_INVALID_VALUE:
     Win32SetErrorMode(prev_error_mode)
-  # Block in wait() instead of polling: a timer thread delivers the kill if
-  # the process crosses the timeout, and wait() then returns the exit code.
+  # Compute the end time - if the process crosses this limit we
+  # consider it timed out.
+  if timeout is None: end_time = None
+  else: end_time = time.time() + timeout
   timed_out = False
-  if timeout is None:
-    exit_code = process.wait()
-  else:
-    def on_timeout():
-      nonlocal timed_out
-      if process.returncode is not None:
-        return
-      timed_out = True
-      try:
-        KillTimedOutProcess(context, process.pid)
-      except OSError:
-        pass
-    timer = threading.Timer(timeout, on_timeout)
-    timer.daemon = True
-    timer.start()
-    try:
+  # Repeatedly check the exit code from the process in a
+  # loop and keep track of whether or not it times out.
+  exit_code = None
+  sleep_time = INITIAL_SLEEP_TIME
+
+  while exit_code is None:
+    if (not end_time is None) and (time.time() >= end_time):
+      # Kill the process and wait for it to exit.
+      KillTimedOutProcess(context, process.pid)
       exit_code = process.wait()
-    finally:
-      timer.cancel()
+      timed_out = True
+    else:
+      exit_code = process.poll()
+      time.sleep(sleep_time)
+      sleep_time = sleep_time * SLEEP_TIME_FACTOR
+      if sleep_time > MAX_SLEEP_TIME:
+        sleep_time = MAX_SLEEP_TIME
   return (process, exit_code, timed_out)
 
 
@@ -836,10 +829,8 @@ def Execute(args, context, timeout=None, env=None, disable_core_files=False,
   )
   os.close(fd_out)
   os.close(fd_err)
-  with open(outname, encoding='utf8', errors='replace') as output_file:
-    output = output_file.read()
-  with open(errname, encoding='utf8', errors='replace') as error_file:
-    errors = error_file.read()
+  output = open(outname, encoding='utf8').read()
+  errors = open(errname, encoding='utf8').read()
   CheckedUnlink(outname)
   CheckedUnlink(errname)
 
@@ -1469,7 +1460,7 @@ def BuildOptions():
       help='Send SIGABRT instead of SIGTERM to kill processes that time out',
       default=False, action="store_true", dest="abort_on_timeout")
   result.add_argument("--type",
-      help="Type of build (simple, coverage)",
+      help="Type of build (simple, fips, coverage)",
       default=None)
   result.add_argument("--error-reporter",
       help="use error reporter if the test uses node:test",
@@ -1553,8 +1544,6 @@ def NormalizePath(path, prefix='test/'):
   path = path.replace('\\', '/')
   if path.startswith(prefix):
     path = path[len(prefix):]
-  if '?' in path or '#' in path:
-    return path
   if path.endswith('.js'):
     path = path[:-3]
   elif path.endswith('.mjs'):
@@ -1633,9 +1622,14 @@ def ArgsToTestPaths(test_root, args, suites):
 
 def get_env_type(vm, options_type, context):
   if options_type is not None:
-    return options_type
-  # 'simple' is the default value for 'env_type'.
-  return 'simple'
+    env_type = options_type
+  else:
+    # 'simple' is the default value for 'env_type'.
+    env_type = 'simple'
+    ssl_ver = Execute([vm, '-p', 'process.versions.openssl'], context).stdout
+    if 'fips' in ssl_ver:
+      env_type = 'fips'
+  return env_type
 
 
 def get_asan_state(vm, context):
@@ -1805,8 +1799,7 @@ def Main():
         sys.exit(1)
 
   def should_keep(case):
-    if any(s in case.file or s in '/'.join(case.path)
-           for s in options.skip_tests):
+    if any((s in case.file) for s in options.skip_tests):
       return False
     elif SKIP in case.outcomes:
       return False
@@ -1832,7 +1825,7 @@ def Main():
     # Must ensure the list of tests is sorted before selecting, to avoid
     # silent errors if this file is changed to list the tests in a way that
     # can be different in different machines
-    cases_to_run.sort(key=lambda c: (c.arch, c.mode, c.file, c.path))
+    cases_to_run.sort(key=lambda c: (c.arch, c.mode, c.file))
     cases_to_run = [ cases_to_run[i] for i
                      in range(options.run[0],
                                len(cases_to_run),
@@ -1856,7 +1849,7 @@ def Main():
     print()
     sys.stderr.write("--- Total time: %s ---\n" % FormatTime(duration))
     timed_tests = [ t for t in cases_to_run if not t.duration is None ]
-    timed_tests.sort(key=lambda x: x.duration, reverse=True)
+    timed_tests.sort(key=lambda x: x.duration)
     for i, entry in enumerate(timed_tests[:20], start=1):
       t = FormatTimedelta(entry.duration)
       sys.stderr.write("%4i (%s) %s\n" % (i, t, entry.GetLabel()))
@@ -1866,7 +1859,7 @@ def Main():
   elif result['failed']:
     print("\nFailed tests:")
     for failure in result['failed']:
-      print(failure.test.GetFailureCommand(failure.command))
+      print(EscapeCommand(failure.command))
   else:
     print("\nTest aborted.")
   return exitcode

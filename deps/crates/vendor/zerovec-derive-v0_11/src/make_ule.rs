@@ -6,7 +6,7 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 
 use crate::utils::{self, FieldInfo, ZeroVecAttrs};
-
+use std::collections::HashSet;
 use syn::spanned::Spanned;
 use syn::{parse_quote, Data, DataEnum, DataStruct, DeriveInput, Error, Expr, Fields, Ident, Lit};
 
@@ -96,9 +96,14 @@ fn make_ule_enum_impl(
             .to_compile_error();
     }
 
-    let mut discriminants = std::collections::BTreeSet::new();
+    // the smallest discriminant seen
+    let mut min = None;
+    // the largest discriminant seen
+    let mut max = None;
+    // Discriminants that have not been found in series (we might find them later)
+    let mut not_found = HashSet::new();
 
-    for variant in enu.variants.iter() {
+    for (i, variant) in enu.variants.iter().enumerate() {
         if !matches!(variant.fields, Fields::Unit) {
             // This can be supported in the future, see zerovec/design_doc.md
             return Error::new(
@@ -120,7 +125,31 @@ fn make_ule_enum_impl(
                         .to_compile_error();
                     }
                 };
-                discriminants.insert(n);
+                match min {
+                    Some(x) if x < n => {}
+                    _ => {
+                        min = Some(n);
+                    }
+                }
+                match max {
+                    Some(x) if x >= n => {}
+                    _ => {
+                        let old_max = max.unwrap_or(0u8);
+                        for missing in (old_max + 1)..n {
+                            not_found.insert(missing);
+                        }
+                        max = Some(n);
+                    }
+                }
+
+                not_found.remove(&n);
+
+                // We require explicit discriminants so that it is clear that reordering
+                // fields would be a breaking change. Furthermore, using explicit discriminants helps ensure that
+                // platform-specific C ABI choices do not matter.
+                // We could potentially add in explicit discriminants on the user's behalf in the future, or support
+                // more complicated sets of explicit discriminant values.
+                if n as usize != i {}
             } else {
                 return Error::new(
                     discr.span(),
@@ -137,10 +166,15 @@ fn make_ule_enum_impl(
         }
     }
 
-    let match_arms = discriminants
-        .iter()
-        .map(|d| quote::quote!(#d))
-        .collect::<Vec<_>>();
+    let not_found = not_found.iter().collect::<Vec<_>>();
+    let min = min.unwrap();
+    let max = max.unwrap();
+
+    if not_found.len() > min as usize {
+        return Error::new(input.span(), format!("#[make_ule] must be applied to enums with discriminants \
+                                                  filling the range from a minimum to a maximum; could not find {not_found:?}"))
+            .to_compile_error();
+    }
 
     let maybe_ord_derives = if attrs.skip_ord {
         quote!()
@@ -174,9 +208,8 @@ fn make_ule_enum_impl(
             #[inline]
             fn validate_bytes(bytes: &[u8]) -> Result<(), zerovec::ule::UleError> {
                 for byte in bytes {
-                    match *byte {
-                        #( #match_arms )|* => {}
-                        _ => return Err(zerovec::ule::UleError::parse::<Self>())
+                    if *byte < #min || *byte > #max {
+                        return Err(zerovec::ule::UleError::parse::<Self>())
                     }
                 }
                 Ok(())
@@ -203,7 +236,7 @@ fn make_ule_enum_impl(
             /// Attempt to construct the value from its corresponding integer,
             /// returning `None` if not possible
             pub(crate) fn new_from_u8(value: u8) -> Option<Self> {
-                if <#ule_name as zerovec::ule::ULE>::validate_bytes(&[value]).is_ok() {
+                if value <= #max {
                     Some(zerovec::ule::AsULE::from_unaligned(#ule_name(value)))
                 } else {
                     None

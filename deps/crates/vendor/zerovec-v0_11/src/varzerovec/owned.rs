@@ -134,23 +134,14 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
     /// `idx <= self.len()` and `self.as_encoded_bytes()` is well-formed.
     unsafe fn element_position_unchecked(&self, idx: usize) -> usize {
         let len = self.len();
-        if len == 0 {
-            return 0;
-        }
         let out = if idx == len {
-            let indices_size = F::Index::SIZE
-                .checked_mul(len - 1)
-                .expect(F::Index::TOO_LARGE_ERROR);
-            self.entire_slice.len() - F::Len::SIZE - indices_size
+            self.entire_slice.len() - F::Len::SIZE - (F::Index::SIZE * (len - 1))
         } else if let Some(idx) = self.index_data(idx) {
             idx.iule_to_usize()
         } else {
             0
         };
-        let indices_size = F::Index::SIZE
-            .checked_mul(len - 1)
-            .expect(F::Index::TOO_LARGE_ERROR);
-        debug_assert!(out + F::Len::SIZE + indices_size <= self.entire_slice.len());
+        debug_assert!(out + F::Len::SIZE + (len - 1) * F::Index::SIZE <= self.entire_slice.len());
         out
     }
 
@@ -182,10 +173,7 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
     /// since there is no stored index for it.
     fn index_range(index: usize) -> Option<Range<usize>> {
         let index_minus_one = index.checked_sub(1)?;
-        let pos = F::Len::SIZE
-            + F::Index::SIZE
-                .checked_mul(index_minus_one)
-                .expect(F::Index::TOO_LARGE_ERROR);
+        let pos = F::Len::SIZE + F::Index::SIZE * index_minus_one;
         Some(pos..pos + F::Index::SIZE)
     }
 
@@ -227,11 +215,8 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
             .checked_sub(1)
             .expect("shift_indices called with a 0 starting index");
         let len = self.len();
-        let indices_size = F::Index::SIZE
-            .checked_mul(len - 1)
-            .expect(F::Index::TOO_LARGE_ERROR);
         let indices = F::Index::iule_from_bytes_unchecked_mut(
-            &mut self.entire_slice[F::Len::SIZE..F::Len::SIZE + indices_size],
+            &mut self.entire_slice[F::Len::SIZE..F::Len::SIZE + F::Index::SIZE * (len - 1)],
         );
         for idx in &mut indices[normalized_idx..] {
             let mut new_idx = idx.iule_to_usize();
@@ -323,10 +308,7 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
             // The start of the indices buffer
             let indices_start = slice_range.start.add(F::Len::SIZE);
             let old_slice_end = slice_range.start.add(slice_len);
-            let indices_size = F::Index::SIZE
-                .checked_mul(len - 1)
-                .expect(F::Index::TOO_LARGE_ERROR);
-            let data_start = indices_start.add(indices_size);
+            let data_start = indices_start.add((len - 1) * F::Index::SIZE);
             let prev_element_p =
                 data_start.add(prev_element.start)..data_start.add(prev_element.end);
 
@@ -336,10 +318,7 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
             // When replacing: unused.
             // Will be None when the affected index is index 0, which is special
             let index_range = if let Some(index_minus_one) = index.checked_sub(1) {
-                let index_offset = F::Index::SIZE
-                    .checked_mul(index_minus_one)
-                    .expect(F::Index::TOO_LARGE_ERROR);
-                let index_start = indices_start.add(index_offset);
+                let index_start = indices_start.add(F::Index::SIZE * index_minus_one);
                 Some(index_start..index_start.add(F::Index::SIZE))
             } else {
                 None
@@ -421,10 +400,9 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
         debug_assert!(self.verify_integrity());
 
         // Return a mut slice to the new element data.
-        let indices_size = F::Index::SIZE
-            .checked_mul(self.len() - 1)
-            .expect(F::Index::TOO_LARGE_ERROR);
-        let element_pos = F::Len::SIZE + indices_size + self.element_position_unchecked(index);
+        let element_pos = F::Len::SIZE
+            + (self.len() - 1) * F::Index::SIZE
+            + self.element_position_unchecked(index);
         &mut self.entire_slice[element_pos..element_pos + new_size]
     }
 
@@ -451,13 +429,10 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
             // An empty vec must have an empty slice: there is only a single valid byte representation.
             panic!("VarZeroVecOwned integrity: Found empty VarZeroVecOwned with a nonempty slice");
         }
-        let indices_size = F::Index::SIZE
-            .checked_mul(len - 1)
-            .expect(F::Index::TOO_LARGE_ERROR);
-        if self.entire_slice.len() < F::Len::SIZE + indices_size {
+        if self.entire_slice.len() < F::Len::SIZE + (len - 1) * F::Index::SIZE {
             panic!("VarZeroVecOwned integrity: Not enough room for the indices");
         }
-        let data_len = self.entire_slice.len() - F::Len::SIZE - indices_size;
+        let data_len = self.entire_slice.len() - F::Len::SIZE - (len - 1) * F::Index::SIZE;
         if data_len > F::Index::MAX_VALUE as usize {
             panic!("VarZeroVecOwned integrity: Data segment is too long");
         }
@@ -465,7 +440,7 @@ impl<T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecOwned<T, F> {
         // Test index validity.
         let indices = unsafe {
             F::Index::slice_from_bytes_unchecked(
-                &self.entire_slice[F::Len::SIZE..F::Len::SIZE + indices_size],
+                &self.entire_slice[F::Len::SIZE..F::Len::SIZE + (len - 1) * F::Index::SIZE],
             )
         };
         for idx in indices {

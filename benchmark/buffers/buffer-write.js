@@ -27,7 +27,7 @@ const types = [
 ];
 
 const bench = common.createBenchmark(main, {
-  buffer: ['fast', 'slow'],
+  buffer: ['fast'],
   type: types,
   n: [1e6],
 });
@@ -70,8 +70,8 @@ const byteLength = {
   writeIntBE: 6,
 };
 
-function main({ n, buffer, type }) {
-  const buff = buffer === 'fast' ?
+function main({ n, buf, type }) {
+  const buff = buf === 'fast' ?
     Buffer.alloc(8) :
     Buffer.allocUnsafeSlow(8);
   const fn = `write${type}`;

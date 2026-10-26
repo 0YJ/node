@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <errno.h>
 
+#include "internal/time.h"
 #include "bio_local.h"
 #ifndef OPENSSL_NO_DGRAM
 
@@ -212,7 +213,21 @@ static const BIO_METHOD methods_dgramp_sctp = {
     NULL, /* sendmmsg */
     NULL, /* recvmmsg */
 };
+#endif
 
+typedef struct bio_dgram_data_st {
+    BIO_ADDR peer;
+    BIO_ADDR local_addr;
+    unsigned int connected;
+    unsigned int _errno;
+    unsigned int mtu;
+    OSSL_TIME next_timeout;
+    OSSL_TIME socket_timeout;
+    unsigned int peekmode;
+    char local_addr_enabled;
+} bio_dgram_data;
+
+#ifndef OPENSSL_NO_SCTP
 typedef struct bio_dgram_sctp_save_message_st {
     BIO *bio;
     char *data;
@@ -412,7 +427,7 @@ static int dgram_read(BIO *b, char *out, int outl)
     BIO_ADDR peer;
     socklen_t len = sizeof(peer);
 
-    if (out != NULL && outl > 0) {
+    if (out != NULL) {
         clear_socket_error();
         BIO_ADDR_clear(&peer);
         dgram_adjust_rcv_timeout(b);
@@ -1034,12 +1049,10 @@ static long dgram_ctrl(BIO *b, int cmd, long num, void *ptr)
 
 static int dgram_puts(BIO *bp, const char *str)
 {
-    int ret;
-    size_t n = strlen(str);
+    int n, ret;
 
-    if (n > INT_MAX)
-        return -1;
-    ret = dgram_write(bp, str, (int)n);
+    n = strlen(str);
+    ret = dgram_write(bp, str, n);
     return ret;
 }
 
@@ -1332,7 +1345,7 @@ static int dgram_sendmmsg(BIO *b, BIO_MSG *msg, size_t stride,
     size_t i;
     struct mmsghdr mh[BIO_MAX_MSGS_PER_CALL];
     struct iovec iov[BIO_MAX_MSGS_PER_CALL];
-    unsigned char control[BIO_MAX_MSGS_PER_CALL][BIO_CMSG_ALLOC_LEN] = { { 0 } };
+    unsigned char control[BIO_MAX_MSGS_PER_CALL][BIO_CMSG_ALLOC_LEN];
     int have_local_enabled = data->local_addr_enabled;
 #elif M_METHOD == M_METHOD_RECVMSG
     int sysflags;
@@ -1340,7 +1353,7 @@ static int dgram_sendmmsg(BIO *b, BIO_MSG *msg, size_t stride,
     ossl_ssize_t l;
     struct msghdr mh;
     struct iovec iov;
-    unsigned char control[BIO_CMSG_ALLOC_LEN] = { 0 };
+    unsigned char control[BIO_CMSG_ALLOC_LEN];
     int have_local_enabled = data->local_addr_enabled;
 #elif M_METHOD == M_METHOD_WSARECVMSG
     bio_dgram_data *data = (bio_dgram_data *)b->ptr;
@@ -1348,7 +1361,7 @@ static int dgram_sendmmsg(BIO *b, BIO_MSG *msg, size_t stride,
     WSAMSG wmsg;
     WSABUF wbuf;
     DWORD num_bytes_sent = 0;
-    unsigned char control[BIO_CMSG_ALLOC_LEN] = { 0 };
+    unsigned char control[BIO_CMSG_ALLOC_LEN];
 #endif
 #if M_METHOD == M_METHOD_RECVFROM || M_METHOD == M_METHOD_WSARECVMSG
     int sysflags;
@@ -2806,9 +2819,6 @@ int BIO_dgram_non_fatal_error(int err)
 {
     switch (err) {
 #if defined(OPENSSL_SYS_WINDOWS)
-#if defined(WSAETIMEDOUT)
-    case WSAETIMEDOUT:
-#endif
 #if defined(WSAEWOULDBLOCK)
     case WSAEWOULDBLOCK:
 #endif

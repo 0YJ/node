@@ -5,7 +5,6 @@
 #ifndef V8_D8_D8_H_
 #define V8_D8_D8_H_
 
-#include <atomic>
 #include <iterator>
 #include <map>
 #include <memory>
@@ -17,17 +16,12 @@
 #include <vector>
 
 #include "include/v8-array-buffer.h"
-#include "include/v8-data.h"
-#include "include/v8-external.h"
 #include "include/v8-isolate.h"
-#include "include/v8-microtask-queue.h"
 #include "include/v8-script.h"
 #include "include/v8-value-serializer.h"
 #include "src/base/once.h"
-#include "src/base/platform/platform.h"
 #include "src/base/platform/time.h"
 #include "src/base/platform/wrappers.h"
-#include "src/base/vector.h"
 #include "src/d8/async-hooks-wrapper.h"
 // For V8_ENABLE_HARDWARE_WATCHPOINT_SUPPORT.
 #include "src/d8/hardware-watchpoints.h"
@@ -37,75 +31,13 @@
 
 namespace v8 {
 
-template <int N>
-inline Local<Value> ThrowError(Isolate* isolate, const char (&message)[N]) {
-  if (isolate->IsExecutionTerminating()) return v8::Undefined(isolate);
-  return isolate->ThrowError(message);
-}
-
-inline Local<Value> ThrowError(Isolate* isolate, std::string_view message) {
-  if (isolate->IsExecutionTerminating()) return v8::Undefined(isolate);
-  Local<String> exception =
-      String::NewFromUtf8(
-          isolate, std::string(message.substr(0, String::kMaxLength)).c_str())
-          .ToLocalChecked();
-  return isolate->ThrowError(exception);
-}
-
-inline Local<Value> ThrowError(Isolate* isolate, Local<String> message) {
-  if (isolate->IsExecutionTerminating()) return v8::Undefined(isolate);
-  return isolate->ThrowError(message);
-}
-
-inline Local<Value> ThrowException(Isolate* isolate, Local<Value> exception) {
-  if (isolate->IsExecutionTerminating()) return v8::Undefined(isolate);
-  return isolate->ThrowException(exception);
-}
-
-// Converts a v8::Value to a UTF-8 string safely.
-// Unlike v8::String::Utf8Value, this does not swallow user exceptions or
-// terminate silently on string conversion failure.
-class SafeUtf8Value {
- public:
-  SafeUtf8Value(Isolate* isolate, Local<Value> value)
-      : SafeUtf8Value(isolate, isolate->GetCurrentContext(), value) {}
-
-  SafeUtf8Value(Isolate* isolate, Local<Context> context, Local<Value> value) {
-    if (value.IsEmpty()) return;
-    Local<String> str;
-    if (value->ToString(context).ToLocal(&str)) {
-      utf8_.emplace(isolate, str);
-    }
-  }
-
-  bool is_valid() const { return utf8_.has_value(); }
-  explicit operator bool() const { return is_valid(); }
-
-  const char* operator*() const { return is_valid() ? **utf8_ : nullptr; }
-  char* operator*() { return is_valid() ? **utf8_ : nullptr; }
-  size_t length() const { return is_valid() ? utf8_->length() : 0; }
-  std::string_view as_view() const {
-    return is_valid() ? utf8_->as_view() : std::string_view();
-  }
-
- private:
-  std::optional<v8::String::Utf8Value> utf8_;
-};
-
 class BackingStore;
 class CompiledWasmModule;
 class D8Console;
 class Message;
 class TryCatch;
 
-enum class ModuleType {
-  kJavaScript,
-  kJSON,
-  kWebAssembly,
-  kText,
-  kBytes,
-  kInvalid
-};
+enum class ModuleType { kJavaScript, kJSON, kWebAssembly, kInvalid };
 
 namespace internal {
 class CancelableTaskManager;
@@ -199,7 +131,6 @@ class SourceGroup {
   i::ParkingSemaphore next_semaphore_;
   i::ParkingSemaphore done_semaphore_;
   base::Thread* thread_;
-  std::atomic<bool> terminate_{false};
 
   void ExitShell(int exit_code);
 
@@ -225,10 +156,6 @@ class SerializationData {
   const std::vector<CompiledWasmModule>& compiled_wasm_modules() {
     return compiled_wasm_modules_;
   }
-  const std::vector<std::shared_ptr<v8::BackingStore>>&
-  shared_immutable_backing_stores() {
-    return shared_immutable_backing_stores_;
-  }
   const std::optional<v8::SharedValueConveyor>& shared_value_conveyor() {
     return shared_value_conveyor_;
   }
@@ -242,8 +169,6 @@ class SerializationData {
   size_t size_ = 0;
   std::vector<std::shared_ptr<v8::BackingStore>> backing_stores_;
   std::vector<std::shared_ptr<v8::BackingStore>> sab_backing_stores_;
-  std::vector<std::shared_ptr<v8::BackingStore>>
-      shared_immutable_backing_stores_;
   std::vector<CompiledWasmModule> compiled_wasm_modules_;
   std::optional<v8::SharedValueConveyor> shared_value_conveyor_;
 
@@ -265,7 +190,7 @@ class SerializationDataQueue {
 
 class Worker : public std::enable_shared_from_this<Worker> {
  public:
-  static constexpr i::ManagedTypeId kTypeID = i::ManagedTypeId::kD8Worker;
+  static constexpr i::ExternalPointerTag kManagedTag = i::kD8WorkerTag;
 
   explicit Worker(Isolate* parent_isolate, const char* script,
                   bool flush_denormals);
@@ -366,18 +291,9 @@ class Worker : public std::enable_shared_from_this<Worker> {
   // the worker_mutex_ and after checking the worker state.
   Isolate* isolate_ = nullptr;
   Isolate* parent_isolate_;
-  std::shared_ptr<TaskRunner> parent_task_runner_;
 
   // Only accessed by the worker thread.
   Global<Context> context_;
-};
-
-struct Realm {
-  Global<Context> context;
-
-  Realm() = default;
-  Realm(Isolate* isolate, const Global<Context>& ctx) : context(isolate, ctx) {}
-  Realm(Isolate* isolate, Local<Context> ctx) : context(isolate, ctx) {}
 };
 
 class PerIsolateData {
@@ -447,14 +363,14 @@ class PerIsolateData {
   friend class Shell;
   friend class RealmScope;
   Isolate* isolate_;
+  int realm_count_;
   int realm_current_;
   int realm_switch_;
-  std::vector<Realm> realms_;
+  Global<Context>* realms_;
   Global<Value> realm_shared_;
   bool ignore_unhandled_promises_;
   std::vector<std::tuple<Global<Promise>, Global<Message>, Global<Value>>>
       unhandled_promises_;
-  std::vector<int> realm_stack_;
   AsyncHooks* async_hooks_wrapper_;
   std::unordered_set<DynamicImportData*> import_data_;
   Global<FunctionTemplate> test_api_object_ctor_;
@@ -473,22 +389,9 @@ class PerIsolateData {
   int RealmIndexOrThrow(const v8::FunctionCallbackInfo<v8::Value>& info,
                         int arg_offset);
   int RealmFind(Local<Context> context);
-
-  static constexpr int kMainRealmIndex = 0;
 };
 
 extern bool check_d8_flag_contradictions;
-extern bool exit_on_flag_contradictions;
-
-inline void ReportFlagError(const char* format, const char* name) {
-  if (exit_on_flag_contradictions) {
-    base::OS::PrintError(format, name);
-    base::OS::PrintError("\n");
-    base::OS::ExitProcess(-1);
-  } else {
-    FATAL(format, name);
-  }
-}
 
 class ShellOptions {
  public:
@@ -516,11 +419,11 @@ class ShellOptions {
       if (check_d8_flag_contradictions) {
         if (kAllowIdenticalAssignment) {
           if (specified_ && value_ != value) {
-            ReportFlagError("Contradictory values for d8 flag --%s", name_);
+            FATAL("Contradictory values for d8 flag --%s", name_);
           }
         } else {
           if (specified_) {
-            ReportFlagError("Repeated specification of d8 flag --%s", name_);
+            FATAL("Repeated specification of d8 flag --%s", name_);
           }
         }
       }
@@ -541,18 +444,10 @@ class ShellOptions {
   };
   DisallowReassignment<bool> can_block = {"can_block", true};
   DisallowReassignment<const char*> d8_path = {"d8-path", ""};
-  DisallowReassignment<std::string> cwd = {"C", ""};
-  int post_filtering_cwd_index = -1;
   DisallowReassignment<bool> fuzzilli_coverage_statistics = {
       "fuzzilli-coverage-statistics", false};
   DisallowReassignment<bool> fuzzilli_enable_builtins_coverage = {
-      "fuzzilli-enable-builtins-coverage",
-#ifdef V8_ENABLE_BUILTINS_PROFILING
-      true
-#else
-      false
-#endif
-  };
+      "fuzzilli-enable-builtins-coverage", false};
   DisallowReassignment<bool> send_idle_notification = {"send-idle-notification",
                                                        false};
   DisallowReassignment<bool> invoke_weak_callbacks = {"invoke-weak-callbacks",
@@ -578,9 +473,6 @@ class ShellOptions {
       "mock-arraybuffer-allocator-limit", 0};
   DisallowReassignment<bool> multi_mapped_mock_allocator = {
       "multi-mapped-mock-allocator", false};
-  // This flag enables a bare-bones InspectorClient implementation in the shell.
-  // It is only a harness for basic tests in `test/debugger`, and not shipped
-  // in production. `test/inspector` uses the `inspector-test` binary instead.
   DisallowReassignment<bool> enable_inspector = {"enable-inspector", false};
   int num_isolates = 1;
   DisallowReassignment<v8::ScriptCompiler::CompileOptions, true>
@@ -640,7 +532,6 @@ class ShellOptions {
   DisallowReassignment<bool> flush_denormals = {"flush-denormals", false};
   DisallowReassignment<size_t> max_serializer_memory = {"max-serializer-memory",
                                                         1 * i::MB};
-  DisallowReassignment<bool> bundle = {"bundle", false};
 };
 
 class Shell : public i::AllStatic {
@@ -656,34 +547,10 @@ class Shell : public i::AllStatic {
   };
   enum class CodeType { kFileName, kString, kFunction, kInvalid, kNone };
 
-  class Source {
-   public:
-    enum class Type { kString, kFile };
-    static Source FromString(Local<String> string) {
-      return Source(Type::kString, string, nullptr);
-    }
-    static Source FromFile(const char* filename) {
-      return Source(Type::kFile, Local<String>(), filename);
-    }
-
-    Type type() const { return type_; }
-    Local<String> string() const { return string_; }
-    const char* filename() const { return filename_; }
-    MaybeLocal<String> ConvertToString(Isolate* isolate) const;
-
-   private:
-    Source(Type type, Local<String> string, const char* filename)
-        : type_(type), string_(string), filename_(filename) {}
-
-    Type type_;
-    Local<String> string_;
-    const char* filename_;
-  };
-
   // Boolean return values (for any method below) typically denote "success".
   // We return `false` on uncaught exceptions, except for termination
   // exceptions.
-  static bool ExecuteSource(Isolate* isolate, const Source& source,
+  static bool ExecuteString(Isolate* isolate, Local<String> source,
                             Local<String> name,
                             ReportExceptions report_exceptions,
                             Global<Value>* out_result = nullptr);
@@ -753,7 +620,7 @@ class Shell : public i::AllStatic {
   static void RealmSharedGet(Local<Name> property,
                              const PropertyCallbackInfo<Value>& info);
   static void RealmSharedSet(Local<Name> property, Local<Value> value,
-                             const PropertyCallbackInfo<Boolean>& info);
+                             const PropertyCallbackInfo<void>& info);
 
   static void LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void TestVerifySourcePositions(
@@ -815,7 +682,7 @@ class Shell : public i::AllStatic {
   static void ReadFile(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void CreateWasmMemoryMapDescriptor(
       const v8::FunctionCallbackInfo<v8::Value>& info);
-  static base::OwnedVector<char> ReadChars(const char* name);
+  static char* ReadChars(const char* name, int* size_out);
   static MaybeLocal<PrimitiveArray> ReadLines(Isolate* isolate,
                                               const char* name);
   static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -823,14 +690,8 @@ class Shell : public i::AllStatic {
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& info);
   static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
   static void ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void FileExists(const v8::FunctionCallbackInfo<v8::Value>& info);
-#if defined(V8_OS_WIN)
-  static void PreProcessUnicodeFilenameArg(char* argv[], int i);
-  static void FreeUnicodeFilenameArgs();
-#endif
   static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& info);
-  // Returns false if any exception occurred. Otherwise returns true.
-  static bool ReadCodeTypeAndArguments(
+  static void ReadCodeTypeAndArguments(
       const v8::FunctionCallbackInfo<v8::Value>& info, int index,
       CodeType* code_type, Local<Value>* arguments = nullptr);
   static bool FunctionAndArgumentsToString(Local<Function> function,
@@ -868,8 +729,7 @@ class Shell : public i::AllStatic {
 
   // os.chdir(dir) changes directory to the given directory.  Throws an
   // exception/ on error.
-  static void ChangeDirectoryCallback(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
+  static void ChangeDirectory(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   // os.setenv(variable, value) sets an environment variable.  Repeated calls to
   // this method leak memory due to the API of setenv in the standard C library.
@@ -917,23 +777,22 @@ class Shell : public i::AllStatic {
   static void Fuzzilli(const v8::FunctionCallbackInfo<v8::Value>& info);
 #endif  // V8_FUZZILLI
 
-  // Data is of type DynamicImportData* wrapped in v8::External.
-  static void DoHostImportModuleDynamically(v8::Local<v8::Data> data);
+  // Data is of type DynamicImportData*. We use void* here to be able
+  // to conform with MicrotaskCallback interface and enqueue this
+  // function in the microtask queue.
+  static void DoHostImportModuleDynamically(void* data);
   static void AddOSMethods(v8::Isolate* isolate,
                            Local<ObjectTemplate> os_template);
 
   static const char* kPrompt;
   static ShellOptions options;
   static ArrayBuffer::Allocator* array_buffer_allocator;
-  static bool fuzzilli_reprl_failed_;
 
   static void SetWaitUntilDone(Isolate* isolate, bool value);
 
-  static base::OwnedVector<char> ReadCharsFromTcpPort(const char* name);
+  static char* ReadCharsFromTcpPort(const char* name, int* size_out);
 
   static void set_script_executed() { script_executed_.store(true); }
-  static bool ChangeWorkingDirectory(const std::string& path,
-                                     bool print_error = true);
   static bool use_interactive_shell() {
     return (options.interactive_shell || !script_executed_.load()) &&
            !options.test_shell;
@@ -986,10 +845,7 @@ class Shell : public i::AllStatic {
   static std::atomic<bool> script_executed_;
   static std::atomic<bool> valid_fuzz_script_;
 
-  static bool ValidateRealmIndex(Isolate* isolate, PerIsolateData* data,
-                                 int index);
-  static bool ValidateRestrictedRealmIndex(Isolate* isolate,
-                                           PerIsolateData* data, int index);
+  static void WriteIgnitionDispatchCountersFile(v8::Isolate* isolate);
   // Append LCOV coverage data to file.
   static void WriteLcovData(v8::Isolate* isolate, const char* file);
   static Counter* GetCounter(const char* name, bool is_histogram);
@@ -1013,18 +869,10 @@ class Shell : public i::AllStatic {
   static Local<FunctionTemplate> CreateTestFastCApiTemplate(Isolate* isolate);
   static Local<FunctionTemplate> CreateLeafInterfaceTypeTemplate(
       Isolate* isolate);
-  static void CreateInterceptorObject(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void CreateAccessCheckedObject(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void CreateAccessCheckedInterceptorObject(
-      const v8::FunctionCallbackInfo<v8::Value>& info);
-  static void SetAccessPolicy(const v8::FunctionCallbackInfo<v8::Value>& info);
 
   static MaybeLocal<Context> CreateRealm(
       const v8::FunctionCallbackInfo<v8::Value>& info, int index,
-      v8::MaybeLocal<Value> global_object,
-      bool create_own_microtask_queue = false);
+      v8::MaybeLocal<Value> global_object);
   static void DisposeRealm(const v8::FunctionCallbackInfo<v8::Value>& info,
                            int index);
 
@@ -1036,25 +884,18 @@ class Shell : public i::AllStatic {
                                             const std::string& file_name,
                                             ModuleType module_type);
 
-  static MaybeLocal<Promise> JSONModuleEvaluationSteps(Local<Context> context,
-                                                       Local<Module> module);
-  static MaybeLocal<Promise> TextModuleEvaluationSteps(Local<Context> context,
-                                                       Local<Module> module);
-  static MaybeLocal<Promise> BytesModuleEvaluationSteps(Local<Context> context,
-                                                        Local<Module> module);
+  static MaybeLocal<Value> JSONModuleEvaluationSteps(Local<Context> context,
+                                                     Local<Module> module);
 
   template <class T>
-  static MaybeLocal<T> CompileSource(Isolate* isolate, Local<Context> context,
-                                     const Source& source,
+  static MaybeLocal<T> CompileString(Isolate* isolate, Local<Context> context,
+                                     Local<String> source,
                                      const ScriptOrigin& origin);
 
-  static ScriptCompiler::CachedData* LookupCodeCache(
-      Isolate* isolate, Local<Value> name,
-      ScriptType type = ScriptType::kClassic);
+  static ScriptCompiler::CachedData* LookupCodeCache(Isolate* isolate,
+                                                     Local<Value> name);
   static void StoreInCodeCache(Isolate* isolate, Local<Value> name,
-                               const ScriptCompiler::CachedData* data,
-                               ScriptType type = ScriptType::kClassic);
-  static void ProduceModuleCodeCacheAfterExecute(Isolate* isolate);
+                               const ScriptCompiler::CachedData* data);
 
   // We may have multiple isolates running concurrently, so the access to
   // the isolate_status_ needs to be concurrency-safe.
@@ -1062,12 +903,9 @@ class Shell : public i::AllStatic {
   static std::map<Isolate*, bool> isolate_status_;
   static std::map<Isolate*, int> isolate_running_streaming_tasks_;
 
-  using CodeCacheKey = std::pair<std::string, ScriptType>;
-  using CodeCacheMap =
-      std::map<CodeCacheKey, std::unique_ptr<ScriptCompiler::CachedData>>;
-
   static base::LazyMutex cached_code_mutex_;
-  static CodeCacheMap cached_code_map_;
+  static std::map<std::string, std::unique_ptr<ScriptCompiler::CachedData>>
+      cached_code_map_;
   static std::atomic<int> unhandled_promise_rejections_;
 
 #if V8_ENABLE_WEBASSEMBLY

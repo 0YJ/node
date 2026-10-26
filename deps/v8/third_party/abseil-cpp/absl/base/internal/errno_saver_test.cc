@@ -15,7 +15,6 @@
 #include "absl/base/internal/errno_saver.h"
 
 #include <cerrno>
-#include <ostream>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"

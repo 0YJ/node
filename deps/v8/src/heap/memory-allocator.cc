@@ -24,10 +24,6 @@
 #include "src/sandbox/hardware-support.h"
 #include "src/utils/allocation.h"
 
-#if V8_OS_LINUX
-#include <sys/mman.h>
-#endif
-
 namespace v8::internal {
 
 size_t MemoryAllocator::commit_page_size_ = 0;
@@ -151,14 +147,6 @@ Address MemoryAllocator::AllocateAlignedMemory(
   }
 
   Address base = reservation.address();
-
-#if V8_OS_LINUX
-  // The sandbox reservation is marked MADV_DONTDUMP so that its multi-TB
-  // virtual range doesn't force the kernel to walk the whole thing on crash.
-  // Re-mark committed heap chunks as dumpable so crash investigations still
-  // see live objects. Harmless no-op for chunks outside the sandbox.
-  madvise(reinterpret_cast<void*>(base), chunk_size, MADV_DODUMP);
-#endif
 
   if (executable == EXECUTABLE) {
     ThreadIsolation::RegisterJitPage(base, chunk_size);
@@ -728,9 +716,8 @@ const MemoryChunk* MemoryAllocator::LookupChunkContainingAddressInSafepoint(
     DCHECK_LE(large_page_chunk->address(), addr);
     // This code can run from the shared heap isolate and the slot may point
     // into a client heap isolate, so ignore the isolate check.
-    if (large_page_chunk->MetadataNoIsolateCheck()->Contains(addr)) {
+    if (large_page_chunk->MetadataNoIsolateCheck()->Contains(addr))
       return large_page_chunk;
-    }
   }
   // Not found in any page.
   return nullptr;

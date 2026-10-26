@@ -59,19 +59,6 @@ using v8::Value;
     }                                                                          \
   } while (0)
 
-// The backing file is a user-specified path, and the schema below is created
-// with IF NOT EXISTS, so a file that already holds tables of those names is
-// adopted as-is and its values may have any type. A wrong type is therefore a
-// statement about untrusted input, not a broken internal invariant.
-#define CHECK_COLUMN_TYPE_OR_THROW(env, stmt, idx, expected, detail, ret)      \
-  do {                                                                         \
-    if (sqlite3_column_type((stmt), (idx)) != (expected)) {                    \
-      THROW_ERR_INVALID_STATE((env),                                           \
-                              "localStorage database is malformed: " detail);  \
-      return (ret);                                                            \
-    }                                                                          \
-  } while (0)
-
 static void ThrowQuotaExceededException(Local<Context> context) {
   Isolate* isolate = Isolate::GetCurrent();
   auto quota_exceeded_str =
@@ -186,12 +173,6 @@ Maybe<void> Storage::Open() {
   }
 
   int r = sqlite3_open(location_.c_str(), &db);
-  // Adopt the connection before anything below can return early, so that a
-  // failure does not leak it. sqlite3_open() allocates a connection to be
-  // closed even when it fails. This is declared ahead of the statement below
-  // so that the statement is finalized first; sqlite3_close() fails while a
-  // statement is still open, and conn_deleter treats that as fatal.
-  auto conn = conn_unique_ptr(db);
   CHECK_ERROR_OR_THROW(env(), r, SQLITE_OK, Nothing<void>());
   r = sqlite3_exec(db, init_sql_v0.data(), nullptr, nullptr, nullptr);
   CHECK_ERROR_OR_THROW(env(), r, SQLITE_OK, Nothing<void>());
@@ -203,16 +184,12 @@ Maybe<void> Storage::Open() {
                          get_schema_version_sql.size(),
                          &s,
                          nullptr);
-  auto stmt = stmt_unique_ptr(s);
+  r = sqlite3_exec(db, init_sql_v0.data(), nullptr, nullptr, nullptr);
   CHECK_ERROR_OR_THROW(env(), r, SQLITE_OK, Nothing<void>());
+  auto stmt = stmt_unique_ptr(s);
   CHECK_ERROR_OR_THROW(
       env(), sqlite3_step(stmt.get()), SQLITE_ROW, Nothing<void>());
-  CHECK_COLUMN_TYPE_OR_THROW(env(),
-                             stmt.get(),
-                             0,
-                             SQLITE_INTEGER,
-                             "expected schema_version to be an integer",
-                             Nothing<void>());
+  CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_INTEGER);
   int schema_version = sqlite3_column_int(stmt.get(), 0);
   stmt = nullptr;  // Force finalization.
 
@@ -232,7 +209,7 @@ Maybe<void> Storage::Open() {
     CHECK_ERROR_OR_THROW(env(), r, SQLITE_OK, Nothing<void>());
   }
 
-  db_ = std::move(conn);
+  db_ = conn_unique_ptr(db);
   return JustVoid();
 }
 
@@ -289,12 +266,7 @@ MaybeLocal<Array> Storage::Enumerate() {
   LocalVector<Value> values(env()->isolate());
   Local<Value> value;
   while ((r = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-    CHECK_COLUMN_TYPE_OR_THROW(env(),
-                               stmt.get(),
-                               0,
-                               SQLITE_BLOB,
-                               "expected key to be a blob",
-                               Local<Array>());
+    CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_BLOB);
     auto size = sqlite3_column_bytes(stmt.get(), 0) / sizeof(uint16_t);
     if (!String::NewFromTwoByte(env()->isolate(),
                                 reinterpret_cast<const uint16_t*>(
@@ -310,10 +282,9 @@ MaybeLocal<Array> Storage::Enumerate() {
   return Array::New(env()->isolate(), values.data(), values.size());
 }
 
-std::optional<std::unordered_map<std::u16string, std::u16string>>
-Storage::GetAll() {
+std::unordered_map<std::u16string, std::u16string> Storage::GetAll() {
   if (!Open().IsJust()) {
-    return std::nullopt;
+    return {};
   }
 
   static constexpr std::string_view sql =
@@ -321,17 +292,10 @@ Storage::GetAll() {
   sqlite3_stmt* s = nullptr;
   int r = sqlite3_prepare_v2(db_.get(), sql.data(), sql.size(), &s, nullptr);
   auto stmt = stmt_unique_ptr(s);
-  // Unlike the other accessors, this one has no JavaScript caller to throw at,
-  // so every failure below is reported to the inspector agent instead.
-  if (r != SQLITE_OK) {
-    return std::nullopt;
-  }
   std::unordered_map<std::u16string, std::u16string> result;
   while ((r = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-    if (sqlite3_column_type(stmt.get(), 0) != SQLITE_BLOB ||
-        sqlite3_column_type(stmt.get(), 1) != SQLITE_BLOB) {
-      return std::nullopt;
-    }
+    CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_BLOB);
+    CHECK(sqlite3_column_type(stmt.get(), 1) == SQLITE_BLOB);
     auto key_size = sqlite3_column_bytes(stmt.get(), 0) / sizeof(uint16_t);
     auto value_size = sqlite3_column_bytes(stmt.get(), 1) / sizeof(uint16_t);
     auto key_uint16(
@@ -343,9 +307,6 @@ Storage::GetAll() {
     std::u16string value(value_uint16, value_size);
 
     result.emplace(std::move(key), std::move(value));
-  }
-  if (r != SQLITE_DONE) {
-    return std::nullopt;
   }
   return result;
 }
@@ -363,8 +324,6 @@ MaybeLocal<Value> Storage::Length() {
   auto stmt = stmt_unique_ptr(s);
   CHECK_ERROR_OR_THROW(
       env(), sqlite3_step(stmt.get()), SQLITE_ROW, Local<Value>());
-  // Unlike the reads above, this one is not a claim about the file's contents:
-  // count(*) is an integer whatever the table holds.
   CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_INTEGER);
   int result = sqlite3_column_int(stmt.get(), 0);
   return Integer::New(env()->isolate(), result);
@@ -392,12 +351,7 @@ MaybeLocal<Value> Storage::Load(Local<Name> key) {
   CHECK_ERROR_OR_THROW(env(), r, SQLITE_OK, Local<Value>());
   r = sqlite3_step(stmt.get());
   if (r == SQLITE_ROW) {
-    CHECK_COLUMN_TYPE_OR_THROW(env(),
-                               stmt.get(),
-                               0,
-                               SQLITE_BLOB,
-                               "expected value to be a blob",
-                               Local<Value>());
+    CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_BLOB);
     auto size = sqlite3_column_bytes(stmt.get(), 0) / sizeof(uint16_t);
     return String::NewFromTwoByte(env()->isolate(),
                                   reinterpret_cast<const uint16_t*>(
@@ -429,12 +383,7 @@ MaybeLocal<Value> Storage::LoadKey(const int index) {
 
   r = sqlite3_step(stmt.get());
   if (r == SQLITE_ROW) {
-    CHECK_COLUMN_TYPE_OR_THROW(env(),
-                               stmt.get(),
-                               0,
-                               SQLITE_BLOB,
-                               "expected key to be a blob",
-                               Local<Value>());
+    CHECK(sqlite3_column_type(stmt.get(), 0) == SQLITE_BLOB);
     auto size = sqlite3_column_bytes(stmt.get(), 0) / sizeof(uint16_t);
     return String::NewFromTwoByte(env()->isolate(),
                                   reinterpret_cast<const uint16_t*>(
@@ -614,7 +563,7 @@ template <typename T>
 static bool ShouldIntercept(Local<Name> property,
                             const PropertyCallbackInfo<T>& info) {
   Environment* env = Environment::GetCurrent(info);
-  Local<Value> proto = info.Holder()->GetPrototype();
+  Local<Value> proto = info.HolderV2()->GetPrototypeV2();
 
   if (proto->IsObject()) {
     bool has_prop;
@@ -638,7 +587,7 @@ static Intercepted StorageGetter(Local<Name> property,
   }
 
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder(), Intercepted::kNo);
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2(), Intercepted::kNo);
   Local<Value> result;
 
   if (storage->Load(property).ToLocal(&result) && !result->IsNull()) {
@@ -650,9 +599,9 @@ static Intercepted StorageGetter(Local<Name> property,
 
 static Intercepted StorageSetter(Local<Name> property,
                                  Local<Value> value,
-                                 const PropertyCallbackInfo<Boolean>& info) {
+                                 const PropertyCallbackInfo<void>& info) {
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder(), Intercepted::kNo);
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2(), Intercepted::kNo);
 
   if (storage->Store(property, value).IsNothing()) {
     info.GetReturnValue().SetFalse();
@@ -668,7 +617,7 @@ static Intercepted StorageQuery(Local<Name> property,
   }
 
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder(), Intercepted::kNo);
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2(), Intercepted::kNo);
   Local<Value> result;
   if (!storage->Load(property).ToLocal(&result) || result->IsNull()) {
     return Intercepted::kNo;
@@ -681,7 +630,7 @@ static Intercepted StorageQuery(Local<Name> property,
 static Intercepted StorageDeleter(Local<Name> property,
                                   const PropertyCallbackInfo<Boolean>& info) {
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder(), Intercepted::kNo);
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2(), Intercepted::kNo);
 
   info.GetReturnValue().Set(storage->Remove(property).IsJust());
 
@@ -690,7 +639,7 @@ static Intercepted StorageDeleter(Local<Name> property,
 
 static void StorageEnumerator(const PropertyCallbackInfo<Array>& info) {
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder());
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2());
   Local<Array> result;
   if (!storage->Enumerate().ToLocal(&result)) {
     return;
@@ -700,9 +649,9 @@ static void StorageEnumerator(const PropertyCallbackInfo<Array>& info) {
 
 static Intercepted StorageDefiner(Local<Name> property,
                                   const PropertyDescriptor& desc,
-                                  const PropertyCallbackInfo<Boolean>& info) {
+                                  const PropertyCallbackInfo<void>& info) {
   Storage* storage;
-  ASSIGN_OR_RETURN_UNWRAP(&storage, info.Holder(), Intercepted::kNo);
+  ASSIGN_OR_RETURN_UNWRAP(&storage, info.HolderV2(), Intercepted::kNo);
 
   if (desc.has_value()) {
     return StorageSetter(property, desc.value(), info);
@@ -720,7 +669,7 @@ static Intercepted IndexedGetter(uint32_t index,
 
 static Intercepted IndexedSetter(uint32_t index,
                                  Local<Value> value,
-                                 const PropertyCallbackInfo<Boolean>& info) {
+                                 const PropertyCallbackInfo<void>& info) {
   Environment* env = Environment::GetCurrent(info);
   Local<Name> name = Uint32ToString(env->context(), index);
   return StorageSetter(name, value, info);
@@ -742,7 +691,7 @@ static Intercepted IndexedDeleter(uint32_t index,
 
 static Intercepted IndexedDefiner(uint32_t index,
                                   const PropertyDescriptor& desc,
-                                  const PropertyCallbackInfo<Boolean>& info) {
+                                  const PropertyCallbackInfo<void>& info) {
   Environment* env = Environment::GetCurrent(info);
   Local<Name> name = Uint32ToString(env->context(), index);
   return StorageDefiner(name, desc, info);

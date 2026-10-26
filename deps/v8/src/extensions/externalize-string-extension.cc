@@ -7,7 +7,6 @@
 #include "include/v8-template.h"
 #include "src/api/api-inl.h"
 #include "src/base/strings.h"
-#include "src/common/synchronization-point-support.h"
 #include "src/execution/isolate.h"
 #include "src/handles/handles.h"
 #include "src/heap/heap-layout-inl.h"
@@ -47,28 +46,21 @@ v8::Local<v8::FunctionTemplate>
 ExternalizeStringExtension::GetNativeFunctionTemplate(
     v8::Isolate* isolate, v8::Local<v8::String> str) {
   if (strcmp(*v8::String::Utf8Value(isolate, str), "externalizeString") == 0) {
-    return v8::FunctionTemplate::New(
-        isolate, ExternalizeStringExtension::Externalize,
-        v8::Local<v8::Value>(), v8::Local<v8::Signature>(), 0,
-        v8::ConstructorBehavior::kThrow);
+    return v8::FunctionTemplate::New(isolate,
+                                     ExternalizeStringExtension::Externalize);
   } else if (strcmp(*v8::String::Utf8Value(isolate, str),
                     "createExternalizableString") == 0) {
     return v8::FunctionTemplate::New(
-        isolate, ExternalizeStringExtension::CreateExternalizableString,
-        v8::Local<v8::Value>(), v8::Local<v8::Signature>(), 0,
-        v8::ConstructorBehavior::kThrow);
+        isolate, ExternalizeStringExtension::CreateExternalizableString);
   } else if (strcmp(*v8::String::Utf8Value(isolate, str),
                     "createExternalizableTwoByteString") == 0) {
     return v8::FunctionTemplate::New(
-        isolate, ExternalizeStringExtension::CreateExternalizableTwoByteString,
-        v8::Local<v8::Value>(), v8::Local<v8::Signature>(), 0,
-        v8::ConstructorBehavior::kThrow);
+        isolate, ExternalizeStringExtension::CreateExternalizableTwoByteString);
   } else {
     DCHECK_EQ(strcmp(*v8::String::Utf8Value(isolate, str), "isOneByteString"),
               0);
-    return v8::FunctionTemplate::New(
-        isolate, ExternalizeStringExtension::IsOneByte, v8::Local<v8::Value>(),
-        v8::Local<v8::Signature>(), 0, v8::ConstructorBehavior::kThrow);
+    return v8::FunctionTemplate::New(isolate,
+                                     ExternalizeStringExtension::IsOneByte);
   }
 }
 
@@ -109,12 +101,10 @@ void ExternalizeStringExtension::Externalize(
   }
   if (externalize_as_one_byte) {
     auto* resource = new OwningExternalOneByteStringResource(*string);
-    SYNCHRONIZATION_POINT("ExternalizeStringExtensionMakeExternalOneByte");
     result = Utils::ToLocal(string)->MakeExternal(info.GetIsolate(), resource);
     if (!result) delete resource;
   } else {
     auto* resource = new OwningExternalStringResource(*string);
-    SYNCHRONIZATION_POINT("ExternalizeStringExtensionMakeExternalTwoByte");
     result = Utils::ToLocal(string)->MakeExternal(info.GetIsolate(), resource);
     if (!result) delete resource;
   }
@@ -182,7 +172,7 @@ MaybeDirectHandle<String> CreateExternalizableString(
   // space in that case. Note that this is also true for non-canonicalized
   // ConsStrings that TurboFan might create (the first part is empty), so we
   // explicitly check for that case as well.
-  if (IsConsString(*string) && !string->IsFlat() &&
+  if (IsConsString(*string, i_isolate) && !string->IsFlat() &&
       Cast<ConsString>(string)->first()->length() != 0) {
     DirectHandle<String> result;
     if (CopyConsStringToOld(i_isolate, Cast<ConsString>(string), encoding)

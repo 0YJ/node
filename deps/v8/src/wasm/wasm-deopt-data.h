@@ -69,7 +69,7 @@ class WasmDeoptView {
 
   WasmDeoptEntry GetDeoptEntry(uint32_t deopt_index) const {
     DCHECK(HasDeoptData());
-    CHECK_LT(deopt_index, base_data_.entry_count);
+    DCHECK(deopt_index < base_data_.entry_count);
     const uint8_t* begin = deopt_data_.begin() + sizeof(base_data_) +
                            base_data_.translation_array_size;
     return base::ReadUnalignedValue<WasmDeoptEntry>(reinterpret_cast<Address>(

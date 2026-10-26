@@ -191,7 +191,16 @@ npm test
 
 ### Create a User Account
 
-Create a user account on the [npm website](https://www.npmjs.com/signup).
+Create a user with the adduser command.
+It works like this:
+
+```bash
+npm adduser
+```
+
+and then follow the prompts.
+
+This is documented better in [npm adduser](/commands/npm-adduser).
 
 ### Publish your Package
 
@@ -220,5 +229,5 @@ Tell the world how easy it is to install your program!
 * [package.json](/configuring-npm/package-json)
 * [npm scripts](/using-npm/scripts)
 * [npm publish](/commands/npm-publish)
-* [npm login](/commands/npm-login)
+* [npm adduser](/commands/npm-adduser)
 * [npm registry](/using-npm/registry)

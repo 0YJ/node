@@ -107,18 +107,7 @@ class V8_EXPORT_PRIVATE JSNativeContextSpecialization final
                                  AccessMode access_mode);
   Reduction ReduceNamedAccess(Node* node, Node* value,
                               NamedAccessFeedback const& feedback,
-                              AccessMode access_mode,
-                              FeedbackSource const& source,
-                              Node* key = nullptr);
-  Reduction ReduceProxyAccess(Node* node, Node* value,
-                              ProxyFeedback const& feedback,
-                              AccessMode access_mode,
-                              FeedbackSource const& source,
-                              Node* key = nullptr);
-  Reduction ReduceHomomorphicAccess(
-      Node* node, Node* value,
-      HomomorphicPropertyAccessFeedback const& feedback, AccessMode access_mode,
-      Node* key = nullptr);
+                              AccessMode access_mode, Node* key = nullptr);
   Reduction ReduceMegaDOMPropertyAccess(
       Node* node, Node* value, MegaDOMPropertyAccessFeedback const& feedback,
       FeedbackSource const& source);
@@ -164,12 +153,11 @@ class V8_EXPORT_PRIVATE JSNativeContextSpecialization final
       Node* lookup_start_object, Node* receiver, Node* value, Node* context,
       Node* frame_state, Node* effect, Node* control, NameRef name,
       ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info,
-      AccessMode access_mode, FeedbackSource const& source);
+      AccessMode access_mode);
   std::optional<ValueEffectControl> BuildPropertyLoad(
       Node* lookup_start_object, Node* receiver, Node* context,
       Node* frame_state, Node* effect, Node* control, NameRef name,
-      ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info,
-      FeedbackSource const& source);
+      ZoneVector<Node*>* if_exceptions, PropertyAccessInfo const& access_info);
 
   std::optional<ValueEffectControl> BuildPropertyStore(
       Node* receiver, Node* value, Node* context, Node* frame_state,
@@ -229,7 +217,7 @@ class V8_EXPORT_PRIVATE JSNativeContextSpecialization final
   // Construct appropriate subgraph to check that the {value} matches
   // the previously recorded {name} feedback.
   Node* BuildCheckEqualsName(NameRef name, Node* value, Node* effect,
-                             Control* control);
+                             Node* control);
 
   // Returns true if {str} can safely be read:
   //   - if we are on the main thread, then any string can safely be read

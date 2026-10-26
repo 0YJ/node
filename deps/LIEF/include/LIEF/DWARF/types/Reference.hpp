@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 #ifndef LIEF_DWARF_REFERENCE_H
 #define LIEF_DWARF_REFERENCE_H
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/DWARF/Type.hpp"
 
@@ -26,30 +25,20 @@ namespace types {
 /// This class represents a `DW_TAG_reference_type`
 class LIEF_API Reference : public Type {
   public:
-  template<typename... Args,
-           typename = typename std::
-               enable_if<std::is_constructible<Type, Args&&...>::value>::type>
-  Reference(Args&&... args) :
-    Type(std::forward<Args>(args)...) {}
-
-  Reference(const Reference&) = delete;
-  Reference& operator=(const Reference&) = delete;
-
-  Reference(Reference&&) noexcept = default;
-  Reference& operator=(Reference&&) noexcept = default;
+  using Type::Type;
 
   static bool classof(const Type* type) {
     return type->kind() == Type::KIND::REF;
   }
 
   /// The underlying type referenced by this ref-type.
-  const Type* underlying_type() const LIEF_LIFETIMEBOUND;
+  const Type* underlying_type() const;
 
-  const Type* operator->() const LIEF_LIFETIMEBOUND {
+  const Type* operator->() const {
     return underlying_.get();
   }
 
-  const Type* operator*() const LIEF_LIFETIMEBOUND {
+  const Type* operator*() const {
     return underlying_.get();
   }
 

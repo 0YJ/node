@@ -122,9 +122,8 @@ class GCCallbacksInSafepoint final {
   void Invoke(GCType gc_type) const {
     DisallowGarbageCollection scope;
     for (const CallbackData& callback_data : callbacks_) {
-      if (callback_data.gc_type_ & gc_type) {
+      if (callback_data.gc_type_ & gc_type)
         callback_data.callback(callback_data.user_data);
-      }
     }
   }
 

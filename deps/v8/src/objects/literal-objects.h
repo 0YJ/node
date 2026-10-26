@@ -22,50 +22,50 @@ namespace internal {
 class ClassLiteral;
 class StructBodyDescriptor;
 
-V8_OBJECT class PrototypeSharedClosureInfo : public Struct {
+#include "torque-generated/src/objects/literal-objects-tq.inc"
+
+class PrototypeSharedClosureInfo
+    : public TorqueGeneratedPrototypeSharedClosureInfo<
+          PrototypeSharedClosureInfo, Struct> {
  public:
-  inline Tagged<ObjectBoilerplateDescription> boilerplate_description() const;
-  inline void set_boilerplate_description(
-      Tagged<ObjectBoilerplateDescription> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<ClosureFeedbackCellArray> closure_feedback_cell_array() const;
-  inline void set_closure_feedback_cell_array(
-      Tagged<ClosureFeedbackCellArray> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<Context> context() const;
-  inline void set_context(Tagged<Context> value,
-                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
   DECL_PRINTER(PrototypeSharedClosureInfo)
   DECL_VERIFIER(PrototypeSharedClosureInfo)
 
   using BodyDescriptor = StructBodyDescriptor;
 
+  TQ_OBJECT_CONSTRUCTORS(PrototypeSharedClosureInfo)
+};
+
+class ObjectBoilerplateDescriptionShape final : public AllStatic {
  public:
-  TaggedMember<ObjectBoilerplateDescription> boilerplate_description_;
-  TaggedMember<ClosureFeedbackCellArray> closure_feedback_cell_array_;
-  TaggedMember<Context> context_;
-} V8_OBJECT_END;
+  using ElementT = Object;
+  using CompressionScheme = V8HeapCompressionScheme;
+  static constexpr RootIndex kMapRootIndex =
+      RootIndex::kObjectBoilerplateDescriptionMap;
+  static constexpr bool kLengthEqualsCapacity = true;
+
+  V8_ARRAY_EXTRA_FIELDS({
+    TaggedMember<Smi> backing_store_size_;
+    TaggedMember<Smi> flags_;
+  });
+};
 
 // ObjectBoilerplateDescription is a list of properties consisting of name
 // value pairs. In addition to the properties, it provides the projected number
 // of properties in the backing store. This number includes properties with
 // computed names that are not in the list.
-V8_OBJECT class ObjectBoilerplateDescription
-    : public TaggedArrayBase<ObjectBoilerplateDescription, Object> {
-  using Super = TaggedArrayBase<ObjectBoilerplateDescription, Object>;
-
+class ObjectBoilerplateDescription
+    : public TaggedArrayBase<ObjectBoilerplateDescription,
+                             ObjectBoilerplateDescriptionShape> {
+  using Super = TaggedArrayBase<ObjectBoilerplateDescription,
+                                ObjectBoilerplateDescriptionShape>;
  public:
-  static constexpr RootIndex kMapRootIndex =
-      RootIndex::kObjectBoilerplateDescriptionMap;
-  using KeyT = UnionOf<InternalizedString, Number>;
+  using Shape = ObjectBoilerplateDescriptionShape;
 
   template <class IsolateT>
   static inline Handle<ObjectBoilerplateDescription> New(
-      IsolateT* isolate, uint32_t boilerplate, uint32_t backing_store_size,
-      AllocationType allocation = AllocationType::kYoung);
+      IsolateT* isolate, int boilerplate, int all_properties, int index_keys,
+      bool has_seen_proto, AllocationType allocation = AllocationType::kYoung);
 
   // ObjectLiteral::Flags for nested object literals.
   inline int flags() const;
@@ -77,20 +77,17 @@ V8_OBJECT class ObjectBoilerplateDescription
 
   inline int boilerplate_properties_count() const;
 
-  inline Tagged<KeyT> name(int index) const;
+  inline Tagged<Object> name(int index) const;
   inline Tagged<Object> value(int index) const;
 
-  inline void set_key_value(int index, Tagged<KeyT> key, Tagged<Object> value);
+  inline void set_key_value(int index, Tagged<Object> key,
+                            Tagged<Object> value);
   inline void set_value(int index, Tagged<Object> value);
 
   DECL_VERIFIER(ObjectBoilerplateDescription)
   DECL_PRINTER(ObjectBoilerplateDescription)
 
   class BodyDescriptor;
-
-  static constexpr uint32_t kLengthOffset = sizeof(HeapObject);
-  static constexpr uint32_t kHeaderSize =
-      kLengthOffset + 3 * (TAGGED_SIZE_8_BYTES ? kTaggedSize : kApiInt32Size);
 
  private:
   using TaggedArrayBase::get;
@@ -99,15 +96,9 @@ V8_OBJECT class ObjectBoilerplateDescription
   static constexpr int kElementsPerEntry = 2;
   static constexpr int NameIndex(int i) { return i * kElementsPerEntry; }
   static constexpr int ValueIndex(int i) { return i * kElementsPerEntry + 1; }
+};
 
- public:
-  // length_ / optional_padding_ live in FixedArrayBase.
-  TaggedMember<Smi> backing_store_size_;
-  TaggedMember<Smi> flags_;
-  FLEXIBLE_ARRAY_MEMBER(typename Super::ElementMemberT, objects);
-} V8_OBJECT_END;
-
-V8_OBJECT class ArrayBoilerplateDescription : public Struct {
+V8_OBJECT class ArrayBoilerplateDescription : public StructLayout {
  public:
   inline ElementsKind elements_kind() const;
   inline void set_elements_kind(ElementsKind kind);
@@ -139,7 +130,7 @@ V8_OBJECT class ArrayBoilerplateDescription : public Struct {
   TaggedMember<FixedArrayBase> constant_elements_;
 } V8_OBJECT_END;
 
-V8_OBJECT class RegExpBoilerplateDescription : public Struct {
+V8_OBJECT class RegExpBoilerplateDescription : public StructLayout {
  public:
   // Dispatched behavior.
   void BriefPrintDetails(std::ostream& os);
@@ -147,6 +138,10 @@ V8_OBJECT class RegExpBoilerplateDescription : public Struct {
   inline Tagged<RegExpData> data(IsolateForSandbox isolate) const;
   inline void set_data(Tagged<RegExpData> value,
                        WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+
+  inline Tagged<String> source() const;
+  inline void set_source(Tagged<String> value,
+                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline int flags() const;
   inline void set_flags(int value);
@@ -162,20 +157,21 @@ V8_OBJECT class RegExpBoilerplateDescription : public Struct {
   friend struct ObjectTraits<RegExpBoilerplateDescription>;
 
   TrustedPointerMember<RegExpData, kRegExpDataIndirectPointerTag> data_;
+  TaggedMember<String> source_;
   TaggedMember<Smi> flags_;
 } V8_OBJECT_END;
 
 template <>
 struct ObjectTraits<RegExpBoilerplateDescription> {
   using BodyDescriptor = StackedBodyDescriptor<
-      FixedBodyDescriptor<offsetof(RegExpBoilerplateDescription, flags_),
+      FixedBodyDescriptor<offsetof(RegExpBoilerplateDescription, source_),
                           sizeof(RegExpBoilerplateDescription),
                           sizeof(RegExpBoilerplateDescription)>,
       WithStrongTrustedPointer<offsetof(RegExpBoilerplateDescription, data_),
                                kRegExpDataIndirectPointerTag>>;
 };
 
-V8_OBJECT class ClassBoilerplate : public Struct {
+V8_OBJECT class ClassBoilerplate : public StructLayout {
  public:
   enum ValueKind { kData, kGetter, kSetter, kAutoAccessor };
 

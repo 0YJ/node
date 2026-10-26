@@ -14,7 +14,6 @@
 
 #include "absl/strings/internal/cordz_functions.h"
 
-#include <cstdint>
 #include <thread>  // NOLINT we need real clean new threads
 
 #include "gmock/gmock.h"

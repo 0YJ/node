@@ -17,6 +17,5 @@
   "tsan": false,
   "ubsan": false,
   "use_sanitizer": false,
-  "verify_predictable": false,
-  "dumpling": false
+  "verify_predictable": false
 }

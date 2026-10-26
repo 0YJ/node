@@ -2,9 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --turbolev --no-maglev --wasm-in-js-inlining-wrapper
+// Flags: --turbolev --no-maglev --turbolev-inline-js-wasm-wrappers
 // Flags: --allow-natives-syntax --trace-deopt --trace-deopt-verbose
-// Flags: --turbofan --no-stress-maglev
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 d8.file.execute('test/mjsunit/mjsunit.js');
@@ -15,7 +14,7 @@ let arrayIndex = 0;
 function createWasmModuleForLazyDeopt(returnType, createValue, callback) {
   let builder = new WasmModuleBuilder();
   builder.addMemory(1, 1);
-  let index = builder.addArray(kWasmI32);
+  let index = builder.addArray(kWasmI32, true);
   assertEquals(arrayIndex, index);
   let callbackIndex = builder.addImport('env', 'callback', kSig_v_i);
 

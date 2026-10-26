@@ -63,12 +63,6 @@ bool WasPresentOnCommandLine(absl::string_view flag_name);
 // misspellings.
 std::vector<std::string> GetMisspellingHints(absl::string_view flag);
 
-// IsIndirectFlagExpansionEnabled()
-//
-// If DisableFlagfileAndEnvParsing() has been called, returns false. Otherwise,
-// returns true.
-[[nodiscard]] bool IsIndirectFlagExpansionEnabled();
-
 }  // namespace flags_internal
 ABSL_NAMESPACE_END
 }  // namespace absl

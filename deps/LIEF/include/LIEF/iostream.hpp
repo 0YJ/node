@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,13 +23,12 @@
 #include <vector>
 #include <array>
 
-#include "LIEF/visibility.h"
 #include "LIEF/span.hpp"
 #include "LIEF/optional.hpp"
 #include "LIEF/endianness_support.hpp"
 
 namespace LIEF {
-class LIEF_API vector_iostream {
+class vector_iostream {
   public:
   static size_t uleb128_size(uint64_t value);
   static size_t sleb128_size(int64_t value);
@@ -37,22 +36,23 @@ class LIEF_API vector_iostream {
   using pos_type = std::streampos;
   using off_type = std::streamoff;
   enum class RELOC_OP {
-    ADD,
-    SUB,
+    ADD, SUB
   };
 
   vector_iostream() = default;
   vector_iostream(std::vector<uint8_t>& ref) :
-    raw_(&ref) {}
+    raw_(&ref)
+  {}
   vector_iostream(bool endian_swap) :
-    endian_swap_(endian_swap) {}
+    endian_swap_(endian_swap)
+  {}
 
-  vector_iostream& reserve(size_t size) LIEF_LIFETIMEBOUND {
+  vector_iostream& reserve(size_t size) {
     raw_->reserve(size);
     return *this;
   }
 
-  vector_iostream& increase_capacity(size_t size) LIEF_LIFETIMEBOUND {
+  vector_iostream& increase_capacity(size_t size) {
     raw_->reserve(raw_->size() + size);
     return *this;
   }
@@ -63,7 +63,7 @@ class LIEF_API vector_iostream {
     return write(sp.data(), sp.size());
   }
 
-  vector_iostream& write(const std::vector<uint8_t>& s) {
+  vector_iostream& write(std::vector<uint8_t> s) {
     if (s.empty()) {
       return *this;
     }
@@ -94,9 +94,7 @@ class LIEF_API vector_iostream {
     return write(other.data());
   }
 
-  template<class T,
-           typename = typename std::enable_if<std::is_standard_layout<T>::value &&
-                                              std::is_trivial<T>::value>::type>
+  template<class T, typename = typename std::enable_if<std::is_standard_layout<T>::value && std::is_trivial<T>::value>::type>
   vector_iostream& write(const T& t) {
     const auto pos = static_cast<size_t>(tellp());
     if (raw_->size() < (pos + sizeof(T))) {
@@ -113,7 +111,7 @@ class LIEF_API vector_iostream {
     return *this;
   }
 
-  vector_iostream& align(size_t alignment, uint8_t fill = 0) LIEF_LIFETIMEBOUND;
+  vector_iostream& align(size_t alignment, uint8_t fill = 0);
 
   template<typename T>
   vector_iostream& write(const std::pair<T, T>& p) {
@@ -144,8 +142,8 @@ class LIEF_API vector_iostream {
     return opt ? write<T>(*opt) : *this;
   }
 
-  vector_iostream& write_uleb128(uint64_t value) LIEF_LIFETIMEBOUND;
-  vector_iostream& write_sleb128(int64_t value) LIEF_LIFETIMEBOUND;
+  vector_iostream& write_uleb128(uint64_t value);
+  vector_iostream& write_sleb128(int64_t value);
 
   vector_iostream& get(std::vector<uint8_t>& c) {
     c = *raw_;
@@ -174,11 +172,11 @@ class LIEF_API vector_iostream {
     return *this;
   }
 
-  vector_iostream& seek_end() LIEF_LIFETIMEBOUND {
+  vector_iostream& seek_end() {
     return seekp(raw_->size());
   }
 
-  vector_iostream& pad(size_t size, uint8_t value = 0) LIEF_LIFETIMEBOUND {
+  vector_iostream& pad(size_t size, uint8_t value = 0) {
     raw_->resize(raw_->size() + size, value);
     return *this;
   }
@@ -250,17 +248,15 @@ class LIEF_API vector_iostream {
 
   template<class T>
   T* edit_as() {
-    const auto end = static_cast<size_t>(current_pos_) + sizeof(T);
-    if (raw_->size() < end) {
-      return nullptr;
-    }
+    assert(((size_t)current_pos_ + sizeof(T)) <= raw_->size());
     return reinterpret_cast<T*>(raw_->data() + current_pos_);
   }
 
   template<class T>
   T* edit_as(size_t pos) {
     seekp(pos);
-    return edit_as<T>();
+    assert(((size_t)current_pos_ + sizeof(T)) <= raw_->size());
+    return reinterpret_cast<T*>(raw_->data() + current_pos_);
   }
 
   const vector_iostream& copy_into(const span<uint8_t>& sp, size_t sz) const {
@@ -321,13 +317,15 @@ class ScopeOStream {
 
   explicit ScopeOStream(vector_iostream& stream, uint64_t pos) :
     pos_{stream.tellp()},
-    stream_{stream} {
+    stream_{stream}
+  {
     stream_.seekp(pos);
   }
 
   explicit ScopeOStream(vector_iostream& stream) :
     pos_{stream.tellp()},
-    stream_{stream} {}
+    stream_{stream}
+  {}
 
   ~ScopeOStream() {
     stream_.seekp(pos_);
@@ -349,6 +347,7 @@ class ScopeOStream {
   std::streampos pos_ = 0;
   vector_iostream& stream_;
 };
+
 
 
 }

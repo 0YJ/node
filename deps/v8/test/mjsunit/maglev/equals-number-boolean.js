@@ -44,9 +44,9 @@ assertEquals(0, equals(false, true));
 assertEquals(0, equals(true, false));
 assertEquals(0, equals(3, 4));
 
-assertMaglevved(equals);
+assertTrue(isMaglevved(equals));
 
 // Passing a non-boolean oddball deopts.
 assertEquals(0, equals(undefined, true));
 
-assertNotMaglevved(equals);
+assertFalse(isMaglevved(equals));

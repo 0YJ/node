@@ -7,7 +7,6 @@
 import { hasQuic, skip } from '../common/index.mjs';
 import { readFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -34,8 +33,8 @@ const serverMayRead = new Promise((resolve) => { letServerRead = resolve; });
 const endpoint = await listen((session) => {
   session.onstream = async (stream) => {
     await serverMayRead;
-    // Reading extends the window
-    await dump(stream);
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of stream) { /* reading extends the window */ }
   };
 }, {
   alpn: 'foo',

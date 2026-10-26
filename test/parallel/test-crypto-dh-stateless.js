@@ -20,7 +20,7 @@ let keyTypeMismatchCode;
 if (hasOpenSSL(4, 0)) {
   keyTypeMismatchCode =
     /^ERR_OSSL_EVP_(OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE|INTERNAL_ERROR)$/;
-} else if (!isBoringSSL) {
+} else if (hasOpenSSL(3)) {
   keyTypeMismatchCode = 'ERR_OSSL_EVP_OPERATION_NOT_SUPPORTED_FOR_THIS_KEYTYPE';
 } else {
   keyTypeMismatchCode = 'ERR_OSSL_EVP_DIFFERENT_KEY_TYPES';
@@ -341,6 +341,15 @@ if (isBoringSSL) {
     // Same generator, but different primes.
       [{ group: 'modp5' }, { group: 'modp18' }]];
 
+    // TODO(danbev): Take a closer look if there should be a check in OpenSSL3
+    // when the dh parameters differ.
+    if (!hasOpenSSL(3)) {
+    // Same primes, but different generator.
+      list.push([{ group: 'modp5' }, { prime: group.getPrime(), generator: 5 }]);
+      // Same generator, but different primes.
+      list.push([{ primeLength: 1024 }, { primeLength: 1024 }]);
+    }
+
     for (const [params1, params2] of list) {
       const options = {
         privateKey: crypto.generateKeyPairSync('dh', params1).privateKey,
@@ -348,7 +357,9 @@ if (isBoringSSL) {
       };
       testDHError(options, {
         name: 'Error',
-        code: 'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS'
+        code: hasOpenSSL(3) ?
+          'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS' :
+          'ERR_OSSL_EVP_DIFFERENT_PARAMETERS'
       });
     }
   }
@@ -409,9 +420,9 @@ test(crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' }),
   };
   testDHError(options, {
     name: 'Error',
-    code: isBoringSSL ?
-      'ERR_OSSL_EVP_DIFFERENT_PARAMETERS' :
-      'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS'
+    code: hasOpenSSL(3) ?
+      'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS' :
+      'ERR_OSSL_EVP_DIFFERENT_PARAMETERS'
   });
 }
 
@@ -565,9 +576,9 @@ for (const { privateKey: alicePriv, publicKey: bobPub } of [
     testDHError({
       privateKey: privKey(ec256.privateKey),
       publicKey: pubKey(ec384.publicKey),
-    }, { code: isBoringSSL ?
-      'ERR_OSSL_EVP_DIFFERENT_PARAMETERS' :
-      'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS' });
+    }, { code: hasOpenSSL(3) ?
+      'ERR_OSSL_MISMATCHING_DOMAIN_PARAMETERS' :
+      'ERR_OSSL_EVP_DIFFERENT_PARAMETERS' });
 
     // Incompatible key types (ec + x25519)
     testDHError({
@@ -596,6 +607,8 @@ for (const { privateKey: alicePriv, publicKey: bobPub } of [
       privateKey: privKey(x25519.privateKey),
       publicKey: pubKey(zeroX25519PublicKey),
     }, isBoringSSL ? { code: 'ERR_OSSL_EVP_INVALID_PEER_KEY' } :
-      { code: 'ERR_OSSL_FAILED_DURING_DERIVATION' });
+      hasOpenSSL(3) ?
+        { code: 'ERR_OSSL_FAILED_DURING_DERIVATION' } :
+        { message: /Deriving bits failed/ });
   }
 }

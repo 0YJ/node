@@ -177,7 +177,7 @@ if (!isBoringSSL) {
   common.printSkipMessage('Skipping unsupported test cases');
 }
 
-if (!isBoringSSL) {
+if (hasOpenSSL(3)) {
   vectors['AES-OCB'] = {
     algorithm: { length: 256 },
     result: 'CryptoKey',
@@ -251,17 +251,18 @@ if (hasOpenSSL(3, 5) || isBoringSSL) {
 // Test bad usages
 {
   async function test(name) {
-    if (fips3 && (name === 'ChaCha20-Poly1305' || name === 'AES-OCB')) {
+    if (fips3 && name === 'ChaCha20-Poly1305') {
       await assert.rejects(
         subtle.generateKey({ name }, true, []),
-        { name: 'NotSupportedError', message: 'Unrecognized algorithm name' });
+        { name: 'NotSupportedError' });
       return;
     }
 
     if (fips35 && (name === 'X25519' || name === 'X448')) {
       await assert.rejects(
         subtle.generateKey({ name }, true, ['deriveBits']),
-        { name: 'NotSupportedError', message: 'Unrecognized algorithm name' });
+        (err) => err.name === 'OperationError' &&
+                 err.cause?.code === 'ERR_OSSL_EVP_UNSUPPORTED');
       return;
     }
 
@@ -527,7 +528,7 @@ if (hasOpenSSL(3, 5) || isBoringSSL) {
       );
     }
   } else {
-    common.printSkipMessage('SHA-3 is only supported for digest operations');
+    common.printSkipMessage('Skipping unsupported SHA-3 test case');
   }
 
   const tests = kTests.map((args) => test(...args));
@@ -733,7 +734,7 @@ if (hasOpenSSL(3, 5) || isBoringSSL) {
       // [undefined, 'SHA3-512', ['sign', 'verify']],
     );
   } else {
-    common.printSkipMessage('SHA-3 is only supported for digest operations');
+    common.printSkipMessage('Skipping unsupported SHA-3 test cases');
   }
 
   const tests = Promise.all(kTests.map((args) => test(...args)));
@@ -756,7 +757,8 @@ assert.throws(() => new CryptoKey(), { code: 'ERR_ILLEGAL_CONSTRUCTOR' });
   async function testFipsUnsupported(name) {
     await assert.rejects(
       subtle.generateKey({ name }, true, ['deriveKey', 'deriveBits']),
-      { name: 'NotSupportedError', message: 'Unrecognized algorithm name' });
+      (err) => err.name === 'OperationError' &&
+               err.cause?.code === 'ERR_OSSL_EVP_UNSUPPORTED');
   }
 
   async function test(

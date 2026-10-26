@@ -9,7 +9,7 @@
 // Include the non-inl header before the rest of the headers.
 
 #include "src/heap/marking-inl.h"
-#include "src/heap/mutable-page-inl.h"
+#include "src/heap/mutable-page.h"
 
 namespace v8 {
 namespace internal {
@@ -17,7 +17,12 @@ namespace internal {
 template <typename ConcreteState, AccessMode access_mode>
 MarkingStateBase<ConcreteState, access_mode>::MarkingStateBase(
     const Isolate* isolate)
-    : isolate_(isolate) {}
+    :
+#if V8_COMPRESS_POINTERS
+      cage_base_(isolate),
+#endif
+      isolate_(isolate) {
+}
 
 template <typename ConcreteState, AccessMode access_mode>
 bool MarkingStateBase<ConcreteState, access_mode>::IsMarked(
@@ -43,7 +48,7 @@ bool MarkingStateBase<ConcreteState, access_mode>::TryMarkAndAccountLiveBytes(
   if (TryMark(obj)) {
     MutablePage::FromHeapObject(isolate_, obj)
         ->IncrementLiveBytesAtomically(
-            ALIGN_TO_ALLOCATION_ALIGNMENT(obj->SafeSize().value()));
+            ALIGN_TO_ALLOCATION_ALIGNMENT(obj->Size(cage_base())));
     return true;
   }
   return false;
@@ -51,7 +56,7 @@ bool MarkingStateBase<ConcreteState, access_mode>::TryMarkAndAccountLiveBytes(
 
 template <typename ConcreteState, AccessMode access_mode>
 bool MarkingStateBase<ConcreteState, access_mode>::TryMarkAndAccountLiveBytes(
-    Tagged<HeapObject> obj, uint32_t object_size) {
+    Tagged<HeapObject> obj, int object_size) {
   if (TryMark(obj)) {
     MutablePage::FromHeapObject(isolate_, obj)
         ->IncrementLiveBytesAtomically(object_size);

@@ -8,7 +8,6 @@
 
 import { hasQuic, skip, mustCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -74,7 +73,7 @@ w.endSync();
 // and 1KB chunks (every 2 chunks fills the buffer).
 assert.ok(backpressureCount > 0, 'backpressure should have been hit');
 
-await dump(stream);
+for await (const _ of stream) { /* drain */ } // eslint-disable-line no-unused-vars
 await Promise.all([stream.closed, serverDone.promise]);
 await clientSession.close();
 await serverEndpoint.close();

@@ -11,9 +11,8 @@ const {
   SyncShare,
   text,
   textSync,
-} = require('stream/iter');
 
-const { setImmediate } = require('timers/promises');
+} = require('stream/iter');
 
 // =============================================================================
 // Share.from
@@ -203,7 +202,7 @@ async function testShareDropNewest() {
   });
 
   await secondPullStarted;
-  await setImmediate();
+  await new Promise(setImmediate);
   assert.strictEqual(pulls, 2);
   assert.strictEqual(nextSettled, false);
 
@@ -222,29 +221,23 @@ async function testShareDropNewest() {
 // =============================================================================
 
 async function testShareStrictBackpressure() {
-  for (const transformed of [false, true]) {
-    async function* source() {
-      for (let i = 0; i < 10; i++) {
-        yield [new Uint8Array(16384)];
-      }
+  async function* source() {
+    for (let i = 0; i < 10; i++) {
+      yield [new Uint8Array(16384)];
     }
-    const shared = share(source(), {
-      budget: 32768,
-      backpressure: 'strict',
-    });
-    const consumer = transformed ?
-      shared.pull((chunks) => chunks) : shared.pull();
-    const fast = consumer[Symbol.asyncIterator]();
-    // This consumer prevents the buffer from being trimmed.
-    shared.pull();
-
-    await fast.next();
-    await fast.next();
-    await assert.rejects(fast.next(), { code: 'ERR_OUT_OF_RANGE' });
-    assert.strictEqual(shared.consumerCount, 1);
-    assert.strictEqual((await fast.next()).done, true);
-    shared.cancel();
   }
+  const shared = share(source(), { budget: 32768, backpressure: 'strict' });
+  const fast = shared.pull();
+  // Create a second consumer that never reads — this prevents buffer trimming
+  shared.pull();
+
+  // The fast consumer's pulls will eventually cause the buffer to exceed
+  // the budget (since the slow consumer prevents trimming),
+  // triggering an ERR_OUT_OF_RANGE error.
+  await assert.rejects(async () => {
+    // eslint-disable-next-line no-unused-vars
+    for await (const _ of fast) { /* consume */ }
+  }, { code: 'ERR_OUT_OF_RANGE' });
 }
 
 Promise.all([

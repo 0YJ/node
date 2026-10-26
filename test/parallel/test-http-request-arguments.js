@@ -18,7 +18,7 @@ const http = require('http');
     common.mustCall(() => {
       http.get(
         'http://example.com/testpath',
-        { hostname: 'localhost', port: server.address().port, agent: false },
+        { hostname: 'localhost', port: server.address().port },
         common.mustCall((res) => {
           res.resume();
         })

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -15,6 +15,9 @@
 
 #include <openssl/md4.h>
 #include "crypto/evp.h"
+#include "legacy_meth.h"
+
+IMPLEMENT_LEGACY_EVP_MD_METH(md4, MD4)
 
 static const EVP_MD md4_md = {
     NID_md4,
@@ -22,7 +25,7 @@ static const EVP_MD md4_md = {
     MD4_DIGEST_LENGTH,
     0,
     EVP_ORIG_GLOBAL,
-    MD4_CBLOCK
+    LEGACY_EVP_MD_METH_TABLE(md4_init, md4_update, md4_final, NULL, MD4_CBLOCK),
 };
 
 const EVP_MD *EVP_md4(void)

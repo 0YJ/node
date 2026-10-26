@@ -9,7 +9,6 @@
 #error This header should only be included if WebAssembly is enabled.
 #endif  // !V8_ENABLE_WEBASSEMBLY
 
-#include "src/base/logging.h"
 #include "src/base/memory.h"
 #include "src/common/simd128.h"
 #include "src/handles/handles.h"
@@ -42,12 +41,7 @@ struct WasmModule;
   V(f64_boxed, kWasmF64, Float64)         \
   V(s128, kWasmS128, Simd128)
 
-// Storing DirectHandle in {bit_pattern_} would be unsafe: WasmValue is copied
-// into Zone-allocated storage (e.g. the constant-expression decoder's
-// FastZoneVector<Value> stack) which conservative stack scanning does not visit
-// so the raw address goes stale on a compacting GC. Store an IndirectHandle for
-// now, matching PropertyDescriptor.
-ASSERT_TRIVIALLY_COPYABLE(IndirectHandle<Object>);
+ASSERT_TRIVIALLY_COPYABLE(DirectHandle<Object>);
 
 // A wasm value with type information.
 class WasmValue {
@@ -81,26 +75,28 @@ class WasmValue {
 
   WasmValue(DirectHandle<Object> ref, CanonicalValueType type)
       : type_(type), bit_pattern_{} {
-    static_assert(sizeof(IndirectHandle<Object>) <= sizeof(bit_pattern_),
+    static_assert(sizeof(DirectHandle<Object>) <= sizeof(bit_pattern_),
                   "bit_pattern_ must be large enough to fit a Handle");
     DCHECK(type.is_ref());
-    base::WriteUnalignedValue<IndirectHandle<Object>>(
-        reinterpret_cast<Address>(bit_pattern_), indirect_handle(ref));
+    base::WriteUnalignedValue<DirectHandle<Object>>(
+        reinterpret_cast<Address>(bit_pattern_), ref);
   }
 
   DirectHandle<Object> to_ref() const {
     DCHECK(type_.is_ref());
-    return base::ReadUnalignedValue<IndirectHandle<Object>>(
+    return base::ReadUnalignedValue<DirectHandle<Object>>(
         reinterpret_cast<Address>(bit_pattern_));
   }
 
   CanonicalValueType type() const { return type_; }
 
+  const WasmModule* module() const { return module_; }
+
   // Checks equality of type and bit pattern (also for float and double values).
   bool operator==(const WasmValue& other) const {
     return type_ == other.type_ &&
            !memcmp(bit_pattern_, other.bit_pattern_,
-                   type_.is_ref() ? sizeof(IndirectHandle<Object>)
+                   type_.is_ref() ? sizeof(DirectHandle<Object>)
                                   : type_.value_kind_size());
   }
 
@@ -111,7 +107,7 @@ class WasmValue {
     memcpy(to, bit_pattern_, type_.value_kind_size());
   }
 
-  // If {packed_type.is_packed()}, create a new value of {packed_type}.
+  // If {packed_type.is_packed()}, create a new value of {packed_type()}.
   // Otherwise, return this object.
   WasmValue Packed(ValueType packed_type) const {
     if (packed_type == kWasmI8) {
@@ -175,7 +171,6 @@ class WasmValue {
       case kBottom:
         UNREACHABLE();
     }
-    UNREACHABLE();
   }
 
   bool zero_byte_representation() {
@@ -188,6 +183,7 @@ class WasmValue {
  private:
   CanonicalValueType type_;
   uint8_t bit_pattern_[16];
+  const WasmModule* module_ = nullptr;
 };
 
 #define DECLARE_CAST(name, localtype, ctype, ...) \

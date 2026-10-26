@@ -31,7 +31,6 @@
 #define ABSL_BASE_OPTIMIZATION_H_
 
 #include <assert.h>
-#include <stdlib.h>
 
 #ifdef __cplusplus
 // Included for std::unreachable()
@@ -218,12 +217,12 @@
 #elif defined(_MSC_VER)
 #define ABSL_INTERNAL_UNREACHABLE_IMPL() __assume(false)
 #else
-#define ABSL_INTERNAL_UNREACHABLE_IMPL() ((void)0)
+#define ABSL_INTERNAL_UNREACHABLE_IMPL()
 #endif
 
 // `ABSL_UNREACHABLE()` is an unreachable statement.  A program which reaches
 // one has undefined behavior, and the compiler may optimize accordingly.
-#if (ABSL_OPTION_HARDENED == 1 || ABSL_OPTION_HARDENED == 2) && defined(NDEBUG)
+#if ABSL_OPTION_HARDENED == 1 && defined(NDEBUG)
 // Abort in hardened mode to avoid dangerous undefined behavior.
 #define ABSL_UNREACHABLE()                \
   do {                                    \
@@ -266,8 +265,7 @@
 //   int y = x / 16;
 //
 #if !defined(NDEBUG)
-#define ABSL_ASSUME(cond) \
-  (ABSL_PREDICT_TRUE((cond)) ? void() : assert(false && #cond))  // NOLINT
+#define ABSL_ASSUME(cond) assert(cond)
 #elif ABSL_HAVE_BUILTIN(__builtin_assume)
 #define ABSL_ASSUME(cond) __builtin_assume(cond)
 #elif defined(_MSC_VER)

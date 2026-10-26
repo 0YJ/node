@@ -2,20 +2,61 @@
 'use strict';
 
 const common = require('../common');
+const { spawnSyncAndAssert } = require('../common/child_process');
 const { AsyncLocalStorage } = require('async_hooks');
 const assert = require('assert');
+
+if (process.argv[2] !== 'child') {
+  // Test with async-context-frame disabled (legacy ALS mode)
+  spawnSyncAndAssert(process.execPath, [
+    '--expose-internals',
+    '--expose-gc',
+    '--no-async-context-frame',
+    __filename,
+    'child',
+  ], {});
+
+  // Test with async-context-frame enabled (default)
+  spawnSyncAndAssert(process.execPath, [
+    '--expose-internals',
+    '--expose-gc',
+    __filename,
+    'child',
+  ], {});
+}
+
+const AsyncContextFrame = require('internal/async_context_frame');
 const {
   async_context_frame,
 } = require('internal/timers');
+const {
+  symbols: {
+    async_local_storage_context_symbol,
+  },
+} = require('internal/async_hooks');
 
-// Stores live in the async context frame, not directly on the resource. The
-// resource holds a reference to the frame via async_context_frame.
+// When async-context-frame is enabled, stores are stored in the async context
+// frame, not directly on the resource. The resource holds a reference to the
+// frame via async_context_frame.
+const isACFEnabled = AsyncContextFrame.enabled;
+
+function getStore(resource, als) {
+  if (isACFEnabled) {
+    return resource[async_context_frame]?.get(als);
+  }
+  return resource[async_local_storage_context_symbol]?.[als.kResourceStore];
+}
+
 function assertStore(resource, als, store) {
-  assert.strictEqual(resource[async_context_frame]?.get(als), store);
+  assert.strictEqual(getStore(resource, als), store);
 }
 
 function assertNoStore(resource) {
-  assert.strictEqual(resource[async_context_frame], undefined);
+  if (isACFEnabled) {
+    assert.strictEqual(resource[async_context_frame], undefined);
+  } else {
+    assert.strictEqual(resource[async_local_storage_context_symbol], undefined);
+  }
 }
 
 // Test that setTimeout does not retain a reference to the async store after

@@ -4,7 +4,11 @@
 //
 // Flags: --expose-gc --sandbox-testing
 
+const kJSArrayType = Sandbox.getInstanceTypeIdFor("JS_ARRAY_TYPE");
+const kJSArrayLengthOffset = Sandbox.getFieldOffset(kJSArrayType, "length");
 const kMaxRegularHeapObjectSize = 131072;
+
+const memory = new DataView(new Sandbox.MemoryView(0, 0x100000000));
 
 // Allocate an array and promote it to the old generation.
 const array = Array();
@@ -13,7 +17,10 @@ gc();
 const value = new Number();
 
 // Corrupt the length to still look like a regular heap object.
-Sandbox.corruptObjectField(array, 'length', kMaxRegularHeapObjectSize);
+memory.setUint32(
+  Sandbox.getAddressOf(array) + kJSArrayLengthOffset,
+  kMaxRegularHeapObjectSize,
+  true);
 
 // OOB write to the JS array also triggering the write barrier for an old->new
 // write with an offset that's too large for the remembered set. This should not

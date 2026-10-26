@@ -9,12 +9,8 @@
 #include "src/heap/local-factory-inl.h"
 #include "src/objects/allocation-site-inl.h"
 #include "src/objects/allocation-site.h"
-#include "src/objects/bytecode-array-inl.h"
 #include "src/objects/objects.h"
-#include "src/objects/trusted-object-inl.h"
-#include "src/sandbox/bytecode-verifier.h"
 #include "src/snapshot/code-serializer.h"
-#include "src/zone/zone.h"
 
 namespace v8 {
 namespace internal {
@@ -48,6 +44,7 @@ MaybeDirectHandle<HeapObject> ObjectDeserializer::Deserialize() {
     CHECK(new_instruction_stream_objects().empty());
     LinkAllocationSites();
     CHECK(new_maps().empty());
+    WeakenDescriptorArrays();
   }
 
   Rehash();
@@ -66,7 +63,6 @@ void ObjectDeserializer::CommitPostProcessedObjects() {
                                    MaybeObjectDirectHandle::Weak(script));
     isolate()->heap()->SetRootScriptList(*list);
   }
-  PostProcessExposedTrustedObjects();
 }
 
 void ObjectDeserializer::LinkAllocationSites() {
@@ -124,15 +120,11 @@ MaybeDirectHandle<HeapObject> OffThreadObjectDeserializer::Deserialize(
     CHECK(new_instruction_stream_objects().empty());
     CHECK(new_allocation_sites().empty());
     CHECK(new_maps().empty());
+    WeakenDescriptorArrays();
   }
 
   Rehash();
-  CommitPostProcessedObjects(deserialized_scripts);
-  return scope.CloseAndEscape(result);
-}
 
-void OffThreadObjectDeserializer::CommitPostProcessedObjects(
-    std::vector<IndirectHandle<Script>>* deserialized_scripts) {
   // TODO(leszeks): Figure out a better way of dealing with scripts.
   CHECK_EQ(new_scripts().size(), 1);
   for (DirectHandle<Script> script : new_scripts()) {
@@ -142,7 +134,8 @@ void OffThreadObjectDeserializer::CommitPostProcessedObjects(
     deserialized_scripts->push_back(
         isolate()->heap()->NewPersistentHandle(script));
   }
-  PostProcessExposedTrustedObjects();
+
+  return scope.CloseAndEscape(result);
 }
 
 }  // namespace internal

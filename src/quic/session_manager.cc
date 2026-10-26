@@ -1,3 +1,4 @@
+#if HAVE_OPENSSL && HAVE_QUIC
 #include "guard.h"
 #ifndef OPENSSL_NO_QUIC
 #include <base_object-inl.h>
@@ -162,3 +163,4 @@ bool SessionManager::is_empty() const {
 }  // namespace node::quic
 
 #endif  // OPENSSL_NO_QUIC
+#endif  // HAVE_OPENSSL && HAVE_QUIC

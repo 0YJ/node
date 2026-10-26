@@ -36,7 +36,6 @@ const bits = ['arm64', 'loong64', 'mips', 'mipsel', 'ppc64', 'riscv64', 's390x',
   .includes(process.arch) ? 64 : 32;
 const hasIntl = !!process.config.variables.v8_enable_i18n_support;
 const hasTemporal = !!process.config.variables.v8_enable_temporal_support;
-const hasV8Sandbox = !!process.config.variables.v8_enable_sandbox;
 
 // small-icu doesn't support non-English locales
 const hasFullICU = (() => {
@@ -1020,7 +1019,6 @@ const common = {
   getTTYfd,
   hasIntl,
   hasTemporal,
-  hasV8Sandbox,
   hasFullICU,
   hasCrypto,
   hasDtls,
@@ -1029,7 +1027,6 @@ const common = {
   hasSQLite,
   hasFFI,
   hasLocalStorage,
-  hasPerfetto,
   invalidArgTypeHelper,
   isAlive,
   isASan,

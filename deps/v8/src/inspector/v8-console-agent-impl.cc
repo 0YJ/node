@@ -44,9 +44,8 @@ Response V8ConsoleAgentImpl::disable() {
 Response V8ConsoleAgentImpl::clearMessages() { return Response::Success(); }
 
 void V8ConsoleAgentImpl::restore() {
-  if (!m_state->booleanProperty(ConsoleAgentState::consoleEnabled, false)) {
+  if (!m_state->booleanProperty(ConsoleAgentState::consoleEnabled, false))
     return;
-  }
   enable();
 }
 
@@ -62,19 +61,11 @@ void V8ConsoleAgentImpl::reportAllMessages() {
           m_session->contextGroupId());
   // The message queue can be cleared by a getter during message formatting.
   // Make a copy of the message to avoid a UAF.
-  // Also, the storage itself can be destroyed and recreated, so re-fetch the
-  // storage on each iteration.
-  size_t size = storage->messages().size();
-  uint64_t storageId = storage->id();
+  const auto& messages = storage->messages();
+  const size_t size = messages.size();
   for (size_t i = 0; i < size; ++i) {
-    V8ConsoleMessageStorage* inspectorStorage =
-        m_session->inspector()->consoleMessageStorage(
-            m_session->contextGroupId());
-    if (!inspectorStorage || inspectorStorage->id() != storageId) {
-      break;
-    }
-    if (i >= storage->messages().size()) break;
-    V8ConsoleMessage message = *storage->messages()[i];
+    if (i >= messages.size()) break;
+    V8ConsoleMessage message = *messages[i];
     if (!reportMessage(&message, false)) {
       break;
     }

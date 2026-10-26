@@ -34,26 +34,8 @@ const s2 = "12345";
 assertEquals("234", do_slice(s2, 1, 4));
 
 // We should still be in optimized code.
-assertMaglevved(do_slice);
-
-function do_slice_1(str, start) {
-  return str.slice(start);
-}
-%PrepareFunctionForOptimization(do_slice_1);
-assertEquals("bcdefg", do_slice_1(s, 1));
-%OptimizeMaglevOnNextCall(do_slice_1);
-assertEquals("bcdefg", do_slice_1(s, 1));
-assertMaglevved(do_slice_1);
-
-function do_slice_0(str) {
-  return str.slice();
-}
-%PrepareFunctionForOptimization(do_slice_0);
-assertEquals(s, do_slice_0(s));
-%OptimizeMaglevOnNextCall(do_slice_0);
-assertEquals(s, do_slice_0(s));
-assertMaglevved(do_slice_0);
+assertTrue(isMaglevved(do_slice));
 
 // Passing something else than a string deopts.
 assertEquals("x", do_slice({slice: function() { return "x";}}));
-assertNotMaglevved(do_slice);
+assertFalse(isMaglevved(do_slice));

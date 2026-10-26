@@ -112,15 +112,15 @@ void RegisterExternalReferences(ExternalReferenceRegistry* registry);
 
 #else
 
-// Provide stub implementations when KEM is unavailable.
+// Provide stub implementations when OpenSSL < 3.0
 namespace node {
 namespace crypto {
 namespace KEM {
 inline void Initialize(Environment* env, v8::Local<v8::Object> target) {
-  // No-op when KEM is unavailable.
+  // No-op when OpenSSL < 3.0
 }
 inline void RegisterExternalReferences(ExternalReferenceRegistry* registry) {
-  // No-op when KEM is unavailable.
+  // No-op when OpenSSL < 3.0
 }
 }  // namespace KEM
 }  // namespace crypto

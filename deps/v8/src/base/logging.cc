@@ -55,9 +55,10 @@ std::string PrettyPrintChar(int ch) {
 }
 
 void DefaultDcheckHandler(const char* file, int line, const char* message) {
-#if V8_LOGGING_LEVEL == 2
+#ifdef DEBUG
   V8_Fatal(file, line, "Debug check failed: %s.", message);
 #else
+  // This case happens only for unit tests.
   V8_Fatal("Debug check failed: %s.", message);
 #endif
 }
@@ -66,10 +67,6 @@ void DefaultDcheckHandler(const char* file, int line, const char* message) {
 
 void SetPrintStackTrace(void (*print_stack_trace)()) {
   g_print_stack_trace = print_stack_trace;
-}
-
-void PrintStackTraceIfAvailable() {
-  if (g_print_stack_trace) g_print_stack_trace();
 }
 
 void SetDcheckFunction(void (*dcheck_function)(const char*, int, const char*)) {
@@ -91,7 +88,7 @@ void FatalOOM(OOMType type, const char* msg) {
   const char* type_str = type == OOMType::kProcess ? "process" : "JavaScript";
   OS::PrintError("\n\n#\n# Fatal %s out of memory: %s\n#", type_str, msg);
 
-  v8::base::PrintStackTraceIfAvailable();
+  if (g_print_stack_trace) v8::base::g_print_stack_trace();
 
   fflush(stderr);
   if (FatalErrorsWithNoSecurityImpactShouldExit()) {
@@ -111,7 +108,7 @@ void FatalNoSecurityImpact(const char* format, ...) {
 
   OS::PrintError("\n#\n");
 
-  v8::base::PrintStackTraceIfAvailable();
+  if (g_print_stack_trace) v8::base::g_print_stack_trace();
 
   fflush(stderr);
   if (FatalErrorsWithNoSecurityImpactShouldExit()) {
@@ -184,7 +181,7 @@ class FailureMessage {
 
 }  // namespace
 
-#if V8_LOGGING_LEVEL == 2
+#ifdef DEBUG
 void V8_Fatal(const char* file, int line, const char* format, ...) {
 #else
 void V8_Fatal(const char* format, ...) {
@@ -209,24 +206,16 @@ void V8_Fatal(const char* format, ...) {
   if (v8::base::ControlledCrashesAreHarmless()) {
     // In this case, instead of crashing the process will be terminated
     // normally by OS::Abort. Make this clear in the output printed to stderr.
-#if V8_LOGGING_LEVEL == 2
     v8::base::OS::PrintError(
         "\n\n#\n# Safely terminating process due to error in %s, line %d\n# ",
         file, line);
-#else
-    v8::base::OS::PrintError("\n\n#\n# Safely terminating process\n# ");
-#endif
     // Also prefix the error message (printed below). This has two purposes:
     // (1) it makes it clear that this error is deemed "safe" (2) it causes
     // fuzzers that pattern-match on stderr output to ignore these failures.
     v8::base::OS::PrintError("The following harmless error was encountered: ");
   } else {
-#if V8_LOGGING_LEVEL == 2
     v8::base::OS::PrintError("\n\n#\n# Fatal error in %s, line %d\n# ", file,
                              line);
-#else
-    v8::base::OS::PrintError("\n\n#\n# Fatal error\n# ");
-#endif
   }
 
   // Print the error message.
@@ -237,28 +226,18 @@ void V8_Fatal(const char* format, ...) {
   // Print the message object's address to force stack allocation.
   v8::base::OS::PrintError("\n#\n#\n#\n#FailureMessage Object: %p", &message);
 
-  v8::base::PrintStackTraceIfAvailable();
+  if (v8::base::g_print_stack_trace) v8::base::g_print_stack_trace();
 
   fflush(stderr);
   v8::base::OS::Abort();
 }
 
-#if V8_LOGGING_LEVEL == 2
 void V8_Dcheck(const char* file, int line, const char* message) {
-#else
-void V8_Dcheck(const char* message) {
-  const char* file = "";
-  int line = 0;
-#endif
   if (v8::base::DcheckFailuresAreIgnored()) {
     // In this mode, DCHECK failures don't lead to process termination.
-#if V8_LOGGING_LEVEL == 2
     v8::base::OS::PrintError(
         "# Ignoring debug check failure in %s, line %d: %s\n", file, line,
         message);
-#else
-    v8::base::OS::PrintError("# Ignoring debug check failure: %s\n", message);
-#endif
     return;
   }
 

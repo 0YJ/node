@@ -15,7 +15,6 @@
 #ifndef ABSL_STRINGS_INTERNAL_CORDZ_STATISTICS_H_
 #define ABSL_STRINGS_INTERNAL_CORDZ_STATISTICS_H_
 
-#include <cstddef>
 #include <cstdint>
 
 #include "absl/base/config.h"

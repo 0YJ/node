@@ -7,6 +7,7 @@ class DumpHandler extends DecoratorHandler {
   #maxSize = 1024 * 1024
   #dumped = false
   #size = 0
+  #controller = null
   aborted = false
   reason = false
 
@@ -28,6 +29,7 @@ class DumpHandler extends DecoratorHandler {
 
   onRequestStart (controller, context) {
     controller.abort = this.#abort.bind(this)
+    this.#controller = controller
 
     return super.onRequestStart(controller, context)
   }
@@ -51,32 +53,43 @@ class DumpHandler extends DecoratorHandler {
   }
 
   onResponseError (controller, err) {
-    super.onResponseError(controller, this.aborted === true ? this.reason : err)
+    if (this.#dumped) {
+      return
+    }
+
+    // On network errors before connect, controller will be null
+    err = this.#controller?.reason ?? err
+
+    super.onResponseError(controller, err)
   }
 
   onResponseData (controller, chunk) {
     this.#size = this.#size + chunk.length
 
-    if (this.#size > this.#maxSize) {
-      throw new RequestAbortedError(
-        `Response size (${this.#size}) larger than maxSize (${this.#maxSize})`
-      )
-    }
-
-    if (this.#size === this.#maxSize) {
+    if (this.#size >= this.#maxSize) {
       this.#dumped = true
+
+      if (this.aborted === true) {
+        super.onResponseError(controller, this.reason)
+      } else {
+        super.onResponseEnd(controller, {})
+      }
     }
 
     return true
   }
 
   onResponseEnd (controller, trailers) {
-    if (this.aborted === true) {
+    if (this.#dumped) {
+      return
+    }
+
+    if (this.#controller.aborted === true) {
       super.onResponseError(controller, this.reason)
       return
     }
 
-    super.onResponseEnd(controller, this.#dumped ? {} : trailers)
+    super.onResponseEnd(controller, trailers)
   }
 }
 

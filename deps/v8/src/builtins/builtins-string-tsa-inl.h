@@ -173,6 +173,8 @@ class StringBuiltinsReducer : public Next {
       }
     }
 
+    __ Unreachable();
+
     BIND(done, return_value);
     return return_value;
   }
@@ -478,6 +480,8 @@ class StringBuiltinsReducer : public Next {
       }
     }
 
+    __ Unreachable();
+
     BIND(done, return_value);
     return return_value;
   }
@@ -488,7 +492,6 @@ class StringBuiltinsReducer : public Next {
     // for these strings and interesting symbols.
     GOTO_IF(__ IsToJSONString(name), done, 1);
     GOTO_IF(__ IsGetString(name), done, 1);
-    GOTO_IF(__ IsThenString(name), done, 1);
     GOTO_IF_NOT(__ IsSymbolMap(__ LoadMapField(name)), done, 0);
     GOTO_IF(
         __ template IsSetWord32<Symbol::IsInterestingSymbolBit>(V<Word32>::Cast(
@@ -659,6 +662,8 @@ class StringBuiltinsReducer : public Next {
         GOTO(*if_fail);
       }
     }
+
+    __ Unreachable();
 
     BIND(done, result);
     return result;

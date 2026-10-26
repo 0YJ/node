@@ -1,5 +1,5 @@
 /*
- * Copyright 1998-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1998-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -85,27 +85,12 @@ void X509_ALGOR_get0(const ASN1_OBJECT **paobj, int *pptype,
 }
 
 /* Set up an X509_ALGOR DigestAlgorithmIdentifier from an EVP_MD */
-int X509_ALGOR_set_md(X509_ALGOR *alg, const EVP_MD *md)
+void X509_ALGOR_set_md(X509_ALGOR *alg, const EVP_MD *md)
 {
-    int type, md_type;
-    ASN1_OBJECT *obj;
+    int type = md->flags & EVP_MD_FLAG_DIGALGID_ABSENT ? V_ASN1_UNDEF
+                                                       : V_ASN1_NULL;
 
-    if (alg == NULL || md == NULL)
-        return 0;
-
-    type = md->flags & EVP_MD_FLAG_DIGALGID_ABSENT ? V_ASN1_UNDEF
-                                                   : V_ASN1_NULL;
-    md_type = EVP_MD_type(md);
-
-    obj = (md_type == NID_undef) ? OBJ_txt2obj(EVP_MD_get0_name(md), 0)
-                                 : OBJ_nid2obj(md_type);
-    if (obj == NULL)
-        return 0;
-    if (!X509_ALGOR_set0(alg, obj, type, NULL)) {
-        ASN1_OBJECT_free(obj);
-        return 0;
-    }
-    return 1;
+    (void)X509_ALGOR_set0(alg, OBJ_nid2obj(EVP_MD_get_type(md)), type, NULL);
 }
 
 int X509_ALGOR_cmp(const X509_ALGOR *a, const X509_ALGOR *b)
@@ -163,10 +148,7 @@ int ossl_x509_algor_new_from_md(X509_ALGOR **palg, const EVP_MD *md)
         return 1;
     if ((alg = X509_ALGOR_new()) == NULL)
         return 0;
-    if (!X509_ALGOR_set_md(alg, md)) {
-        X509_ALGOR_free(alg);
-        return 0;
-    }
+    X509_ALGOR_set_md(alg, md);
     *palg = alg;
     return 1;
 }

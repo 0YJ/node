@@ -33,14 +33,14 @@ struct builtin : CallDescriptorBuilder {
   // void/never return types properly (e.g. in Torque), but they typically have
   // a JSAny dummy return type. Use Void/Never sentinels to express that in
   // Turboshaft's descriptors. We should find a better way to model this.
-  using Void = std::tuple<V<JSAny>>;
-  using Never = std::tuple<V<JSAny>>;
+  using Void = std::tuple<OpIndex>;
+  using Never = std::tuple<OpIndex>;
 
   template <typename Derived>
   struct Descriptor {
     static const TSCallDescriptor* Create(
         StubCallMode call_mode, Zone* zone,
-        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow{false},
+        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo,
         bool caller_can_deopt = true) {
       CallInterfaceDescriptor interface_descriptor =
           Builtins::CallInterfaceDescriptorFor(Derived::kFunction);
@@ -56,7 +56,7 @@ struct builtin : CallDescriptorBuilder {
 #endif  // DEBUG
       bool can_throw = !(Derived::kProperties & Operator::kNoThrow);
       return TSCallDescriptor::Create(
-          descriptor, can_throw ? CanThrow{true} : CanThrow{false},
+          descriptor, can_throw ? CanThrow::kYes : CanThrow::kNo,
           lazy_deopt_on_throw, zone);
     }
 
@@ -315,20 +315,6 @@ struct builtin : CallDescriptorBuilder {
   using FindOrderedHashSetEntry =
       FindOrderedHashEntry<Builtin::kFindOrderedHashSetEntry>;
 
-  struct WeakMapLookupHashIndex : public Descriptor<WeakMapLookupHashIndex> {
-    static constexpr auto kFunction = Builtin::kWeakMapLookupHashIndex;
-    struct Arguments : ArgumentsBase {
-      ARG(V<EphemeronHashTable>, table)
-      ARG(V<Object>, key)
-    };
-    using returns_t = std::tuple<V<Smi>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = false;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kEliminatable;
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory();
-  };
-
   template <Builtin B>
   struct GrowFastElements : public Descriptor<GrowFastElements<B>> {
     static constexpr auto kFunction = B;
@@ -394,19 +380,6 @@ struct builtin : CallDescriptorBuilder {
   DECLARE_NUMBER_TO_STRING(Number, Number)
 #undef DECLARE_NUMBER_TO_STRING
 
-  struct ToInteger : public Descriptor<ToInteger> {
-    static constexpr auto kFunction = Builtin::kToInteger;
-    struct Arguments : ArgumentsBase {
-      ARG(V<JSAny>, input)
-    };
-    using returns_t = std::tuple<V<Number>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = true;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
   struct ToString : public Descriptor<ToString> {
     static constexpr auto kFunction = Builtin::kToString;
     struct Arguments : ArgumentsBase {
@@ -463,8 +436,8 @@ struct builtin : CallDescriptorBuilder {
     static constexpr OpEffects kEffects = base_effects.CanReadMemory();
   };
 
-  struct StringAdd_NoMapCheck : public Descriptor<StringAdd_NoMapCheck> {
-    static constexpr auto kFunction = Builtin::kStringAdd_NoMapCheck;
+  struct StringAdd_CheckNone : public Descriptor<StringAdd_CheckNone> {
+    static constexpr auto kFunction = Builtin::kStringAdd_CheckNone;
     struct Arguments : ArgumentsBase {
       ARG(V<String>, left)
       ARG(V<String>, right)
@@ -477,9 +450,8 @@ struct builtin : CallDescriptorBuilder {
         Operator::kNoDeopt | Operator::kNoWrite;
     // This will only write in a fresh object, so the writes are not visible
     // from Turboshaft, and CanAllocate is enough.
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory()
-                                              .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
+    static constexpr OpEffects kEffects =
+        base_effects.CanReadMemory().CanAllocateWithoutIdentity();
   };
 
   struct StringEqual : public Descriptor<StringEqual> {
@@ -599,24 +571,6 @@ struct builtin : CallDescriptorBuilder {
                                               .CanReadMemory()
                                               .CanAllocateWithoutIdentity()
                                               .CanDependOnChecks();
-  };
-
-  struct StringFastLocaleCompare : public Descriptor<StringFastLocaleCompare> {
-    static constexpr auto kFunction = Builtin::kStringFastLocaleCompare;
-    struct Arguments : ArgumentsBase {
-      ARG(V<JSFunction>, locale_compare_fn)
-      ARG(V<Object>, left)
-      ARG(V<Object>, right)
-      ARG(V<StringOrUndefined>, locales)
-    };
-    using returns_t = std::tuple<V<Smi>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = true;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    // The bailout calls back into JS via String.prototype.localeCompare, so
-    // worst-case effects.
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
   };
 #endif  // V8_INTL_SUPPORT
 
@@ -818,84 +772,7 @@ struct builtin : CallDescriptorBuilder {
         Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.RequiredWhenUnused();
   };
-
-  struct WasmInt32ToHeapNumber : public Descriptor<WasmInt32ToHeapNumber> {
-    static constexpr auto kFunction = Builtin::kWasmInt32ToHeapNumber;
-    struct Arguments : ArgumentsBase {
-      ARG(V<Word32>, value)
-    };
-    using returns_t = std::tuple<V<HeapNumber>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kPure;
-    static constexpr OpEffects kEffects =
-        base_effects.CanAllocateWithoutIdentity();
-  };
-
-  struct WasmInt32ToSharedHeapNumber
-      : public Descriptor<WasmInt32ToSharedHeapNumber> {
-    static constexpr auto kFunction = Builtin::kWasmInt32ToSharedHeapNumber;
-    struct Arguments : ArgumentsBase {
-      ARG(V<Word32>, value)
-    };
-    using returns_t = std::tuple<V<HeapNumber>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kPure;
-    static constexpr OpEffects kEffects =
-        base_effects.CanAllocateWithoutIdentity();
-  };
-
-  struct WasmRefFunc : public Descriptor<WasmRefFunc> {
-    static constexpr auto kFunction = Builtin::kWasmRefFunc;
-    struct Arguments : ArgumentsBase {
-      ARG(V<WasmTrustedInstanceData>, wasm_instance)
-      ARG(V<Word32>, function_index)
-    };
-    using returns_t = std::tuple<V<WasmFuncRef>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoThrow;
-    // TODO(nicohartmann@): Use more precise effects.
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
 #endif  // V8_ENABLE_WEBASSEMBLY
-
-  struct LoadIC : public Descriptor<LoadIC> {
-    static constexpr auto kFunction = Builtin::kLoadIC;
-    struct Arguments : ArgumentsBase {
-      ARG(V<Object>, object)
-      ARG(V<Name>, name)
-      ARG(V<Object>, slot)
-      ARG(V<HeapObject>, vector)
-    };
-    using returns_t = std::tuple<V<JSAny>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = true;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
-  struct LoadSuperIC : public Descriptor<LoadSuperIC> {
-    static constexpr auto kFunction = Builtin::kLoadSuperIC;
-    struct Arguments : ArgumentsBase {
-      ARG(V<Object>, receiver)
-      ARG(V<Object>, lookup_start_object)
-      ARG(V<Name>, name)
-      ARG(V<Object>, slot)
-      ARG(V<HeapObject>, vector)
-    };
-    using returns_t = std::tuple<V<JSAny>>;
-
-    static constexpr bool kCanTriggerLazyDeopt = true;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
 };
 
 // TODO(nicohartmann): These call descriptors are deprecated and shall be
@@ -907,7 +784,7 @@ struct BuiltinCallDescriptor {
   struct Descriptor {
     static const TSCallDescriptor* Create(
         StubCallMode call_mode, Zone* zone,
-        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow{false},
+        LazyDeoptOnThrow lazy_deopt_on_throw = LazyDeoptOnThrow::kNo,
         bool compiling_builtins = false) {
       CallInterfaceDescriptor interface_descriptor =
           Builtins::CallInterfaceDescriptorFor(Derived::kFunction);
@@ -923,7 +800,7 @@ struct BuiltinCallDescriptor {
 #endif  // DEBUG
       bool can_throw = !(Derived::kProperties & Operator::kNoThrow);
       return TSCallDescriptor::Create(
-          descriptor, can_throw ? CanThrow{true} : CanThrow{false},
+          descriptor, can_throw ? CanThrow::kYes : CanThrow::kNo,
           lazy_deopt_on_throw, zone);
     }
 
@@ -989,9 +866,8 @@ struct BuiltinCallDescriptor {
 
  public:
 #if V8_ENABLE_WEBASSEMBLY
-  struct WasmStringAdd_NoMapCheck
-      : public Descriptor<WasmStringAdd_NoMapCheck> {
-    static constexpr auto kFunction = Builtin::kWasmStringAdd_NoMapCheck;
+  struct WasmStringAdd_CheckNone : public Descriptor<WasmStringAdd_CheckNone> {
+    static constexpr auto kFunction = Builtin::kWasmStringAdd_CheckNone;
     using arguments_t = std::tuple<V<String>, V<String>>;
     using results_t = std::tuple<V<String>>;
 
@@ -1001,26 +877,8 @@ struct BuiltinCallDescriptor {
         Operator::kNoDeopt | Operator::kNoWrite;
     // This will only write in a fresh object, so the writes are not visible
     // from Turboshaft, and CanAllocate is enough.
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory()
-                                              .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
-  };
-
-  struct WasmStringAdd_NoMapCheck_Shared
-      : public Descriptor<WasmStringAdd_NoMapCheck_Shared> {
-    static constexpr auto kFunction = Builtin::kWasmStringAdd_NoMapCheck_Shared;
-    using arguments_t = std::tuple<V<String>, V<String>>;
-    using results_t = std::tuple<V<String>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties =
-        Operator::kNoDeopt | Operator::kNoWrite;
-    // This will only write in a fresh object, so the writes are not visible
-    // from Turboshaft, and CanAllocate is enough.
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory()
-                                              .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
+    static constexpr OpEffects kEffects =
+        base_effects.CanReadMemory().CanAllocateWithoutIdentity();
   };
 
   struct WasmJSStringEqual : public Descriptor<WasmJSStringEqual> {
@@ -1073,10 +931,9 @@ struct BuiltinCallDescriptor {
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = true;
     static constexpr Operator::Properties kProperties =
-        Operator::kNoDeopt | Operator::kNoWrite;
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory()
-                                              .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
+        Operator::kNoDeopt | Operator::kNoThrow;
+    static constexpr OpEffects kEffects =
+        base_effects.CanReadMemory().CanAllocateWithoutIdentity();
   };
 #endif
 
@@ -1104,6 +961,42 @@ struct BuiltinCallDescriptor {
         base_effects.CanReadMemory().CanAllocateWithoutIdentity();
   };
 
+  struct WasmInt32ToHeapNumber : public Descriptor<WasmInt32ToHeapNumber> {
+    static constexpr auto kFunction = Builtin::kWasmInt32ToHeapNumber;
+    using arguments_t = std::tuple<V<Word32>>;
+    using results_t = std::tuple<V<HeapNumber>>;
+
+    static constexpr bool kNeedsFrameState = false;
+    static constexpr bool kNeedsContext = false;
+    static constexpr Operator::Properties kProperties = Operator::kPure;
+    static constexpr OpEffects kEffects =
+        base_effects.CanAllocateWithoutIdentity();
+  };
+
+  struct WasmInt32ToSharedHeapNumber
+      : public Descriptor<WasmInt32ToSharedHeapNumber> {
+    static constexpr auto kFunction = Builtin::kWasmInt32ToSharedHeapNumber;
+    using arguments_t = std::tuple<V<Word32>>;
+    using results_t = std::tuple<V<HeapNumber>>;
+
+    static constexpr bool kNeedsFrameState = false;
+    static constexpr bool kNeedsContext = false;
+    static constexpr Operator::Properties kProperties = Operator::kPure;
+    static constexpr OpEffects kEffects =
+        base_effects.CanAllocateWithoutIdentity();
+  };
+
+  struct WasmRefFunc : public Descriptor<WasmRefFunc> {
+    static constexpr auto kFunction = Builtin::kWasmRefFunc;
+    using arguments_t = std::tuple<V<Word32>, V<Word32>>;
+    using results_t = std::tuple<V<WasmFuncRef>>;
+
+    static constexpr bool kNeedsFrameState = false;
+    static constexpr bool kNeedsContext = false;
+    static constexpr Operator::Properties kProperties = Operator::kNoThrow;
+    // TODO(nicohartmann@): Use more precise effects.
+    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
+  };
 
   struct WasmAllocateDescriptorStruct
       : public Descriptor<WasmAllocateDescriptorStruct> {
@@ -1114,8 +1007,7 @@ struct BuiltinCallDescriptor {
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
     static constexpr Operator::Properties kProperties = Operator::kEliminatable;
-    static constexpr OpEffects kEffects =
-        base_effects.CanAllocate().CanDoRawHeapAccess();
+    static constexpr OpEffects kEffects = base_effects.CanAllocate();
   };
 
   struct WasmGetOwnProperty : public Descriptor<WasmGetOwnProperty> {
@@ -1124,10 +1016,14 @@ struct BuiltinCallDescriptor {
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
+    static constexpr bool kNeedsContext = true;
     static constexpr Operator::Properties kProperties = Operator::kNoThrow;
-    // Can allocate a HeapNumber when it encounters a MutableHeapNumber. This
-    // won't happen in practice, but can-allocate verification detects it.
+    // Calls {GetPropertyWithReceiver}, which has paths that can allocate,
+    // but from this caller we won't reach them. Nevertheless, to please the
+    // verifier we currently have no other choice than setting the CanAllocate
+    // effect here.
+    // TODO(dmercadier): Support overriding the automatic can-allocate
+    // inference.
     static constexpr OpEffects kEffects =
         base_effects.CanReadHeapMemory().CanAllocate();
   };
@@ -1168,7 +1064,7 @@ struct BuiltinCallDescriptor {
 
   struct WasmStringFromCodePoint : public Descriptor<WasmStringFromCodePoint> {
     static constexpr auto kFunction = Builtin::kWasmStringFromCodePoint;
-    using arguments_t = std::tuple<V<Word32>, V<Smi>>;
+    using arguments_t = std::tuple<V<Word32>>;
     using results_t = std::tuple<V<String>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1186,7 +1082,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadHeapMemory()
                                               .CanAllocateWithoutIdentity()
                                               .CanThrowOrTrap();
@@ -1194,12 +1091,13 @@ struct BuiltinCallDescriptor {
 
   struct WasmStringNewWtf16Array : public Descriptor<WasmStringNewWtf16Array> {
     static constexpr auto kFunction = Builtin::kWasmStringNewWtf16Array;
-    using arguments_t = std::tuple<V<WasmArray>, V<Word32>, V<Word32>, V<Smi>>;
+    using arguments_t = std::tuple<V<WasmArray>, V<Word32>, V<Word32>>;
     using results_t = std::tuple<V<String>>;
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadHeapMemory()
                                               .CanAllocateWithoutIdentity()
                                               .CanThrowOrTrap();
@@ -1230,18 +1128,6 @@ struct BuiltinCallDescriptor {
         base_effects.CanReadMemory().CanAllocateWithoutIdentity();
   };
 
-  struct WasmStringSliceShared : public Descriptor<WasmStringSliceShared> {
-    static constexpr auto kFunction = Builtin::kWasmStringSliceShared;
-    using arguments_t = std::tuple<V<String>, V<Word32>, V<Word32>>;
-    using results_t = std::tuple<V<String>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kEliminatable;
-    static constexpr OpEffects kEffects =
-        base_effects.CanReadMemory().CanAllocateWithoutIdentity();
-  };
-
   struct WasmStringEncodeWtf8Array
       : public Descriptor<WasmStringEncodeWtf8Array> {
     static constexpr auto kFunction = Builtin::kWasmStringEncodeWtf8Array;
@@ -1250,7 +1136,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteHeapMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1259,13 +1146,14 @@ struct BuiltinCallDescriptor {
 
   struct WasmStringToUtf8Array : public Descriptor<WasmStringToUtf8Array> {
     static constexpr auto kFunction = Builtin::kWasmStringToUtf8Array;
-    using arguments_t = std::tuple<V<String>, V<Word32>>;
+    using arguments_t = std::tuple<V<String>>;
     using results_t = std::tuple<V<WasmArray>>;
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects =
-        base_effects.CanReadMemory().CanAllocate().CanThrowOrTrap();
+        base_effects.CanReadMemory().CanAllocate();
   };
 
   struct WasmStringEncodeWtf16Array
@@ -1276,7 +1164,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteHeapMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1304,7 +1193,7 @@ struct BuiltinCallDescriptor {
     static constexpr bool kNeedsContext = false;
     static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
     static constexpr OpEffects kEffects =
-        base_effects.CanAllocateWithoutIdentity().CanThrowOrTrap();
+        base_effects.CanAllocateWithoutIdentity();
   };
 
   struct WasmStringToDouble : public Descriptor<WasmStringToDouble> {
@@ -1328,11 +1217,7 @@ struct BuiltinCallDescriptor {
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
     static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    // Returns an uninitialized array whose elements are filled by later
-    // initializing stores, so the allocation must stay anchored (as for
-    // WasmAllocateDescriptorStruct) and not float across a trap.
-    static constexpr OpEffects kEffects =
-        base_effects.CanAllocate().CanDoRawHeapAccess();
+    static constexpr OpEffects kEffects = base_effects.CanAllocate();
   };
 
   struct WasmThrow : public Descriptor<WasmThrow> {
@@ -1370,57 +1255,9 @@ struct BuiltinCallDescriptor {
     static constexpr OpEffects kEffects = base_effects.CanCallAnything();
   };
 
-  struct WasmManagedObjectWait32 : public Descriptor<WasmManagedObjectWait32> {
-    static constexpr auto kFunction = Builtin::kWasmManagedObjectWait32;
-    using arguments_t = std::tuple<V<HeapObject>, V<Word32>, V<Word32>,
-                                   V<HeapObject>, V<BigInt>>;
-    using results_t = std::tuple<V<Word32>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
-  struct WasmManagedObjectWait64 : public Descriptor<WasmManagedObjectWait64> {
-    static constexpr auto kFunction = Builtin::kWasmManagedObjectWait64;
-    using arguments_t = std::tuple<V<HeapObject>, V<Word32>, V<BigInt>,
-                                   V<HeapObject>, V<BigInt>>;
-    using results_t = std::tuple<V<Word32>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
-  struct WasmManagedObjectWaitRef
-      : public Descriptor<WasmManagedObjectWaitRef> {
-    static constexpr auto kFunction = Builtin::kWasmManagedObjectWaitRef;
-    using arguments_t = std::tuple<V<HeapObject>, V<Word32>, V<Object>,
-                                   V<HeapObject>, V<BigInt>>;
-    using results_t = std::tuple<V<Word32>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
-  struct WasmWaitqueueNew : public Descriptor<WasmWaitqueueNew> {
-    static constexpr auto kFunction = Builtin::kWasmWaitqueueNew;
-    using arguments_t = std::tuple<>;
-    using results_t = std::tuple<V<HeapObject>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanAllocate();
-  };
-
   struct WasmFunctionTableGet : public Descriptor<WasmFunctionTableGet> {
     static constexpr auto kFunction = Builtin::kWasmFunctionTableGet;
-    using arguments_t = std::tuple<V<WordPtr>, V<WordPtr>>;
+    using arguments_t = std::tuple<V<WordPtr>, V<WordPtr>, V<Word32>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1432,7 +1269,8 @@ struct BuiltinCallDescriptor {
 
   struct WasmTableSetFuncRef : public Descriptor<WasmTableSetFuncRef> {
     static constexpr auto kFunction = Builtin::kWasmTableSetFuncRef;
-    using arguments_t = std::tuple<V<WordPtr>, V<WordPtr>, V<WasmFuncRef>>;
+    using arguments_t =
+        std::tuple<V<WordPtr>, V<Word32>, V<WordPtr>, V<WasmFuncRef>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1444,7 +1282,8 @@ struct BuiltinCallDescriptor {
 
   struct WasmTableSet : public Descriptor<WasmTableSet> {
     static constexpr auto kFunction = Builtin::kWasmTableSet;
-    using arguments_t = std::tuple<V<WordPtr>, V<WordPtr>, V<Object>>;
+    using arguments_t =
+        std::tuple<V<WordPtr>, V<Word32>, V<WordPtr>, V<Object>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1457,7 +1296,7 @@ struct BuiltinCallDescriptor {
   struct WasmTableInit : public Descriptor<WasmTableInit> {
     static constexpr auto kFunction = Builtin::kWasmTableInit;
     using arguments_t =
-        std::tuple<V<WordPtr>, V<Word32>, V<Word32>, V<Smi>, V<Smi>>;
+        std::tuple<V<WordPtr>, V<Word32>, V<Word32>, V<Smi>, V<Smi>, V<Smi>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1470,7 +1309,7 @@ struct BuiltinCallDescriptor {
   struct WasmTableCopy : public Descriptor<WasmTableCopy> {
     static constexpr auto kFunction = Builtin::kWasmTableCopy;
     using arguments_t =
-        std::tuple<V<WordPtr>, V<WordPtr>, V<WordPtr>, V<Smi>, V<Smi>>;
+        std::tuple<V<WordPtr>, V<WordPtr>, V<WordPtr>, V<Smi>, V<Smi>, V<Smi>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1482,7 +1321,7 @@ struct BuiltinCallDescriptor {
 
   struct WasmTableGrow : public Descriptor<WasmTableGrow> {
     static constexpr auto kFunction = Builtin::kWasmTableGrow;
-    using arguments_t = std::tuple<V<Smi>, V<WordPtr>, V<Object>>;
+    using arguments_t = std::tuple<V<Smi>, V<WordPtr>, V<Word32>, V<Object>>;
     using results_t = std::tuple<V<Smi>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1494,7 +1333,8 @@ struct BuiltinCallDescriptor {
 
   struct WasmTableFill : public Descriptor<WasmTableFill> {
     static constexpr auto kFunction = Builtin::kWasmTableFill;
-    using arguments_t = std::tuple<V<WordPtr>, V<WordPtr>, V<Smi>, V<Object>>;
+    using arguments_t =
+        std::tuple<V<WordPtr>, V<WordPtr>, V<Word32>, V<Smi>, V<Object>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1507,7 +1347,7 @@ struct BuiltinCallDescriptor {
   struct WasmArrayNewSegment : public Descriptor<WasmArrayNewSegment> {
     static constexpr auto kFunction = Builtin::kWasmArrayNewSegment;
     using arguments_t =
-        std::tuple<V<Word32>, V<Word32>, V<Word32>, V<Smi>, V<Map>>;
+        std::tuple<V<Word32>, V<Word32>, V<Word32>, V<Smi>, V<Smi>, V<Map>>;
     using results_t = std::tuple<V<WasmArray>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1520,7 +1360,7 @@ struct BuiltinCallDescriptor {
   struct WasmArrayInitSegment : public Descriptor<WasmArrayInitSegment> {
     static constexpr auto kFunction = Builtin::kWasmArrayInitSegment;
     using arguments_t = std::tuple<V<Word32>, V<Word32>, V<Word32>, V<Smi>,
-                                   V<Smi>, V<HeapObject>>;
+                                   V<Smi>, V<Smi>, V<HeapObject>>;
     using results_t = std::tuple<V<Object>>;
 
     static constexpr bool kNeedsFrameState = false;
@@ -1537,23 +1377,25 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
+                                              .CanLeaveCurrentFunction();
   };
 
   struct WasmStringNewWtf16 : public Descriptor<WasmStringNewWtf16> {
     static constexpr auto kFunction = Builtin::kWasmStringNewWtf16;
-    using arguments_t = std::tuple<V<Word32>, V<WordPtr>, V<Word32>, V<Smi>>;
+    using arguments_t = std::tuple<V<Word32>, V<WordPtr>, V<Word32>>;
     using results_t = std::tuple<V<String>>;
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
-    static constexpr OpEffects kEffects = base_effects.CanReadMemory()
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
+    static constexpr OpEffects kEffects = base_effects.CanReadHeapMemory()
                                               .CanAllocateWithoutIdentity()
-                                              .CanThrowOrTrap();
+                                              .CanLeaveCurrentFunction();
   };
 
   struct WasmStringFromDataSegment
@@ -1568,7 +1410,7 @@ struct BuiltinCallDescriptor {
     static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
     // No "CanReadMemory" because data segments are immutable.
     static constexpr OpEffects kEffects =
-        base_effects.CanAllocateWithoutIdentity().CanThrowOrTrap();
+        base_effects.CanAllocateWithoutIdentity().RequiredWhenUnused();
   };
 
   struct WasmStringConst : public Descriptor<WasmStringConst> {
@@ -1617,7 +1459,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1631,7 +1474,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1684,7 +1528,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1700,7 +1545,8 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoDeopt;
+    static constexpr Operator::Properties kProperties =
+        Operator::kNoDeopt | Operator::kNoThrow;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanWriteMemory()
                                               .CanAllocateWithoutIdentity()
@@ -1715,8 +1561,7 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties =
-        Operator::kNoDeopt | Operator::kNoWrite;
+    static constexpr Operator::Properties kProperties = Operator::kEliminatable;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanAllocateWithoutIdentity()
                                               .CanThrowOrTrap();
@@ -1729,8 +1574,7 @@ struct BuiltinCallDescriptor {
 
     static constexpr bool kNeedsFrameState = false;
     static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties =
-        Operator::kNoDeopt | Operator::kNoWrite;
+    static constexpr Operator::Properties kProperties = Operator::kEliminatable;
     static constexpr OpEffects kEffects = base_effects.CanReadMemory()
                                               .CanAllocateWithoutIdentity()
                                               .CanThrowOrTrap();
@@ -1923,38 +1767,11 @@ struct BuiltinCallDescriptor {
     static constexpr OpEffects kEffects = base_effects.CanCallAnything();
   };
 
-  struct WasmFXResumeThrowRef : public Descriptor<WasmFXResumeThrowRef> {
-    static constexpr auto kFunction = Builtin::kWasmFXResumeThrowRef;
-    // Target stack, and exnref.
-    using arguments_t = std::tuple<V<WordPtr>, V<Object>>;
-    // Return values buffer.
-    using results_t = std::tuple<V<WordPtr>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = false;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
   struct WasmFXSuspend : public Descriptor<WasmFXSuspend> {
     static constexpr auto kFunction = Builtin::kWasmFXSuspend;
     using arguments_t =
         std::tuple<V<WasmExceptionTag>, V<WasmContinuationObject>, V<WordPtr>,
-                   V<Word32>>;
-    // Arg buffer.
-    using results_t = std::tuple<V<WordPtr>>;
-
-    static constexpr bool kNeedsFrameState = false;
-    static constexpr bool kNeedsContext = true;
-    static constexpr Operator::Properties kProperties = Operator::kNoProperties;
-    static constexpr OpEffects kEffects = base_effects.CanCallAnything();
-  };
-
-  struct WasmFXSwitch : public Descriptor<WasmFXSwitch> {
-    static constexpr auto kFunction = Builtin::kWasmFXSwitch;
-    using arguments_t =
-        std::tuple<V<WasmExceptionTag>, V<WasmContinuationObject>, V<WordPtr>,
-                   V<WordPtr>, V<Word32>>;
+                   V<WordPtr>>;
     // Arg buffer.
     using results_t = std::tuple<V<WordPtr>>;
 

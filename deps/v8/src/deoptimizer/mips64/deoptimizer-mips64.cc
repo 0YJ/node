@@ -4,7 +4,6 @@
 
 #include "src/codegen/flush-instruction-cache.h"
 #include "src/codegen/macro-assembler.h"
-#include "src/common/code-memory-access-inl.h"
 #include "src/deoptimizer/deoptimizer.h"
 
 namespace v8 {
@@ -22,7 +21,6 @@ void Deoptimizer::ZapCode(Address start, Address end, RelocIterator& it) {
 
 // static
 void Deoptimizer::PatchToJump(Address pc, Address new_pc) {
-  RwxMemoryWriteScope rwx_write_scope("Patch jump to deopt trampoline");
   intptr_t offset = (new_pc - pc) / kInstrSize;
   // Give enough space not to try to grow the buffer.
   constexpr int kSize = 128;
@@ -30,7 +28,7 @@ void Deoptimizer::PatchToJump(Address pc, Address new_pc) {
   Assembler masm(
       &allocator, AssemblerOptions{},
       ExternalAssemblerBuffer(reinterpret_cast<uint8_t*>(pc), kSize));
-  CHECK(is_int16(offset));
+  DCHECK(is_int16(offset));
   // Branch target is computed based on delay slot address on MIPS.
   masm.b(static_cast<int>(offset - 1));
   masm.nop();  // Delay slot

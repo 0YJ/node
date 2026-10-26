@@ -9,11 +9,6 @@ updates:
     commit-message:
       prefix: meta
     open-pull-requests-limit: 10
-    groups:
-      codeql-action:
-        applies-to: version-updates
-        patterns:
-          - github/codeql-action
 
   - package-ecosystem: npm
     directory: /tools/eslint

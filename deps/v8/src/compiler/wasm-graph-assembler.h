@@ -201,6 +201,8 @@ class WasmGraphAssembler : public GraphAssembler {
 
   // FixedArrays.
 
+  Node* LoadFixedArrayLengthAsSmi(Node* fixed_array);
+
   Node* LoadFixedArrayElement(Node* fixed_array, Node* index_intptr,
                               MachineType type = MachineType::AnyTagged());
 
@@ -252,6 +254,8 @@ class WasmGraphAssembler : public GraphAssembler {
   Node* LoadContextNoCellFromJSFunction(Node* js_function);
 
   Node* LoadFunctionDataFromJSFunction(Node* js_function);
+
+  Node* LoadExportedFunctionIndexAsSmi(Node* exported_function_data);
 
   Node* LoadExportedFunctionInstanceData(Node* exported_function_data);
 
@@ -310,8 +314,6 @@ class WasmGraphAssembler : public GraphAssembler {
   // Generic helpers.
 
   Node* HasInstanceType(Node* heap_object, InstanceType type);
-  Node* HasInstanceTypeInRange(Node* heap_object, InstanceType lower_limit,
-                               InstanceType higher_limit);
 
   void TrapIf(Node* condition, TrapId reason) {
     // Initially wasm traps don't have a FrameState.

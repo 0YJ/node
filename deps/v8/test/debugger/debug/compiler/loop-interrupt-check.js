@@ -5,8 +5,6 @@
 // Flags: --allow-natives-syntax --turbolev --turbofan
 // Flags: --no-maglev --no-stress-concurrent-inlining
 // Flags: --invocation-count-for-turbofan=3000
-// TODO(dmercadier): Investigate why loop peeling is breaking this test.
-// Flags: --no-turbolev-non-eager-loop-peeling
 
 // This test checks that loop interrupt stack checks are properly detected are
 // processed.
@@ -57,7 +55,4 @@ assertEquals(0, trigger_count);
 assertEquals(70, loop_interrupt_check_f(0));
 assertEquals(1, trigger_count);
 assertEquals("loop_interrupt_check_f", called_from);
-// We expect the function to be deoptimized because the debugger pause
-// deoptimizes the topmost frame to prevent it from using stale load-eliminated
-// values in case the debugger executes JS that modifies heap state.
-assertUnoptimized(loop_interrupt_check_f);
+assertOptimized(loop_interrupt_check_f);

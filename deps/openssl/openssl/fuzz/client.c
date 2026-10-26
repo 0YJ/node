@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,9 @@
 #include <openssl/dh.h>
 #include <openssl/err.h>
 #include "fuzzer.h"
+
+/* unused, to avoid warning. */
+static int idx;
 
 #define FUZZTIME 1485898104
 
@@ -47,9 +50,7 @@ time_t time(time_t *t) TIME_IMPL(t)
     OPENSSL_init_ssl(OPENSSL_INIT_LOAD_SSL_STRINGS, NULL);
     ERR_clear_error();
     CRYPTO_free_ex_index(0, -1);
-    if (SSL_get_ex_data_X509_STORE_CTX_idx() != 0) {
-        /* Just suppress warning */
-    }
+    idx = SSL_get_ex_data_X509_STORE_CTX_idx();
     comp_methods = SSL_COMP_get_compression_methods();
     if (comp_methods != NULL)
         sk_SSL_COMP_sort(comp_methods);
@@ -64,21 +65,19 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
     BIO *out;
     SSL_CTX *ctx;
 
-    if (len == 0 || len > INT_MAX)
+    if (len == 0)
         return 0;
 
     /* This only fuzzes the initial flow from the client so far. */
-    ctx = SSL_CTX_new(TLS_method());
+    ctx = SSL_CTX_new(SSLv23_method());
     if (ctx == NULL)
         goto end;
 
     client = SSL_new(ctx);
     if (client == NULL)
         goto end;
-    if (SSL_set_min_proto_version(client, 0) != 1)
-        goto end;
-    if (SSL_set_cipher_list(client, "ALL:eNULL:@SECLEVEL=0") != 1)
-        goto end;
+    OPENSSL_assert(SSL_set_min_proto_version(client, 0) == 1);
+    OPENSSL_assert(SSL_set_cipher_list(client, "ALL:eNULL:@SECLEVEL=0") == 1);
     SSL_set_tlsext_host_name(client, "localhost");
     in = BIO_new(BIO_s_mem());
     if (in == NULL)
@@ -90,8 +89,7 @@ int FuzzerTestOneInput(const uint8_t *buf, size_t len)
     }
     SSL_set_bio(client, in, out);
     SSL_set_connect_state(client);
-    if ((size_t)BIO_write(in, buf, (int)len) != len)
-        goto end;
+    OPENSSL_assert((size_t)BIO_write(in, buf, len) == len);
     if (SSL_do_handshake(client) == 1) {
         /* Keep reading application data until error or EOF. */
         uint8_t tmp[1024];

@@ -4,7 +4,6 @@
 
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
-#include "src/objects/dictionary-inl.h"
 #include "test/unittests/test-utils.h"
 
 namespace v8 {

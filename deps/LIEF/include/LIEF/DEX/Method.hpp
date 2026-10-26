@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,6 @@ class Prototype;
 /// Class which represents a DEX::Method
 class LIEF_API Method : public Object {
   friend class Parser;
-
   public:
   using access_flags_list_t = std::vector<ACCESS_FLAGS>;
 
@@ -68,7 +67,7 @@ class LIEF_API Method : public Object {
   size_t index() const;
 
   /// True if this method is a virtual one.
-  /// i.e. not **static**, **private**, **final** or constructor
+  /// i.e. not **static**, **private**, **finale** or constructor
   bool is_virtual() const;
 
   /// Method's prototype or a nullptr if it is not resolved
@@ -111,6 +110,7 @@ class LIEF_API Method : public Object {
   CodeInfo code_info_;
 
   dex2dex_method_info_t dex2dex_info_;
+
 };
 
 } // Namespace DEX

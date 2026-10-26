@@ -45,9 +45,7 @@ void RecordTimestampStat(Stats* stats) {
   V(PACKETS_SENT, packets_sent)                                                \
   V(SERVER_SESSIONS, server_sessions)                                          \
   V(CLIENT_SESSIONS, client_sessions)                                          \
-  V(SERVER_BUSY_COUNT, server_busy_count)                                      \
-  V(SERVER_REJECTED_COUNT, server_rejected_count)                              \
-  V(SERVER_REFUSED_COUNT, server_refused_count)
+  V(SERVER_BUSY_COUNT, server_busy_count)
 
 #define DTLS_SESSION_STATS(V)                                                  \
   V(CREATED_AT, created_at)                                                    \
@@ -80,7 +78,6 @@ enum DTLSSessionStateIndex {
   IDX_SESSION_STATE_CLOSING,
   IDX_SESSION_STATE_DESTROYED,
   IDX_SESSION_STATE_HAS_MESSAGE_LISTENER,
-  IDX_SESSION_STATE_HAS_KEYLOG_LISTENER,
   IDX_SESSION_STATE_COUNT
 };
 
@@ -94,6 +91,7 @@ enum DTLSCallbackIndex {
   DTLS_CB_SESSION_HANDSHAKE,
   DTLS_CB_SESSION_MESSAGE,
   DTLS_CB_SESSION_KEYLOG,
+  DTLS_CB_SESSION_TICKET,
   DTLS_CB_COUNT
 };
 

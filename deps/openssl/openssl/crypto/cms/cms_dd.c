@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,8 +14,6 @@
 #include <openssl/err.h>
 #include <openssl/cms.h>
 #include "cms_local.h"
-
-#include <crypto/asn1.h>
 
 /* CMS DigestedData Utilities */
 
@@ -41,8 +39,7 @@ CMS_ContentInfo *ossl_cms_DigestedData_create(const EVP_MD *md,
     dd->version = 0;
     dd->encapContentInfo->eContentType = OBJ_nid2obj(NID_pkcs7_data);
 
-    if (!X509_ALGOR_set_md(dd->digestAlgorithm, md))
-        goto err;
+    X509_ALGOR_set_md(dd->digestAlgorithm, md);
 
     return cms;
 
@@ -92,7 +89,7 @@ int ossl_cms_DigestedData_do_final(const CMS_ContentInfo *cms, BIO *chain,
         else
             r = 1;
     } else {
-        if (!ossl_asn1_string_set1_data(dd->digest, md, mdlen))
+        if (!ASN1_STRING_set(dd->digest, md, mdlen))
             goto err;
         r = 1;
     }

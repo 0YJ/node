@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -106,7 +106,6 @@ static int ssl_read(BIO *b, char *buf, size_t size, size_t *readbytes)
     ssl = sb->ssl;
 
     BIO_clear_retry_flags(b);
-    BIO_clear_flags(b, BIO_FLAGS_IN_EOF);
 
     ret = ssl_read_internal(ssl, buf, size, readbytes);
 
@@ -151,11 +150,9 @@ static int ssl_read(BIO *b, char *buf, size_t size, size_t *readbytes)
         BIO_set_retry_special(b);
         retry_reason = BIO_RR_CONNECT;
         break;
-    case SSL_ERROR_ZERO_RETURN:
-        BIO_set_flags(b, BIO_FLAGS_IN_EOF);
-        break;
     case SSL_ERROR_SYSCALL:
     case SSL_ERROR_SSL:
+    case SSL_ERROR_ZERO_RETURN:
     default:
         break;
     }
@@ -229,7 +226,7 @@ static int ssl_write(BIO *b, const char *buf, size_t size, size_t *written)
 
 static long ssl_ctrl(BIO *b, int cmd, long num, void *ptr)
 {
-    SSL **sslp, *ssl, *dupssl;
+    SSL **sslp, *ssl;
     BIO_SSL *bs, *dbs;
     BIO *dbio, *bio;
     long ret = 1;
@@ -299,6 +296,7 @@ static long ssl_ctrl(BIO *b, int cmd, long num, void *ptr)
         }
         BIO_set_shutdown(b, num);
         ssl = (SSL *)ptr;
+        bs->ssl = ssl;
         bio = SSL_get_rbio(ssl);
         if (bio != NULL) {
             if (!BIO_up_ref(bio)) {
@@ -310,7 +308,6 @@ static long ssl_ctrl(BIO *b, int cmd, long num, void *ptr)
             BIO_set_next(b, bio);
         }
         BIO_set_init(b, 1);
-        bs->ssl = ssl;
         break;
     case BIO_C_GET_SSL:
         if (ptr != NULL) {
@@ -385,19 +382,14 @@ static long ssl_ctrl(BIO *b, int cmd, long num, void *ptr)
     case BIO_CTRL_DUP:
         dbio = (BIO *)ptr;
         dbs = BIO_get_data(dbio);
-        dupssl = SSL_dup(ssl);
-        if (dupssl == NULL) {
-            ret = 0;
-            break;
-        }
         SSL_free(dbs->ssl);
-        dbs->ssl = dupssl;
+        dbs->ssl = SSL_dup(ssl);
         dbs->num_renegotiates = bs->num_renegotiates;
         dbs->renegotiate_count = bs->renegotiate_count;
         dbs->byte_count = bs->byte_count;
         dbs->renegotiate_timeout = bs->renegotiate_timeout;
         dbs->last_time = bs->last_time;
-        ret = 1;
+        ret = (dbs->ssl != NULL);
         break;
     case BIO_C_GET_FD:
         ret = BIO_ctrl(SSL_get_rbio(ssl), cmd, num, ptr);
@@ -412,11 +404,6 @@ static long ssl_ctrl(BIO *b, int cmd, long num, void *ptr)
     case BIO_CTRL_GET_WPOLL_DESCRIPTOR:
         if (!SSL_get_wpoll_descriptor(ssl, (BIO_POLL_DESCRIPTOR *)ptr))
             ret = 0;
-        break;
-    case BIO_CTRL_EOF:
-        ret = BIO_test_flags(b, BIO_FLAGS_IN_EOF)
-            ? 1
-            : BIO_ctrl(SSL_get_rbio(ssl), cmd, num, ptr);
         break;
     default:
         ret = BIO_ctrl(SSL_get_rbio(ssl), cmd, num, ptr);
@@ -446,12 +433,10 @@ static long ssl_callback_ctrl(BIO *b, int cmd, BIO_info_cb *fp)
 
 static int ssl_puts(BIO *bp, const char *str)
 {
-    int ret;
-    size_t n = strlen(str);
+    int n, ret;
 
-    if (n > INT_MAX)
-        return -1;
-    ret = BIO_write(bp, str, (int)n);
+    n = strlen(str);
+    ret = BIO_write(bp, str, n);
     return ret;
 }
 

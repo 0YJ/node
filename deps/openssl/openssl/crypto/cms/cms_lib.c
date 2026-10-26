@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2025 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -35,7 +35,7 @@ CMS_ContentInfo *d2i_CMS_ContentInfo(CMS_ContentInfo **a,
     const CMS_CTX *ctx = ossl_cms_get0_cmsctx(a == NULL ? NULL : *a);
 
     ci = (CMS_ContentInfo *)ASN1_item_d2i_ex((ASN1_VALUE **)a, in, len,
-        ASN1_ITEM_rptr(CMS_ContentInfo),
+        (CMS_ContentInfo_it()),
         ossl_cms_ctx_get0_libctx(ctx),
         ossl_cms_ctx_get0_propq(ctx));
     if (ci != NULL) {
@@ -48,7 +48,7 @@ CMS_ContentInfo *d2i_CMS_ContentInfo(CMS_ContentInfo **a,
 
 int i2d_CMS_ContentInfo(const CMS_ContentInfo *a, unsigned char **out)
 {
-    return ASN1_item_i2d((const ASN1_VALUE *)a, out, ASN1_ITEM_rptr(CMS_ContentInfo));
+    return ASN1_item_i2d((const ASN1_VALUE *)a, out, (CMS_ContentInfo_it()));
 }
 
 CMS_ContentInfo *CMS_ContentInfo_new_ex(OSSL_LIB_CTX *libctx, const char *propq)
@@ -137,7 +137,7 @@ BIO *ossl_cms_content_bio(CMS_ContentInfo *cms)
     /*
      * If content not detached and created return memory BIO
      */
-    if (*pos == NULL || cms->contentIncomplete)
+    if (*pos == NULL || ((*pos)->flags == ASN1_STRING_FLAG_CONT))
         return BIO_new(BIO_s_mem());
     /* Else content was read in: return read only BIO for it */
     return BIO_new_mem_buf((*pos)->data, (*pos)->length);
@@ -200,15 +200,10 @@ err:
 /* unfortunately cannot constify SMIME_write_ASN1() due to this function */
 int CMS_dataFinal(CMS_ContentInfo *cms, BIO *cmsbio)
 {
-    return ossl_cms_DataFinal(cms, cmsbio, NULL, NULL, 0);
+    return ossl_cms_DataFinal(cms, cmsbio, NULL, 0);
 }
 
-int CMS_dataFinal_ex(CMS_ContentInfo *cms, BIO *cmsbio, BIO *data)
-{
-    return ossl_cms_DataFinal(cms, cmsbio, data, NULL, 0);
-}
-
-int ossl_cms_DataFinal(CMS_ContentInfo *cms, BIO *cmsbio, BIO *data,
+int ossl_cms_DataFinal(CMS_ContentInfo *cms, BIO *cmsbio,
     const unsigned char *precomp_md,
     unsigned int precomp_mdlen)
 {
@@ -217,7 +212,7 @@ int ossl_cms_DataFinal(CMS_ContentInfo *cms, BIO *cmsbio, BIO *data,
     if (pos == NULL)
         return 0;
     /* If embedded content find memory BIO and set content */
-    if (*pos && cms->contentIncomplete) {
+    if (*pos && ((*pos)->flags & ASN1_STRING_FLAG_CONT)) {
         BIO *mbio;
         unsigned char *cont;
         long contlen;
@@ -231,7 +226,7 @@ int ossl_cms_DataFinal(CMS_ContentInfo *cms, BIO *cmsbio, BIO *data,
         BIO_set_flags(mbio, BIO_FLAGS_MEM_RDONLY);
         BIO_set_mem_eof_return(mbio, 0);
         ASN1_STRING_set0(*pos, cont, contlen);
-        cms->contentIncomplete = 0;
+        (*pos)->flags &= ~ASN1_STRING_FLAG_CONT;
     }
 
     switch (OBJ_obj2nid(cms->contentType)) {
@@ -249,8 +244,7 @@ int ossl_cms_DataFinal(CMS_ContentInfo *cms, BIO *cmsbio, BIO *data,
         return ossl_cms_AuthEnvelopedData_final(cms, cmsbio);
 
     case NID_pkcs7_signed:
-        return ossl_cms_SignedData_final(cms, cmsbio, data,
-            precomp_md, precomp_mdlen);
+        return ossl_cms_SignedData_final(cms, cmsbio, precomp_md, precomp_mdlen);
 
     case NID_pkcs7_digest:
         return ossl_cms_DigestedData_do_final(cms, cmsbio, 0);
@@ -387,13 +381,15 @@ int CMS_set_detached(CMS_ContentInfo *cms, int detached)
     if (detached) {
         ASN1_OCTET_STRING_free(*pos);
         *pos = NULL;
-        cms->contentIncomplete = 0;
         return 1;
     }
     if (*pos == NULL)
         *pos = ASN1_OCTET_STRING_new();
     if (*pos != NULL) {
-        cms->contentIncomplete = 1;
+        /*
+         * NB: special flag to show content is created and not read in.
+         */
+        (*pos)->flags |= ASN1_STRING_FLAG_CONT;
         return 1;
     }
     ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
@@ -407,20 +403,28 @@ BIO *ossl_cms_DigestAlgorithm_init_bio(X509_ALGOR *digestAlgorithm,
 {
     BIO *mdbio = NULL;
     const ASN1_OBJECT *digestoid;
-    EVP_MD *digest = NULL;
+    const EVP_MD *digest = NULL;
+    EVP_MD *fetched_digest = NULL;
     char alg[OSSL_MAX_NAME_SIZE];
     size_t xof_len = 0;
 
     X509_ALGOR_get0(&digestoid, NULL, NULL, digestAlgorithm);
     OBJ_obj2txt(alg, sizeof(alg), digestoid, 0);
 
-    digest = EVP_MD_fetch(ossl_cms_ctx_get0_libctx(ctx), alg,
+    (void)ERR_set_mark();
+    fetched_digest = EVP_MD_fetch(ossl_cms_ctx_get0_libctx(ctx), alg,
         ossl_cms_ctx_get0_propq(ctx));
 
+    if (fetched_digest != NULL)
+        digest = fetched_digest;
+    else
+        digest = EVP_get_digestbyobj(digestoid);
     if (digest == NULL) {
+        (void)ERR_clear_last_mark();
         ERR_raise(ERR_LIB_CMS, CMS_R_UNKNOWN_DIGEST_ALGORITHM);
         goto err;
     }
+    (void)ERR_pop_to_mark();
 
     mdbio = BIO_new(BIO_f_md());
     if (mdbio == NULL || BIO_set_md(mdbio, digest) <= 0) {
@@ -445,10 +449,10 @@ BIO *ossl_cms_DigestAlgorithm_init_bio(X509_ALGOR *digestAlgorithm,
                 goto err;
         }
     }
-    EVP_MD_free(digest);
+    EVP_MD_free(fetched_digest);
     return mdbio;
 err:
-    EVP_MD_free(digest);
+    EVP_MD_free(fetched_digest);
     BIO_free(mdbio);
     return NULL;
 }
@@ -471,7 +475,7 @@ int ossl_cms_DigestAlgorithm_find_ctx(EVP_MD_CTX *mctx, BIO *chain,
             return 0;
         }
         BIO_get_md_ctx(chain, &mtmp);
-        if (EVP_MD_CTX_get_type(mtmp) == nid || OBJ_sn2nid(EVP_MD_CTX_get0_name(mtmp)) == nid
+        if (EVP_MD_CTX_get_type(mtmp) == nid
             /*
              * Workaround for broken implementations that use signature
              * algorithm OID instead of digest.

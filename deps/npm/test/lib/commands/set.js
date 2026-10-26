@@ -18,13 +18,13 @@ t.test('no args', async t => {
 t.test('test-config-item', async t => {
   const { npm, home, joinedOutput } = await mockNpm(t, {
     homeDir: {
-      '.npmrc': 'tag=beta',
+      '.npmrc': 'original-config-test=original value',
     },
   })
 
   t.equal(
-    npm.config.get('tag'),
-    'beta',
+    npm.config.get('original-config-test'),
+    'original value',
     'original config is set from npmrc'
   )
 
@@ -46,7 +46,7 @@ t.test('test-config-item', async t => {
   t.equal(
     cleanNewlines(await fs.readFile(join(home, '.npmrc'), 'utf-8')),
     [
-      'tag=beta',
+      'original-config-test=original value',
       'fund=true',
       '',
     ].join('\n'),

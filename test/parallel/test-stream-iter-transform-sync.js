@@ -19,7 +19,6 @@ const {
   decompressBrotliSync,
   decompressZstdSync,
 } = require('zlib/iter');
-const { zstdCompressSync } = require('zlib');
 
 // =============================================================================
 // Helper: sync compress then decompress, verify round-trip equality
@@ -117,15 +116,6 @@ function testZstdLargeData() {
   const input = 'zstd sync large data test. '.repeat(5000);
   const result = roundTrip(input, compressZstdSync(), decompressZstdSync());
   assert.strictEqual(result, input);
-}
-
-function testZstdConcatenatedFrames() {
-  const input = Buffer.concat([
-    zstdCompressSync('a'),
-    zstdCompressSync('b'),
-  ]);
-  const result = bytesSync(pullSync(fromSync(input), decompressZstdSync()));
-  assert.strictEqual(Buffer.from(result).toString(), 'ab');
 }
 
 // =============================================================================
@@ -228,7 +218,6 @@ testBrotliRoundTrip();
 testBrotliLargeData();
 testZstdRoundTrip();
 testZstdLargeData();
-testZstdConcatenatedFrames();
 testGzipWithOptions();
 testBrotliWithOptions();
 testMixedStatelessAndStateful();

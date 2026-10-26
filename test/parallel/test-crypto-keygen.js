@@ -14,7 +14,11 @@ const {
 } = require('crypto');
 const { inspect } = require('util');
 
-const { isBoringSSL } = require('../common/crypto');
+const {
+  hasOpenSSL,
+  isBoringSSL: commonIsBoringSSL,
+} = require('../common/crypto');
+const isBoringSSL = commonIsBoringSSL;
 
 // Test invalid parameter encoding.
 {
@@ -375,7 +379,12 @@ const { isBoringSSL } = require('../common/crypto');
   }
 
   // Test invalid exponents. (caught by OpenSSL)
-  const invalidExponentError = isBoringSSL ? /BAD_E_VALUE/ : /exponent/;
+  let invalidExponentError = /bad e value/;
+  if (isBoringSSL) {
+    invalidExponentError = /BAD_E_VALUE/;
+  } else if (hasOpenSSL(3)) {
+    invalidExponentError = /exponent/;
+  }
   for (const publicExponent of [1, 1 + 0x10001]) {
     generateKeyPair('rsa', {
       modulusLength: 4096,

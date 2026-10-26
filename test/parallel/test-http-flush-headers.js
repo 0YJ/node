@@ -16,6 +16,5 @@ server.listen(0, '127.0.0.1', common.mustCall(function() {
     port: this.address().port,
   });
   req.setHeader('foo', 'bar');
-  req.setHeader('Connection', 'close');
   req.flushHeaders();
 }));

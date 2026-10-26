@@ -14,19 +14,6 @@
 namespace v8 {
 namespace internal {
 
-class AllowReindexScope {
- public:
-  explicit AllowReindexScope(int* counter) : counter_(counter) {
-    if (counter_) (*counter_)++;
-  }
-  ~AllowReindexScope() {
-    if (counter_) (*counter_)--;
-  }
-
- private:
-  int* counter_;
-};
-
 // Changes the ID of all FunctionLiterals in the given Expression by adding the
 // given delta.
 class AstFunctionLiteralIdReindexer final
@@ -38,7 +25,7 @@ class AstFunctionLiteralIdReindexer final
       const AstFunctionLiteralIdReindexer&) = delete;
   ~AstFunctionLiteralIdReindexer();
 
-  void Reindex(Expression* pattern, const AllowReindexScope& scope);
+  void Reindex(Expression* pattern);
 
   // AstTraversalVisitor implementation.
   void VisitFunctionLiteral(FunctionLiteral* lit);

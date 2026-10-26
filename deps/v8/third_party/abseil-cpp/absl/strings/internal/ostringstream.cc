@@ -19,8 +19,6 @@
 #include <ios>
 #include <streambuf>
 
-#include "absl/base/config.h"
-
 namespace absl {
 ABSL_NAMESPACE_BEGIN
 namespace strings_internal {

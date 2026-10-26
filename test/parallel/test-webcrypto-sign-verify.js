@@ -109,7 +109,7 @@ const { subtle } = globalThis.crypto;
 }
 
 // Test Sign/Verify KMAC
-if (!isBoringSSL) {
+if (hasOpenSSL(3)) {
   async function test(name, data) {
     const ec = new TextEncoder();
 

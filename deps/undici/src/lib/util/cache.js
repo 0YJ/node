@@ -4,12 +4,10 @@ const {
   safeHTTPMethods,
   pathHasQueryOrFragment,
   hasSafeIterator,
-  isValidHTTPToken,
-  setHeader
+  isValidHTTPToken
 } = require('../core/util')
 
 const { serializePathWithQuery } = require('../core/util')
-const { kRequestOrigin } = require('../core/symbols')
 
 const MAX_DELTA_SECONDS = 2147483647
 const RESTRICTIVE_DIRECTIVE_NAMES = ['no-store', 'private', 'no-cache']
@@ -149,47 +147,8 @@ function getMalformedRestrictiveDirectiveName (key) {
 /**
  * @param {import('../../types/dispatcher.d.ts').default.DispatchOptions} opts
  */
-function getRequestOrigin (opts) {
-  const origin = opts[kRequestOrigin] === undefined
-    ? opts.origin
-    : opts[kRequestOrigin]
-  return typeof origin === 'string' || origin instanceof URL
-    ? origin
-    : null
-}
-
-/**
- * @param {import('../../types/dispatcher.d.ts').default.DispatchOptions} opts
- * @param {string|null|undefined} interceptorOrigin
- */
-function getInterceptorOrigin (opts, interceptorOrigin) {
-  const requestOrigin = getRequestOrigin(opts)
-  if (interceptorOrigin === undefined) {
-    return requestOrigin
-  }
-  if (interceptorOrigin === null) {
-    return null
-  }
-  if (requestOrigin) {
-    try {
-      if (new URL(requestOrigin).origin !== interceptorOrigin) {
-        return null
-      }
-    } catch {
-      return interceptorOrigin
-    }
-  }
-  return interceptorOrigin
-}
-
-/**
- * @param {import('../../types/dispatcher.d.ts').default.DispatchOptions} opts
- * @param {string|URL|null} [origin]
- */
-function makeCacheKey (opts, origin = getRequestOrigin(opts)) {
-  if (!origin) {
-    throw new Error('opts.origin is undefined')
-  }
+function makeCacheKey (opts) {
+  const origin = opts.origin ? opts.origin.toString() : ''
 
   let fullPath = opts.path || '/'
 
@@ -198,7 +157,7 @@ function makeCacheKey (opts, origin = getRequestOrigin(opts)) {
   }
 
   return {
-    origin: origin.toString(),
+    origin,
     method: opts.method,
     path: fullPath,
     headers: opts.headers
@@ -207,20 +166,15 @@ function makeCacheKey (opts, origin = getRequestOrigin(opts)) {
 
 function appendHeader (headers, key, val) {
   const headerName = key.toLowerCase()
-  // Reading `headers[headerName]` directly would resolve `__proto__` (and any
-  // other inherited name) through the prototype chain rather than report the
-  // header as absent.
-  const current = Object.hasOwn(headers, headerName)
-    ? headers[headerName]
-    : undefined
+  const current = headers[headerName]
   const values = Array.isArray(val) ? val : [val]
 
   if (current === undefined) {
-    setHeader(headers, headerName, Array.isArray(val) ? val.slice() : val)
+    headers[headerName] = Array.isArray(val) ? val.slice() : val
   } else if (Array.isArray(current)) {
     current.push(...values)
   } else {
-    setHeader(headers, headerName, [current, ...values])
+    headers[headerName] = [current, ...values]
   }
 }
 
@@ -738,7 +692,7 @@ function makeDeduplicationKey (cacheKey, excludeHeaders) {
       if (excludeHeaders?.has(header.toLowerCase())) {
         continue
       }
-      setHeader(headers, header, cacheKey.headers[header])
+      headers[header] = cacheKey.headers[header]
     }
   }
 
@@ -746,8 +700,6 @@ function makeDeduplicationKey (cacheKey, excludeHeaders) {
 }
 
 module.exports = {
-  getInterceptorOrigin,
-  getRequestOrigin,
   makeCacheKey,
   normalizeHeaders,
   assertCacheKey,

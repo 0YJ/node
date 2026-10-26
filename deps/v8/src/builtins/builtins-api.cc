@@ -43,7 +43,7 @@ bool IsCompatibleReceiver(Isolate* isolate, Tagged<FunctionTemplateInfo> info,
   // The JSGlobalProxy might have a hidden prototype.
   if (V8_UNLIKELY(IsJSGlobalProxy(js_obj_receiver))) {
     Tagged<HeapObject> prototype = js_obj_receiver->map()->prototype();
-    if (!IsNull(prototype)) {
+    if (!IsNull(prototype, isolate)) {
       Tagged<JSObject> js_obj_prototype = Cast<JSObject>(prototype);
       if (signature->IsTemplateFor(js_obj_prototype)) return true;
     }
@@ -65,8 +65,8 @@ V8_WARN_UNUSED_RESULT MaybeHandle<Object> HandleApiCallHelper(
 
   Handle<JSReceiver> js_receiver;
   if (is_construct) {
-    DCHECK(IsTdzHole(*receiver));
-    if (IsUndefined(fun_data->GetInstanceTemplate())) {
+    DCHECK(IsTheHole(*receiver, isolate));
+    if (IsUndefined(fun_data->GetInstanceTemplate(), isolate)) {
       v8::Local<ObjectTemplate> templ =
           ObjectTemplate::New(reinterpret_cast<v8::Isolate*>(isolate),
                               ToApiHandle<v8::FunctionTemplate>(fun_data));
@@ -134,7 +134,7 @@ BUILTIN(HandleApiConstruct) {
   HandleScope scope(isolate);
   DirectHandle<Object> receiver = args.receiver();
   DirectHandle<HeapObject> new_target = args.new_target();
-  DCHECK(!IsUndefined(*new_target));
+  DCHECK(!IsUndefined(*new_target, isolate));
   DirectHandle<FunctionTemplateInfo> fun_data(
       args.target()->shared()->api_func_data(), isolate);
 
@@ -206,7 +206,7 @@ HandleApiCallAsFunctionOrConstructorDelegate(Isolate* isolate,
   DCHECK(constructor->shared()->IsApiFunction());
   Tagged<Object> handler =
       constructor->shared()->api_func_data()->GetInstanceCallHandler();
-  DCHECK(!IsUndefined(handler));
+  DCHECK(!IsUndefined(handler, isolate));
   Tagged<FunctionTemplateInfo> templ = Cast<FunctionTemplateInfo>(handler);
   DCHECK(templ->is_object_template_call_handler());
   DCHECK(templ->has_callback(isolate));

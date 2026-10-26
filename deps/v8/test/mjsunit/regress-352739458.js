@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax
+// Flags: --reuse-scope-infos --allow-natives-syntax
 
 Realm.eval(Realm.current(), `function f(s) {
   return eval(s);

@@ -41,7 +41,6 @@ const server = http.createServer(function(request, response) {
 server.listen(0, function() {
   const port = this.address().port;
   const testURL = url.parse(`http://localhost:${port}/asdf?qwer=zxcv`);
-  testURL.agent = false;
 
   // make the request
   http.request(testURL).end();

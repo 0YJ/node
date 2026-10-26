@@ -17,4 +17,4 @@ assertEquals(100, foo(dv));
 %OptimizeMaglevOnNextCall(foo);
 
 assertEquals(100, foo(dv));
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));

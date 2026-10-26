@@ -1,1 +1,1 @@
-#include "../../../config/openssl_safestack.h"
+#include "../../../config/safestack.h"

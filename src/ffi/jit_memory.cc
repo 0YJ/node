@@ -23,6 +23,13 @@ namespace node::ffi {
 namespace {
 
 bool SelfTest() {
+#if !defined(__aarch64__) && !defined(_M_ARM64) && !defined(__x86_64__) &&     \
+    !defined(_M_X64) && !defined(__powerpc64__) && !defined(__ppc64__) &&      \
+    !defined(__PPC64__) && !defined(__loongarch64) &&                          \
+    !(defined(__riscv) && __riscv_xlen == 64) && !defined(__s390x__)
+  // No stub emitter for this platform; nothing to test.
+  return false;
+#else
 #if defined(__aarch64__) || defined(_M_ARM64)
   // AArch64 BR LR: 0xD65F03C0
   constexpr uint32_t kInstruction = 0xD65F03C0;
@@ -44,8 +51,7 @@ bool SelfTest() {
   constexpr uint16_t kInstruction = 0x07fe;
   constexpr size_t kInstructionSize = sizeof(uint16_t);
 #else
-  // The probe is never executed, so this byte also works on platforms without
-  // a Fast API stub emitter. On x86_64 it represents RET.
+  // x86_64 RET: 0xC3
   constexpr uint8_t kInstruction = 0xC3;
   constexpr size_t kInstructionSize = sizeof(uint8_t);
 #endif
@@ -91,7 +97,7 @@ bool SelfTest() {
     defined(__ppc64__) || defined(__PPC64__) || defined(__loongarch64) ||      \
     (defined(__riscv) && __riscv_xlen == 64) || defined(__s390x__)
   std::memcpy(code, &kInstruction, kInstructionSize);
-#else
+#elif defined(__x86_64__)
   code[0] = kInstruction;
 #endif
 
@@ -122,6 +128,7 @@ bool SelfTest() {
   const bool ok = mprotect(page, page_size, PROT_READ | PROT_EXEC) == 0;
   munmap(page, page_size);
   return ok;
+#endif
 #endif
 }
 

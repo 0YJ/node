@@ -100,9 +100,12 @@ impl<'a> ByteSliceWithIndices<'a> {
 
         while i < self.len() {
             let (ascii_str, _) = self.get_or_panic(i);
-            if let Some(prev) = prev {
-                if !is_less_than(prev, ascii_str) {
-                    return false;
+            match prev {
+                None => (),
+                Some(prev) => {
+                    if !is_less_than(prev, ascii_str) {
+                        return false;
+                    }
                 }
             };
             prev = Some(ascii_str);

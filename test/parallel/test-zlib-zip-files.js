@@ -22,16 +22,23 @@ async function collect(readable) {
   return Buffer.concat(chunks);
 }
 
-// destroy() sets .destroyed before a pending open or close finishes. Wait for
-// the sources to close before removing their files.
-async function waitForAllClosed(streams) {
-  await Promise.all(streams.map((stream) =>
-    (stream.closed ? undefined : new Promise((resolve) => stream.once('close', resolve)))));
+// Disposal of a streaming source completes asynchronously - its descriptor is
+// closed on the libuv threadpool - and an abandoned archive tears its queued
+// sources down one after another, each waiting on the previous close. So the
+// moment "every source is destroyed" can trail the destroy() call, arbitrarily
+// far on a loaded machine. Wait for that real end state rather than assuming a
+// fixed delay has been long enough.
+async function waitForAllDestroyed(streams) {
+  const deadline = Date.now() + common.platformTimeout(5000);
+  while (streams.some((s) => !s.destroyed) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
-// Write `count` throwaway files and return entries backed by read streams,
-// so the test can observe how disposal closes every source. Their asynchronous
-// opens may still be pending when the archive starts.
+// Write `count` throwaway files and return streaming entries backed by their
+// (eagerly opened) read streams, so a test can observe whether each source is
+// destroyed. The worst case for leaks: every descriptor is open before the
+// archive starts.
 async function streamingEntries(count) {
   const dir = await fsp.mkdtemp(path.join(tmpdir.path, 'zlib-zip-dispose-'));
   const streams = [];
@@ -159,7 +166,7 @@ test('an abandoned createZipArchive() destroys the sources of entries it never r
       if (seen > 256 * 1024) break; // Bail while still inside the first member
     }
     archive.destroy();
-    await waitForAllClosed(streams);
+    await waitForAllDestroyed(streams);
     const open = streams.filter((s) => !s.destroyed);
     assert.strictEqual(open.length, 0, `${open.length} source streams left open`);
   } finally {
@@ -189,7 +196,7 @@ test('zipEntry disposal destroys a streaming source, sync and async', async () =
   try {
     entries[0][Symbol.dispose]();
     await entries[1][Symbol.asyncDispose]();
-    await waitForAllClosed(streams);
+    await waitForAllDestroyed(streams);
     assert.strictEqual(streams[0].destroyed, true);
     assert.strictEqual(streams[1].destroyed, true);
   } finally {
@@ -225,7 +232,7 @@ test('createZipArchiveSync() throws on a streaming entry and disposes the rest',
   try {
     assert.throws(() => Array.from(zlib.createZipArchiveSync(entries)),
                   { code: 'ERR_INVALID_STATE' });
-    await waitForAllClosed(streams);
+    await waitForAllDestroyed(streams);
     assert.strictEqual(streams.filter((s) => !s.destroyed).length, 0);
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });

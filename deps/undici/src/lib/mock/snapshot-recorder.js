@@ -4,7 +4,6 @@ const { writeFile, readFile, mkdir } = require('node:fs/promises')
 const { dirname, resolve } = require('node:path')
 const { setTimeout, clearTimeout } = require('node:timers')
 const { InvalidArgumentError, UndiciError } = require('../core/errors')
-const { setHeader } = require('../core/util')
 const { hashId, isUrlExcludedFactory, normalizeHeaders, createHeaderFilters } = require('./snapshot-utils')
 
 /**
@@ -170,7 +169,7 @@ function filterHeadersForMatching (headers, headerFilters, matchOptions = {}) {
       if (!match.has(headerKey)) continue
     }
 
-    setHeader(filtered, headerKey, value)
+    filtered[headerKey] = value
   }
 
   return filtered
@@ -199,7 +198,7 @@ function filterHeadersForStorage (headers, headerFilters, matchOptions = {}) {
     // Skip if in exclude list (for security)
     if (excludeSet.has(headerKey)) continue
 
-    setHeader(filtered, headerKey, value)
+    filtered[headerKey] = value
   }
 
   return filtered

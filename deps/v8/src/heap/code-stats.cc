@@ -8,7 +8,6 @@
 #include "src/heap/heap-inl.h"
 #include "src/heap/large-spaces.h"
 #include "src/heap/paged-spaces-inl.h"  // For PagedSpaceObjectIterator.
-#include "src/objects/abstract-code-inl.h"
 #include "src/objects/objects-inl.h"
 
 namespace v8 {
@@ -17,22 +16,23 @@ namespace internal {
 // Record code statistics.
 void CodeStatistics::RecordCodeAndMetadataStatistics(Tagged<HeapObject> object,
                                                      Isolate* isolate) {
-  if (IsScript(object)) {
+  PtrComprCageBase cage_base(isolate);
+  if (IsScript(object, cage_base)) {
     Tagged<Script> script = Cast<Script>(object);
     // Log the size of external source code.
-    Tagged<Object> source = script->source();
-    if (IsExternalString(source)) {
+    Tagged<Object> source = script->source(cage_base);
+    if (IsExternalString(source, cage_base)) {
       Tagged<ExternalString> external_source_string =
           Cast<ExternalString>(source);
       int size = isolate->external_script_source_size();
       size += external_source_string->ExternalPayloadSize();
       isolate->set_external_script_source_size(size);
     }
-  } else if (IsAbstractCode(object)) {
+  } else if (IsAbstractCode(object, cage_base)) {
     // Record code+metadata statistics.
     Tagged<AbstractCode> abstract_code = Cast<AbstractCode>(object);
-    int size = abstract_code->SizeIncludingMetadata();
-    if (IsCode(abstract_code)) {
+    int size = abstract_code->SizeIncludingMetadata(cage_base);
+    if (IsCode(abstract_code, cage_base)) {
       size += isolate->code_and_metadata_size();
       isolate->set_code_and_metadata_size(size);
     } else {
@@ -41,9 +41,9 @@ void CodeStatistics::RecordCodeAndMetadataStatistics(Tagged<HeapObject> object,
     }
 
 #ifdef DEBUG
-    CodeKind code_kind = abstract_code->kind();
+    CodeKind code_kind = abstract_code->kind(cage_base);
     isolate->code_kind_statistics()[static_cast<int>(code_kind)] +=
-        abstract_code->Size();
+        abstract_code->Size(cage_base);
 #endif
   }
 }

@@ -17,16 +17,13 @@
 
 #include <algorithm>
 #include <cinttypes>
-#include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <istream>
 #include <iterator>
 #include <limits>
 #include <ostream>
 #include <type_traits>
 
-#include "absl/base/config.h"
 #include "absl/base/internal/endian.h"
 #include "absl/meta/type_traits.h"
 #include "absl/random/internal/iostream_state_saver.h"
@@ -50,7 +47,7 @@ class alignas(8) randen_engine {
  public:
   // C++11 URBG interface:
   using result_type = T;
-  static_assert(std::is_unsigned_v<result_type>,
+  static_assert(std::is_unsigned<result_type>::value,
                 "randen_engine template argument must be a built-in unsigned "
                 "integer type");
 
@@ -66,8 +63,8 @@ class alignas(8) randen_engine {
   explicit randen_engine(result_type seed_value) { seed(seed_value); }
 
   template <class SeedSequence,
-            typename = typename std::enable_if_t<
-                !std::is_same_v<SeedSequence, randen_engine>>>
+            typename = typename absl::enable_if_t<
+                !std::is_same<SeedSequence, randen_engine>::value>>
   explicit randen_engine(SeedSequence&& seq) {
     seed(seq);
   }
@@ -96,7 +93,8 @@ class alignas(8) randen_engine {
   }
 
   template <class SeedSequence>
-  typename std::enable_if_t<!std::is_convertible_v<SeedSequence, result_type>>
+  typename absl::enable_if_t<
+      !std::is_convertible<SeedSequence, result_type>::value>
   seed(SeedSequence&& seq) {
     // Zeroes the state.
     seed();

@@ -27,12 +27,11 @@ Address TaggedMember<T, CompressionScheme>::tagged_to_full(
     DCHECK(HAS_SMI_TAG(tagged_value));
     return CompressionScheme::DecompressTaggedSigned(tagged_value);
   } else {
-    if constexpr (std::is_same_v<TrustedSpaceCompressionScheme,
-                                 CompressionScheme>) {
-      static_assert(is_subtype_v<T, UnionOf<Smi, MaybeWeak<TrustedObject>>>);
-    } else if constexpr (std::is_same_v<V8HeapCompressionScheme,
-                                        CompressionScheme>) {
+    if constexpr (std::is_same_v<V8HeapCompressionScheme, CompressionScheme>) {
       static_assert(is_subtype_v<T, MaybeObject>);
+    } else if constexpr (std::is_same_v<TrustedSpaceCompressionScheme,
+                                        CompressionScheme>) {
+      static_assert(is_subtype_v<T, UnionOf<Smi, MaybeWeak<TrustedObject>>>);
     }
     return CompressionScheme::DecompressTagged(tagged_value);
   }
@@ -57,7 +56,7 @@ Tagged<T> TaggedMember<T, CompressionScheme>::load() const {
 }
 
 template <typename T, typename CompressionScheme>
-void TaggedMember<T, CompressionScheme>::store(HeapObject* host,
+void TaggedMember<T, CompressionScheme>::store(HeapObjectLayout* host,
                                                Tagged<T> value,
                                                WriteBarrierMode mode) {
   store_no_write_barrier(value);
@@ -71,7 +70,7 @@ Tagged<T> TaggedMember<T, CompressionScheme>::Relaxed_Load() const {
 }
 
 template <typename T, typename CompressionScheme>
-void TaggedMember<T, CompressionScheme>::Relaxed_Store(HeapObject* host,
+void TaggedMember<T, CompressionScheme>::Relaxed_Store(HeapObjectLayout* host,
                                                        Tagged<T> value,
                                                        WriteBarrierMode mode) {
   Relaxed_Store_no_write_barrier(value);
@@ -85,7 +84,7 @@ Tagged<T> TaggedMember<T, CompressionScheme>::Acquire_Load() const {
 }
 
 template <typename T, typename CompressionScheme>
-void TaggedMember<T, CompressionScheme>::Release_Store(HeapObject* host,
+void TaggedMember<T, CompressionScheme>::Release_Store(HeapObjectLayout* host,
                                                        Tagged<T> value,
                                                        WriteBarrierMode mode) {
   Release_Store_no_write_barrier(value);
@@ -99,7 +98,7 @@ Tagged<T> TaggedMember<T, CompressionScheme>::SeqCst_Load() const {
 }
 
 template <typename T, typename CompressionScheme>
-void TaggedMember<T, CompressionScheme>::SeqCst_Store(HeapObject* host,
+void TaggedMember<T, CompressionScheme>::SeqCst_Store(HeapObjectLayout* host,
                                                       Tagged<T> value,
                                                       WriteBarrierMode mode) {
   SeqCst_Store_no_write_barrier(value);
@@ -108,7 +107,7 @@ void TaggedMember<T, CompressionScheme>::SeqCst_Store(HeapObject* host,
 
 template <typename T, typename CompressionScheme>
 Tagged<T> TaggedMember<T, CompressionScheme>::SeqCst_Swap(
-    HeapObject* host, Tagged<T> value, WriteBarrierMode mode) {
+    HeapObjectLayout* host, Tagged<T> value, WriteBarrierMode mode) {
   Tagged<T> old_value(tagged_to_full(AsAtomicTagged::SeqCst_Swap(
       this->ptr_location(), full_to_tagged(value.ptr()))));
   WriteBarrier(host, value, mode);
@@ -117,7 +116,7 @@ Tagged<T> TaggedMember<T, CompressionScheme>::SeqCst_Swap(
 
 template <typename T, typename CompressionScheme>
 Tagged<T> TaggedMember<T, CompressionScheme>::SeqCst_CompareAndSwap(
-    HeapObject* host, Tagged<T> expected_value, Tagged<T> value,
+    HeapObjectLayout* host, Tagged<T> expected_value, Tagged<T> value,
     WriteBarrierMode mode) {
   Tagged<T> old_value(tagged_to_full(AsAtomicTagged::SeqCst_CompareAndSwap(
       this->ptr_location(), full_to_tagged(expected_value.ptr()),
@@ -160,7 +159,7 @@ void TaggedMember<T, CompressionScheme>::SeqCst_Store_no_write_barrier(
 }
 
 template <typename T, typename CompressionScheme>
-void TaggedMember<T, CompressionScheme>::WriteBarrier(HeapObject* host,
+void TaggedMember<T, CompressionScheme>::WriteBarrier(HeapObjectLayout* host,
                                                       Tagged<T> value,
                                                       WriteBarrierMode mode) {
 #ifndef V8_DISABLE_WRITE_BARRIERS
@@ -169,17 +168,7 @@ void TaggedMember<T, CompressionScheme>::WriteBarrier(HeapObject* host,
     mode = UPDATE_WRITE_BARRIER;
 #endif
     DCHECK(TrustedHeapLayout::IsOwnedByAnyHeap(Tagged(host)));
-    if constexpr (std::is_same_v<CompressionScheme,
-                                 TrustedSpaceCompressionScheme>) {
-      // Trusted-space TaggedMembers are always trusted->trusted (or trusted->
-      // shared-trusted). The dedicated barrier records TRUSTED_TO_SHARED_-
-      // TRUSTED entries that the generational ForValue barrier would miss;
-      // it is required without the sandbox as well, since the verifier checks
-      // the remembered set regardless of the sandbox flag.
-      WriteBarrier::ForProtectedPointer(host, this, value, mode);
-    } else {
-      WriteBarrier::ForValue(host, this, value, mode);
-    }
+    WriteBarrier::ForValue(host, this, value, mode);
   }
 #endif
 }
@@ -200,8 +189,9 @@ Tagged_t* TaggedField<T, kFieldOffset, CompressionScheme>::location(
 
 // static
 template <typename T, int kFieldOffset, typename CompressionScheme>
+template <typename TOnHeapAddress>
 Address TaggedField<T, kFieldOffset, CompressionScheme>::tagged_to_full(
-    Tagged_t tagged_value) {
+    TOnHeapAddress on_heap_addr, Tagged_t tagged_value) {
 #ifdef V8_COMPRESS_POINTERS
   if constexpr (kIsSmi) {
     DCHECK(HAS_SMI_TAG(tagged_value));
@@ -232,8 +222,18 @@ typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::load(Tagged<HeapObject> host,
                                                       int offset) {
   Tagged_t value = *location(host, offset);
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
-  return PtrType(tagged_to_full(value));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(host.ptr(), value));
+}
+
+// static
+template <typename T, int kFieldOffset, typename CompressionScheme>
+typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
+TaggedField<T, kFieldOffset, CompressionScheme>::load(
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset) {
+  Tagged_t value = *location(host, offset);
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(cage_base, value));
 }
 
 // static
@@ -244,7 +244,7 @@ void TaggedField<T, kFieldOffset, CompressionScheme>::store(
   Relaxed_Store(host, value);
 #else
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset, HeapObject::kMapOffset);
   *location(host) = full_to_tagged(ptr);
 #endif
 }
@@ -257,7 +257,7 @@ void TaggedField<T, kFieldOffset, CompressionScheme>::store(
   Relaxed_Store(host, offset, value);
 #else
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   *location(host, offset) = full_to_tagged(ptr);
 #endif
 }
@@ -268,17 +268,27 @@ typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::Relaxed_Load(
     Tagged<HeapObject> host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, offset));
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
-  return PtrType(tagged_to_full(value));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(host.ptr(), value));
+}
+
+// static
+template <typename T, int kFieldOffset, typename CompressionScheme>
+typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
+TaggedField<T, kFieldOffset, CompressionScheme>::Relaxed_Load(
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset) {
+  AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, offset));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(cage_base, value));
 }
 
 // static
 template <typename T, int kFieldOffset, typename CompressionScheme>
 typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::Relaxed_Load_Map_Word(
-    Tagged<HeapObject> host) {
+    PtrComprCageBase cage_base, Tagged<HeapObject> host) {
   AtomicTagged_t value = AsAtomicTagged::Relaxed_Load(location(host, 0));
-  return PtrType(tagged_to_full(value));
+  return PtrType(tagged_to_full(cage_base, value));
 }
 
 // static
@@ -293,7 +303,7 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::Relaxed_Store(
     Tagged<HeapObject> host, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset, HeapObject::kMapOffset);
   AsAtomicTagged::Relaxed_Store(location(host), full_to_tagged(ptr));
 }
 
@@ -302,7 +312,7 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::Relaxed_Store(
     Tagged<HeapObject> host, int offset, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   AsAtomicTagged::Relaxed_Store(location(host, offset), full_to_tagged(ptr));
 }
 
@@ -312,17 +322,26 @@ typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::Acquire_Load(
     Tagged<HeapObject> host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
-  return PtrType(tagged_to_full(value));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(host.ptr(), value));
 }
 
 // static
 template <typename T, int kFieldOffset, typename CompressionScheme>
 typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::Acquire_Load_No_Unpack(
-    Tagged<HeapObject> host, int offset) {
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
-  return PtrType(tagged_to_full(value));
+  return PtrType(tagged_to_full(cage_base, value));
+}
+
+template <typename T, int kFieldOffset, typename CompressionScheme>
+typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
+TaggedField<T, kFieldOffset, CompressionScheme>::Acquire_Load(
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset) {
+  AtomicTagged_t value = AsAtomicTagged::Acquire_Load(location(host, offset));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(cage_base, value));
 }
 
 // static
@@ -330,7 +349,7 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::Release_Store(
     Tagged<HeapObject> host, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset, HeapObject::kMapOffset);
   AsAtomicTagged::Release_Store(location(host), full_to_tagged(ptr));
 }
 
@@ -347,7 +366,7 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::Release_Store(
     Tagged<HeapObject> host, int offset, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   AsAtomicTagged::Release_Store(location(host, offset), full_to_tagged(ptr));
 }
 
@@ -381,8 +400,18 @@ typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Load(
     Tagged<HeapObject> host, int offset) {
   AtomicTagged_t value = AsAtomicTagged::SeqCst_Load(location(host, offset));
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
-  return PtrType(tagged_to_full(value));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(host.ptr(), value));
+}
+
+// static
+template <typename T, int kFieldOffset, typename CompressionScheme>
+typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
+TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Load(
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset) {
+  AtomicTagged_t value = AsAtomicTagged::SeqCst_Load(location(host, offset));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  return PtrType(tagged_to_full(cage_base, value));
 }
 
 // static
@@ -390,7 +419,7 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Store(
     Tagged<HeapObject> host, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset, HeapObject::kMapOffset);
   AsAtomicTagged::SeqCst_Store(location(host), full_to_tagged(ptr));
 }
 
@@ -399,20 +428,35 @@ template <typename T, int kFieldOffset, typename CompressionScheme>
 void TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Store(
     Tagged<HeapObject> host, int offset, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   AsAtomicTagged::SeqCst_Store(location(host, offset), full_to_tagged(ptr));
 }
 
 // static
 template <typename T, int kFieldOffset, typename CompressionScheme>
+
 typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
 TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Swap(
     Tagged<HeapObject> host, int offset, PtrType value) {
   Address ptr = value.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   AtomicTagged_t old_value =
       AsAtomicTagged::SeqCst_Swap(location(host, offset), full_to_tagged(ptr));
-  return PtrType(tagged_to_full(old_value));
+  return PtrType(tagged_to_full(host.ptr(), old_value));
+}
+
+// static
+template <typename T, int kFieldOffset, typename CompressionScheme>
+
+typename TaggedField<T, kFieldOffset, CompressionScheme>::PtrType
+TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_Swap(
+    PtrComprCageBase cage_base, Tagged<HeapObject> host, int offset,
+    PtrType value) {
+  Address ptr = value.ptr();
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
+  AtomicTagged_t old_value =
+      AsAtomicTagged::SeqCst_Swap(location(host, offset), full_to_tagged(ptr));
+  return PtrType(tagged_to_full(cage_base, old_value));
 }
 
 // static
@@ -422,32 +466,11 @@ TaggedField<T, kFieldOffset, CompressionScheme>::SeqCst_CompareAndSwap(
     Tagged<HeapObject> host, int offset, PtrType old, PtrType value) {
   Address ptr = value.ptr();
   Address old_ptr = old.ptr();
-  DCHECK_NE(kFieldOffset + offset, offsetof(HeapObject, map_));
+  DCHECK_NE(kFieldOffset + offset, HeapObject::kMapOffset);
   AtomicTagged_t old_value = AsAtomicTagged::SeqCst_CompareAndSwap(
       location(host, offset), full_to_tagged(old_ptr), full_to_tagged(ptr));
   return TaggedField<T, kFieldOffset, CompressionScheme>::PtrType(
-      tagged_to_full(old_value));
-}
-
-JSDispatchHandle JSDispatchHandleMember::Relaxed_Load() const {
-  return JSDispatchHandle(static_cast<JSDispatchHandle::underlying_type>(
-      storage_.load(std::memory_order_relaxed)));
-}
-
-JSDispatchHandle JSDispatchHandleMember::Acquire_Load() const {
-  return JSDispatchHandle(static_cast<JSDispatchHandle::underlying_type>(
-      storage_.load(std::memory_order_acquire)));
-}
-
-void JSDispatchHandleMember::Relaxed_Clear() {
-  storage_.store(0, std::memory_order_relaxed);
-}
-
-void JSDispatchHandleMember::Relaxed_Store(HeapObject* host,
-                                           JSDispatchHandle handle,
-                                           WriteBarrierMode mode) {
-  storage_.store(handle.value(), std::memory_order_relaxed);
-  WriteBarrier::ForJSDispatchHandle(host, handle, mode);
+      tagged_to_full(host.ptr(), old_value));
 }
 
 }  // namespace internal

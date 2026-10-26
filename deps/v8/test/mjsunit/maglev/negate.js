@@ -15,7 +15,7 @@ function test_negate_int32(value, expected) {
   negate(1, -1);
   %OptimizeMaglevOnNextCall(negate);
   assertEquals(expected, negate(value));
-  assertMaglevved(negate);
+  assertTrue(isMaglevved(negate));
 
   %DeoptimizeFunction(negate);
   assertEquals(expected, negate(value));
@@ -33,7 +33,7 @@ function test_negate_float(value, expected) {
   negate(1.1, -1.1);
   %OptimizeMaglevOnNextCall(negate);
   assertEquals(expected, negate(value));
-  assertMaglevved(negate);
+  assertTrue(isMaglevved(negate));
 
   %DeoptimizeFunction(negate);
   assertEquals(expected, negate(value));
@@ -56,7 +56,7 @@ function test_negate_int32_expect_deopt(value, expected) {
   negate(12, -12);
   %OptimizeMaglevOnNextCall(negate);
   assertEquals(expected, negate(value));
-  assertNotMaglevved(negate);
+  assertFalse(isMaglevved(negate));
 }
 
 // -0 is not an int32

@@ -143,9 +143,8 @@ async function oidc ({ packageName, registry, opts, config }) {
 
     try {
       const isDefaultProvenance = config.isDefault('provenance')
-      // CircleCI doesn't support provenance yet, so skip the auto-enable logic.
-      // An explicitly provided provenance file always takes precedence over auto-generated provenance
-      if (isDefaultProvenance && !ciInfo.CIRCLE && !opts.provenanceFile) {
+      // CircleCI doesn't support provenance yet, so skip the auto-enable logic
+      if (isDefaultProvenance && !ciInfo.CIRCLE) {
         const [headerB64, payloadB64] = idToken.split('.')
         if (headerB64 && payloadB64) {
           const payloadJson = Buffer.from(payloadB64, 'base64').toString('utf8')
@@ -159,6 +158,7 @@ async function oidc ({ packageName, registry, opts, config }) {
             if (visibility?.public) {
               log.verbose('oidc', `Enabling provenance`)
               opts.provenance = true
+              config.set('provenance', true, 'user')
             }
           }
         }

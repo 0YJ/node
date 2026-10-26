@@ -1,4 +1,3 @@
-use crate::de::field_i;
 use crate::deprecated::allow_deprecated;
 use crate::fragment::{Fragment, Match, Stmts};
 use crate::internals::ast::{Container, Data, Field, Style, Variant};
@@ -14,8 +13,9 @@ pub fn expand_derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<Toke
     replace_receiver(input);
 
     let ctxt = Ctxt::new();
-    let Some(cont) = Container::from_ast(&ctxt, input, Derive::Serialize, &private.ident()) else {
-        return Err(ctxt.check().unwrap_err());
+    let cont = match Container::from_ast(&ctxt, input, Derive::Serialize, &private.ident()) {
+        Some(cont) => cont,
+        None => return Err(ctxt.check().unwrap_err()),
     };
     precondition(&ctxt, &cont);
     ctxt.check()?;
@@ -57,7 +57,10 @@ pub fn expand_derive_serialize(input: &mut syn::DeriveInput) -> syn::Result<Toke
         }
     };
 
-    Ok(dummy::wrap_in_const(cont.attrs.custom_serde_path(), impl_block))
+    Ok(dummy::wrap_in_const(
+        cont.attrs.custom_serde_path(),
+        impl_block,
+    ))
 }
 
 fn precondition(cx: &Ctxt, cont: &Container) {
@@ -110,7 +113,14 @@ impl Parameters {
         let is_packed = cont.attrs.is_packed();
         let generics = build_generics(cont);
 
-        Parameters { self_var, this_type, this_value, generics, is_remote, is_packed }
+        Parameters {
+            self_var,
+            this_type,
+            this_value,
+            generics,
+            is_remote,
+            is_packed,
+        }
     }
 
     /// Type name to use in error messages and `&'static str` arguments to
@@ -225,8 +235,14 @@ fn serialize_newtype_struct(
 ) -> Fragment {
     let type_name = cattrs.name().serialize_name();
 
-    let mut field_expr =
-        get_member(params, field, &Member::Unnamed(Index { index: 0, span: Span::call_site() }));
+    let mut field_expr = get_member(
+        params,
+        field,
+        &Member::Unnamed(Index {
+            index: 0,
+            span: Span::call_site(),
+        }),
+    );
     if let Some(path) = field.attrs.serialize_with() {
         field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
     }
@@ -248,8 +264,11 @@ fn serialize_tuple_struct(
 
     let type_name = cattrs.name().serialize_name();
 
-    let mut serialized_fields =
-        fields.iter().enumerate().filter(|(_, field)| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some());
 
@@ -257,7 +276,10 @@ fn serialize_tuple_struct(
         .map(|(i, field)| match field.attrs.skip_serializing_if() {
             None => quote!(1),
             Some(path) => {
-                let index = syn::Index { index: i as u32, span: Span::call_site() };
+                let index = syn::Index {
+                    index: i as u32,
+                    span: Span::call_site(),
+                };
                 let field_expr = get_member(params, field, &Member::Unnamed(index));
                 quote!(if #path(#field_expr) { 0 } else { 1 })
             }
@@ -280,8 +302,9 @@ fn serialize_struct(params: &Parameters, fields: &[Field], cattrs: &attr::Contai
         u32::MAX,
     );
 
-    let has_non_skipped_flatten =
-        fields.iter().any(|field| field.attrs.flatten() && !field.attrs.skip_serializing());
+    let has_non_skipped_flatten = fields
+        .iter()
+        .any(|field| field.attrs.flatten() && !field.attrs.skip_serializing());
     if has_non_skipped_flatten {
         serialize_struct_as_map(params, fields, cattrs)
     } else {
@@ -315,8 +338,10 @@ fn serialize_struct_as_struct(
     let tag_field = serialize_struct_tag_field(cattrs, &StructTrait::SerializeStruct);
     let tag_field_exists = !tag_field.is_empty();
 
-    let mut serialized_fields =
-        fields.iter().filter(|&field| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .filter(|&field| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some() || tag_field_exists);
 
@@ -328,7 +353,10 @@ fn serialize_struct_as_struct(
                 quote!(if #path(#field_expr) { 0 } else { 1 })
             }
         })
-        .fold(quote!(#tag_field_exists as usize), |sum, expr| quote!(#sum + #expr));
+        .fold(
+            quote!(#tag_field_exists as usize),
+            |sum, expr| quote!(#sum + #expr),
+        );
 
     quote_block! {
         let #let_mut __serde_state = _serde::Serializer::serialize_struct(__serializer, #type_name, #len)?;
@@ -349,8 +377,10 @@ fn serialize_struct_as_map(
     let tag_field = serialize_struct_tag_field(cattrs, &StructTrait::SerializeMap);
     let tag_field_exists = !tag_field.is_empty();
 
-    let mut serialized_fields =
-        fields.iter().filter(|&field| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .filter(|&field| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some() || tag_field_exists);
 
@@ -428,7 +458,8 @@ fn serialize_variant(
                 }
             }
             Style::Tuple => {
-                let field_names = (0..variant.fields.len()).map(field_i);
+                let field_names = (0..variant.fields.len())
+                    .map(|i| Ident::new(&format!("__field{}", i), Span::call_site()));
                 quote! {
                     #this_value::#variant_ident(#(ref #field_names),*)
                 }
@@ -522,12 +553,19 @@ fn serialize_externally_tagged_variant(
             }
         }
         Style::Tuple => serialize_tuple_variant(
-            TupleVariant::ExternallyTagged { type_name, variant_index, variant_name },
+            TupleVariant::ExternallyTagged {
+                type_name,
+                variant_index,
+                variant_name,
+            },
             params,
             &variant.fields,
         ),
         Style::Struct => serialize_struct_variant(
-            StructVariant::ExternallyTagged { variant_index, variant_name },
+            StructVariant::ExternallyTagged {
+                variant_index,
+                variant_name,
+            },
             params,
             &variant.fields,
             type_name,
@@ -676,8 +714,10 @@ fn serialize_adjacently_tagged_variant(
                 unreachable!()
             }
         }
-        Style::Newtype => vec![Member::Named(field_i(0))],
-        Style::Tuple => (0..variant.fields.len()).map(|i| Member::Named(field_i(i))).collect(),
+        Style::Newtype => vec![Member::Named(Ident::new("__field0", Span::call_site()))],
+        Style::Tuple => (0..variant.fields.len())
+            .map(|i| Member::Named(Ident::new(&format!("__field{}", i), Span::call_site())))
+            .collect(),
         Style::Struct => variant.fields.iter().map(|f| f.member.clone()).collect(),
     };
 
@@ -763,7 +803,11 @@ fn serialize_untagged_variant(
 }
 
 enum TupleVariant<'a> {
-    ExternallyTagged { type_name: &'a Name, variant_index: u32, variant_name: &'a Name },
+    ExternallyTagged {
+        type_name: &'a Name,
+        variant_index: u32,
+        variant_name: &'a Name,
+    },
     Untagged,
 }
 
@@ -779,8 +823,11 @@ fn serialize_tuple_variant(
 
     let serialize_stmts = serialize_tuple_struct_visitor(fields, params, true, &tuple_trait);
 
-    let mut serialized_fields =
-        fields.iter().enumerate().filter(|(_, field)| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some());
 
@@ -788,14 +835,18 @@ fn serialize_tuple_variant(
         .map(|(i, field)| match field.attrs.skip_serializing_if() {
             None => quote!(1),
             Some(path) => {
-                let field_expr = field_i(i);
+                let field_expr = Ident::new(&format!("__field{}", i), Span::call_site());
                 quote!(if #path(#field_expr) { 0 } else { 1 })
             }
         })
         .fold(quote!(0), |sum, expr| quote!(#sum + #expr));
 
     match context {
-        TupleVariant::ExternallyTagged { type_name, variant_index, variant_name } => {
+        TupleVariant::ExternallyTagged {
+            type_name,
+            variant_index,
+            variant_name,
+        } => {
             quote_block! {
                 let #let_mut __serde_state = _serde::Serializer::serialize_tuple_variant(
                     __serializer,
@@ -820,8 +871,14 @@ fn serialize_tuple_variant(
 }
 
 enum StructVariant<'a> {
-    ExternallyTagged { variant_index: u32, variant_name: &'a Name },
-    InternallyTagged { tag: &'a str, variant_name: &'a Name },
+    ExternallyTagged {
+        variant_index: u32,
+        variant_name: &'a Name,
+    },
+    InternallyTagged {
+        tag: &'a str,
+        variant_name: &'a Name,
+    },
     Untagged,
 }
 
@@ -844,8 +901,10 @@ fn serialize_struct_variant(
 
     let serialize_fields = serialize_struct_visitor(fields, params, true, &struct_trait);
 
-    let mut serialized_fields =
-        fields.iter().filter(|&field| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .filter(|&field| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some());
 
@@ -861,7 +920,10 @@ fn serialize_struct_variant(
         .fold(quote!(0), |sum, expr| quote!(#sum + #expr));
 
     match context {
-        StructVariant::ExternallyTagged { variant_index, variant_name } => {
+        StructVariant::ExternallyTagged {
+            variant_index,
+            variant_name,
+        } => {
             quote_block! {
                 let #let_mut __serde_state = _serde::Serializer::serialize_struct_variant(
                     __serializer,
@@ -913,13 +975,18 @@ fn serialize_struct_variant_with_flatten(
     let struct_trait = StructTrait::SerializeMap;
     let serialize_fields = serialize_struct_visitor(fields, params, true, &struct_trait);
 
-    let mut serialized_fields =
-        fields.iter().filter(|&field| !field.attrs.skip_serializing()).peekable();
+    let mut serialized_fields = fields
+        .iter()
+        .filter(|&field| !field.attrs.skip_serializing())
+        .peekable();
 
     let let_mut = mut_if(serialized_fields.peek().is_some());
 
     match context {
-        StructVariant::ExternallyTagged { variant_index, variant_name } => {
+        StructVariant::ExternallyTagged {
+            variant_index,
+            variant_name,
+        } => {
             let this_type = &params.this_type;
             let fields_ty = fields.iter().map(|f| &f.ty);
             let members = &fields.iter().map(|f| &f.member).collect::<Vec<_>>();
@@ -993,41 +1060,46 @@ fn serialize_tuple_struct_visitor(
     is_enum: bool,
     tuple_trait: &TupleTrait,
 ) -> Vec<TokenStream> {
-    let mut dst_fields = Vec::new();
+    fields
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| !field.attrs.skip_serializing())
+        .map(|(i, field)| {
+            let mut field_expr = if is_enum {
+                let id = Ident::new(&format!("__field{}", i), Span::call_site());
+                quote!(#id)
+            } else {
+                get_member(
+                    params,
+                    field,
+                    &Member::Unnamed(Index {
+                        index: i as u32,
+                        span: Span::call_site(),
+                    }),
+                )
+            };
 
-    for (i, field) in fields.iter().enumerate() {
-        if field.attrs.skip_serializing() {
-            continue;
-        }
-        let mut field_expr = if is_enum {
-            let id = field_i(i);
-            quote!(#id)
-        } else {
-            get_member(
-                params,
-                field,
-                &Member::Unnamed(Index { index: i as u32, span: Span::call_site() }),
-            )
-        };
+            let skip = field
+                .attrs
+                .skip_serializing_if()
+                .map(|path| quote!(#path(#field_expr)));
 
-        let skip = field.attrs.skip_serializing_if().map(|path| quote!(#path(#field_expr)));
+            if let Some(path) = field.attrs.serialize_with() {
+                field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
+            }
 
-        if let Some(path) = field.attrs.serialize_with() {
-            field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-        }
+            let span = field.original.span();
+            let func = tuple_trait.serialize_element(span);
+            let ser = quote! {
+                #func(&mut __serde_state, #field_expr)?;
+            };
 
-        let span = field.original.span();
-        let func = tuple_trait.serialize_element(span);
-        let ser = quote! {
-            #func(&mut __serde_state, #field_expr)?;
-        };
-
-        dst_fields.push(match skip {
-            None => ser,
-            Some(skip) => quote!(if !#skip { #ser }),
-        });
-    }
-    dst_fields
+            match skip {
+                None => ser,
+                Some(skip) => quote!(if !#skip { #ser }),
+            }
+        })
+        .collect()
 }
 
 fn serialize_struct_visitor(
@@ -1036,60 +1108,64 @@ fn serialize_struct_visitor(
     is_enum: bool,
     struct_trait: &StructTrait,
 ) -> Vec<TokenStream> {
-    let mut dst_fields = Vec::new();
+    fields
+        .iter()
+        .filter(|&field| !field.attrs.skip_serializing())
+        .map(|field| {
+            let member = &field.member;
 
-    for field in fields {
-        if field.attrs.skip_serializing() {
-            continue;
-        }
-        let member = &field.member;
+            let mut field_expr = if is_enum {
+                quote!(#member)
+            } else {
+                get_member(params, field, member)
+            };
 
-        let mut field_expr =
-            if is_enum { quote!(#member) } else { get_member(params, field, member) };
+            let key_expr = field.attrs.name().serialize_name();
 
-        let key_expr = field.attrs.name().serialize_name();
+            let skip = field
+                .attrs
+                .skip_serializing_if()
+                .map(|path| quote!(#path(#field_expr)));
 
-        let skip = field.attrs.skip_serializing_if().map(|path| quote!(#path(#field_expr)));
-
-        if let Some(path) = field.attrs.serialize_with() {
-            field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
-        }
-
-        let span = field.original.span();
-        let ser = if field.attrs.flatten() {
-            let func = quote_spanned!(span=> _serde::Serialize::serialize);
-            quote! {
-                #func(&#field_expr, _serde::#private::ser::FlatMapSerializer(&mut __serde_state))?;
+            if let Some(path) = field.attrs.serialize_with() {
+                field_expr = wrap_serialize_field_with(params, field.ty, path, &field_expr);
             }
-        } else {
-            let func = struct_trait.serialize_field(span);
-            quote! {
-                #func(&mut __serde_state, #key_expr, #field_expr)?;
-            }
-        };
 
-        dst_fields.push(match skip {
-            None => ser,
-            Some(skip) => {
-                if let Some(skip_func) = struct_trait.skip_field(span) {
-                    quote! {
-                        if !#skip {
-                            #ser
-                        } else {
-                            #skip_func(&mut __serde_state, #key_expr)?;
+            let span = field.original.span();
+            let ser = if field.attrs.flatten() {
+                let func = quote_spanned!(span=> _serde::Serialize::serialize);
+                quote! {
+                    #func(&#field_expr, _serde::#private::ser::FlatMapSerializer(&mut __serde_state))?;
+                }
+            } else {
+                let func = struct_trait.serialize_field(span);
+                quote! {
+                    #func(&mut __serde_state, #key_expr, #field_expr)?;
+                }
+            };
+
+            match skip {
+                None => ser,
+                Some(skip) => {
+                    if let Some(skip_func) = struct_trait.skip_field(span) {
+                        quote! {
+                            if !#skip {
+                                #ser
+                            } else {
+                                #skip_func(&mut __serde_state, #key_expr)?;
+                            }
                         }
-                    }
-                } else {
-                    quote! {
-                        if !#skip {
-                            #ser
+                    } else {
+                        quote! {
+                            if !#skip {
+                                #ser
+                            }
                         }
                     }
                 }
             }
-        });
-    }
-    dst_fields
+        })
+        .collect()
 }
 
 fn wrap_serialize_field_with(
@@ -1113,12 +1189,19 @@ fn wrap_serialize_variant_with(
         .map(|field| {
             let id = match &field.member {
                 Member::Named(ident) => ident.clone(),
-                Member::Unnamed(member) => field_i(member.index as usize),
+                Member::Unnamed(member) => {
+                    Ident::new(&format!("__field{}", member.index), Span::call_site())
+                }
             };
             quote!(#id)
         })
         .collect();
-    wrap_serialize_with(params, serialize_with, field_tys.as_slice(), field_exprs.as_slice())
+    wrap_serialize_with(
+        params,
+        serialize_with,
+        field_tys.as_slice(),
+        field_exprs.as_slice(),
+    )
 }
 
 fn wrap_serialize_with(
@@ -1137,8 +1220,12 @@ fn wrap_serialize_with(
     };
     let (wrapper_impl_generics, wrapper_ty_generics, _) = wrapper_generics.split_for_impl();
 
-    let field_access = (0..field_exprs.len())
-        .map(|n| Member::Unnamed(Index { index: n as u32, span: Span::call_site() }));
+    let field_access = (0..field_exprs.len()).map(|n| {
+        Member::Unnamed(Index {
+            index: n as u32,
+            span: Span::call_site(),
+        })
+    });
 
     let self_var = quote!(self);
     let serializer_var = quote!(__s);

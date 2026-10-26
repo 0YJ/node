@@ -4,7 +4,7 @@
 
 // TODO(manoskouk): Fix error messages once we support shared globals, tables,
 // and functions
-// Flags: --wasm-shared
+// Flags: --experimental-wasm-shared
 
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
@@ -38,7 +38,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function TestSharedArrayWithUnsharedElement() {
   const builder = new WasmModuleBuilder();
-  builder.addArray(kWasmFuncRef, {mutable: false, shared: true});
+  builder.addArray(kWasmFuncRef, false, kNoSuperType, false, /*is_shared*/ true);
   assertThrows(() => builder.instantiate(), WebAssembly.CompileError,
     /shared array must have shared element type/);
 })();
@@ -46,8 +46,8 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 (function TestSharedStructWithUnsharedField() {
   const builder = new WasmModuleBuilder();
   builder.addStruct(
-      {fields: [makeField(kWasmI32, false), makeField(kWasmFuncRef, false)],
-       shared: true});
+    [makeField(kWasmI32, false), makeField(kWasmFuncRef, false)],
+    kNoSuperType, false, /*is_shared*/ true);
   assertThrows(() => builder.instantiate(), WebAssembly.CompileError,
     /Type 0: shared struct must have shared field types, actual type for field 1 is funcref/);
 })();

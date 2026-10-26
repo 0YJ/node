@@ -6,7 +6,7 @@
 
 #if V8_TARGET_ARCH_LOONG64
 
-#include "src/base/cpu/cpu.h"
+#include "src/base/cpu.h"
 #include "src/codegen/flush-instruction-cache.h"
 #include "src/codegen/loong64/assembler-loong64-inl.h"
 #include "src/codegen/machine-type.h"
@@ -17,13 +17,7 @@
 namespace v8 {
 namespace internal {
 
-bool CpuFeatures::SupportsSimd128() {
-#if V8_ENABLE_SIMD128
-  return IsSupported(LSX);
-#else
-  return false;
-#endif  // V8_ENABLE_SIMD128
-}
+bool CpuFeatures::SupportsWasmSimd128() { return IsSupported(LSX); }
 
 void CpuFeatures::ProbeImpl(bool cross_compile) {
   supported_.Add(FPU);
@@ -39,10 +33,11 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   // This variable is only used for certain archs to query SupportWasmSimd128()
   // at runtime in builtins using an extern ref. Other callers should use
   // CpuFeatures::SupportWasmSimd128().
-  CpuFeatures::supports_simd_128_ = CpuFeatures::SupportsSimd128();
+  CpuFeatures::supports_wasm_simd_128_ = CpuFeatures::SupportsWasmSimd128();
 }
 
-void CpuFeatures::PrintInformation() {}
+void CpuFeatures::PrintTarget() {}
+void CpuFeatures::PrintFeatures() {}
 
 int ToNumber(Register reg) {
   DCHECK(reg.is_valid());
@@ -5629,7 +5624,13 @@ void Assembler::RelocateRelativeReference(
 void Assembler::GrowBuffer() {
   // Compute new buffer size.
   int old_size = buffer_->size();
-  int new_size = ComputeNewBufferSize(BufferGrowthStrategy::kDoubleCapped1MB);
+  int new_size = std::min(2 * old_size, old_size + 1 * MB);
+
+  // Some internal data structures overflow for very large buffers,
+  // they must ensure that kMaximalBufferSize is not too large.
+  if (new_size > kMaximalBufferSize) {
+    V8::FatalProcessOutOfMemory(nullptr, "Assembler::GrowBuffer");
+  }
 
   // Set up new buffer.
   std::unique_ptr<AssemblerBuffer> new_buffer = buffer_->Grow(new_size);

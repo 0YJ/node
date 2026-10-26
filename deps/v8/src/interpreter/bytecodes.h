@@ -90,7 +90,6 @@ namespace interpreter {
   V(LdaUndefined, ImplicitRegisterUse::kWriteAccumulator)                      \
   V(LdaNull, ImplicitRegisterUse::kWriteAccumulator)                           \
   V(LdaTheHole, ImplicitRegisterUse::kWriteAccumulator)                        \
-  V(LdaTdzHole, ImplicitRegisterUse::kWriteAccumulator)                        \
   V(LdaTrue, ImplicitRegisterUse::kWriteAccumulator)                           \
   V(LdaFalse, ImplicitRegisterUse::kWriteAccumulator)                          \
   V(LdaConstant, ImplicitRegisterUse::kWriteAccumulator,                       \
@@ -177,9 +176,6 @@ namespace interpreter {
   V(GetEnumeratedKeyedProperty, ImplicitRegisterUse::kReadWriteAccumulator,    \
     OperandType::kReg, OperandType::kReg, OperandType::kReg,                   \
     OperandType::kFeedbackSlot)                                                \
-  V(GetPrivateField, ImplicitRegisterUse::kWriteAccumulator,                   \
-    OperandType::kReg, OperandType::kContextSlot, OperandType::kUImm,          \
-    OperandType::kReg, OperandType::kFeedbackSlot)                             \
                                                                                \
   /* Operations on module variables */                                         \
   V(LdaModuleVariable, ImplicitRegisterUse::kWriteAccumulator,                 \
@@ -194,9 +190,6 @@ namespace interpreter {
   V(DefineNamedOwnProperty, ImplicitRegisterUse::kReadAndClobberAccumulator,   \
     OperandType::kReg, OperandType::kConstantPoolIndex,                        \
     OperandType::kFeedbackSlot)                                                \
-  V(DefineNamedOwnPropertyInLiteral,                                           \
-    ImplicitRegisterUse::kReadAndClobberAccumulator, OperandType::kReg,        \
-    OperandType::kConstantPoolIndex, OperandType::kFeedbackSlot)               \
   V(SetKeyedProperty, ImplicitRegisterUse::kReadAndClobberAccumulator,         \
     OperandType::kReg, OperandType::kReg, OperandType::kFeedbackSlot)          \
   V(DefineKeyedOwnProperty, ImplicitRegisterUse::kReadAndClobberAccumulator,   \
@@ -209,35 +202,32 @@ namespace interpreter {
     OperandType::kFeedbackSlot)                                                \
   V(SetPrototypeProperties, ImplicitRegisterUse::kReadAndClobberAccumulator,   \
     OperandType::kConstantPoolIndex, OperandType::kFeedbackSlot)               \
-  V(SetPrivateField, ImplicitRegisterUse::kReadAndClobberAccumulator,          \
-    OperandType::kReg, OperandType::kContextSlot, OperandType::kUImm,          \
-    OperandType::kReg, OperandType::kFeedbackSlot)                             \
                                                                                \
   /* Binary Operators */                                                       \
   V(Add, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Sub, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Mul, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Div, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Mod, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Exp, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(BitwiseOr, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,  \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(BitwiseXor, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg, \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(BitwiseAnd, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg, \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(ShiftLeft, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg,  \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(ShiftRight, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kReg, \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(ShiftRightLogical, ImplicitRegisterUse::kReadWriteAccumulator,             \
-    OperandType::kReg, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kReg, OperandType::kFeedbackSlot)                             \
                                                                                \
   /* Specialized binary operators. */                                          \
   V(Add_StringConstant_Internalize,                                            \
@@ -247,39 +237,39 @@ namespace interpreter {
                                                                                \
   /* Binary operators with immediate operands */                               \
   V(AddSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(SubSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(MulSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(DivSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(ModSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(ExpSmi, ImplicitRegisterUse::kReadWriteAccumulator, OperandType::kImm,     \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(BitwiseOrSmi, ImplicitRegisterUse::kReadWriteAccumulator,                  \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
   V(BitwiseXorSmi, ImplicitRegisterUse::kReadWriteAccumulator,                 \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
   V(BitwiseAndSmi, ImplicitRegisterUse::kReadWriteAccumulator,                 \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
   V(ShiftLeftSmi, ImplicitRegisterUse::kReadWriteAccumulator,                  \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
   V(ShiftRightSmi, ImplicitRegisterUse::kReadWriteAccumulator,                 \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
   V(ShiftRightLogicalSmi, ImplicitRegisterUse::kReadWriteAccumulator,          \
-    OperandType::kImm, OperandType::kEmbeddedFeedback)                         \
+    OperandType::kImm, OperandType::kFeedbackSlot)                             \
                                                                                \
   /* Unary Operators */                                                        \
   V(Inc, ImplicitRegisterUse::kReadWriteAccumulator,                           \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Dec, ImplicitRegisterUse::kReadWriteAccumulator,                           \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V(Negate, ImplicitRegisterUse::kReadWriteAccumulator,                        \
-    OperandType::kEmbeddedFeedback)                                            \
+    OperandType::kFeedbackSlot)                                                \
   V_TSA(BitwiseNot, ImplicitRegisterUse::kReadWriteAccumulator,                \
-        OperandType::kEmbeddedFeedback)                                        \
+        OperandType::kFeedbackSlot)                                            \
   V(ToBooleanLogicalNot, ImplicitRegisterUse::kReadWriteAccumulator)           \
   V(LogicalNot, ImplicitRegisterUse::kReadWriteAccumulator)                    \
   V(TypeOf, ImplicitRegisterUse::kReadWriteAccumulator,                        \
@@ -475,8 +465,8 @@ namespace interpreter {
   V(ForInStep, ImplicitRegisterUse::kNone, OperandType::kRegInOut)             \
                                                                                \
   /* Optimizing For..of */                                                     \
-  V(ForOfNext, ImplicitRegisterUse::kWriteAccumulator, OperandType::kReg,      \
-    OperandType::kReg, OperandType::kFeedbackSlot)                             \
+  V(ForOfNext, ImplicitRegisterUse::kClobberAccumulator, OperandType::kReg,    \
+    OperandType::kReg, OperandType::kRegOutPair, OperandType::kFeedbackSlot)   \
                                                                                \
   /* Update the pending message */                                             \
   V(SetPendingMessage, ImplicitRegisterUse::kReadWriteAccumulator)             \
@@ -485,11 +475,10 @@ namespace interpreter {
   V(Throw, ImplicitRegisterUse::kReadAccumulator)                              \
   V(ReThrow, ImplicitRegisterUse::kReadAccumulator)                            \
   V(Return, ImplicitRegisterUse::kReadAccumulator)                             \
-  V(ThrowReferenceErrorIfTdzHole, ImplicitRegisterUse::kReadAccumulator,       \
+  V(ThrowReferenceErrorIfHole, ImplicitRegisterUse::kReadAccumulator,          \
     OperandType::kConstantPoolIndex)                                           \
-  V(ThrowSuperNotCalledIfTdzHole, ImplicitRegisterUse::kReadAccumulator)       \
-  V(ThrowSuperAlreadyCalledIfNotTdzHole,                                       \
-    ImplicitRegisterUse::kReadAccumulator)                                     \
+  V(ThrowSuperNotCalledIfHole, ImplicitRegisterUse::kReadAccumulator)          \
+  V(ThrowSuperAlreadyCalledIfNotHole, ImplicitRegisterUse::kReadAccumulator)   \
   V(ThrowIfNotSuperConstructor, ImplicitRegisterUse::kNone, OperandType::kReg) \
                                                                                \
   /* Generators */                                                             \
@@ -504,8 +493,6 @@ namespace interpreter {
   /* Iterator protocol operations */                                           \
   V(GetIterator, ImplicitRegisterUse::kWriteAccumulator, OperandType::kReg,    \
     OperandType::kFeedbackSlot, OperandType::kFeedbackSlot)                    \
-  V(ArrayDestructure, ImplicitRegisterUse::kReadAndClobberAccumulator,         \
-    OperandType::kRegOutList, OperandType::kRegCount)                          \
                                                                                \
   /* Debugger */                                                               \
   V(Debugger, ImplicitRegisterUse::kClobberAccumulator)                        \
@@ -860,11 +847,10 @@ class V8_EXPORT_PRIVATE Bytecodes final : public AllStatic {
 
   // Return true if |bytecode| is a jump without effects,
   // e.g. any jump excluding those that include type coercion like
-  // JumpIfToBooleanTrue/False, and JumpLoop due to having an implicit
-  // StackCheck.
+  // JumpIfTrueToBoolean, and JumpLoop due to having an implicit StackCheck.
   static constexpr bool IsJumpWithoutEffects(Bytecode bytecode) {
-    return IsJump(bytecode) && bytecode != Bytecode::kJumpLoop &&
-           !IsJumpIfToBoolean(bytecode);
+    return IsJump(bytecode) && !IsJumpIfToBoolean(bytecode) &&
+           bytecode != Bytecode::kJumpLoop;
   }
 
   // Returns true if the bytecode is a switch.
@@ -929,55 +915,9 @@ class V8_EXPORT_PRIVATE Bytecodes final : public AllStatic {
            bytecode == Bytecode::kTestGreaterThanOrEqual;
   }
 
-  static constexpr bool IsBinaryOpWithEmbeddedFeedback(Bytecode bytecode) {
-    switch (bytecode) {
-      case Bytecode::kAdd:
-      case Bytecode::kSub:
-      case Bytecode::kMul:
-      case Bytecode::kDiv:
-      case Bytecode::kMod:
-      case Bytecode::kExp:
-      case Bytecode::kBitwiseOr:
-      case Bytecode::kBitwiseXor:
-      case Bytecode::kBitwiseAnd:
-      case Bytecode::kShiftLeft:
-      case Bytecode::kShiftRight:
-      case Bytecode::kShiftRightLogical:
-      case Bytecode::kAddSmi:
-      case Bytecode::kSubSmi:
-      case Bytecode::kMulSmi:
-      case Bytecode::kDivSmi:
-      case Bytecode::kModSmi:
-      case Bytecode::kExpSmi:
-      case Bytecode::kBitwiseOrSmi:
-      case Bytecode::kBitwiseXorSmi:
-      case Bytecode::kBitwiseAndSmi:
-      case Bytecode::kShiftLeftSmi:
-      case Bytecode::kShiftRightSmi:
-      case Bytecode::kShiftRightLogicalSmi:
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  static constexpr bool IsUnaryOpWithEmbeddedFeedback(Bytecode bytecode) {
-    switch (bytecode) {
-      case Bytecode::kInc:
-      case Bytecode::kDec:
-      case Bytecode::kNegate:
-      case Bytecode::kBitwiseNot:
-        return true;
-      default:
-        return false;
-    }
-  }
-
   // Returns true if the bytecode has a embedded feedback slot
   static constexpr bool IsEmbeddedFeedbackBytecode(Bytecode bytecode) {
-    return IsCompareWithEmbeddedFeedback(bytecode) ||
-           IsBinaryOpWithEmbeddedFeedback(bytecode) ||
-           IsUnaryOpWithEmbeddedFeedback(bytecode);
+    return IsCompareWithEmbeddedFeedback(bytecode);
   }
 
   // Returns true if the bytecode returns.
@@ -1138,7 +1078,7 @@ class V8_EXPORT_PRIVATE Bytecodes final : public AllStatic {
   // instance, a RegPair represents two registers. Should not be called for
   // kRegList which has a variable number of registers based on the following
   // kRegCount operand.
-  static uint32_t GetNumberOfRegistersRepresentedBy(OperandType operand_type) {
+  static int GetNumberOfRegistersRepresentedBy(OperandType operand_type) {
     switch (operand_type) {
       case OperandType::kReg:
       case OperandType::kRegOut:

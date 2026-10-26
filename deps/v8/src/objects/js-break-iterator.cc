@@ -8,17 +8,11 @@
 
 #include "src/objects/js-break-iterator.h"
 
-#include <stdint.h>
-
-#include <memory>
-#include <utility>
-
 #include "src/objects/intl-objects.h"
 #include "src/objects/js-break-iterator-inl.h"
 #include "src/objects/managed-inl.h"
 #include "src/objects/option-utils.h"
 #include "unicode/brkiter.h"
-#include "unicode/unistr.h"
 
 namespace v8 {
 namespace internal {
@@ -36,7 +30,7 @@ MaybeDirectHandle<JSV8BreakIterator> JSV8BreakIterator::New(
       maybe_requested_locales.FromJust();
 
   DirectHandle<JSReceiver> options;
-  if (IsUndefined(*options_obj)) {
+  if (IsUndefined(*options_obj, isolate)) {
     options = factory->NewJSObjectWithNullProto();
   } else {
     ASSIGN_RETURN_ON_EXCEPTION(isolate, options,
@@ -102,12 +96,11 @@ MaybeDirectHandle<JSV8BreakIterator> JSV8BreakIterator::New(
   }
   isolate->CountUsage(v8::Isolate::UseCounterFeature::kBreakIterator);
 
-  // Construct the managed holder; initially the string is null
-  auto iterator_with_text =
-      std::make_shared<IcuBreakIteratorWithText>(std::move(break_iterator));
-  DirectHandle<CppGCManaged<IcuBreakIteratorWithText>> managed =
-      CppGCManaged<IcuBreakIteratorWithText>::Create(
-          isolate, 0, std::move(iterator_with_text));
+  // Construct managed objects from pointers
+  DirectHandle<Managed<icu::BreakIterator>> managed_break_iterator =
+      Managed<icu::BreakIterator>::From(isolate, 0, std::move(break_iterator));
+  DirectHandle<Managed<icu::UnicodeString>> managed_unicode_string =
+      Managed<icu::UnicodeString>::From(isolate, 0, nullptr);
 
   DirectHandle<String> locale_str =
       isolate->factory()->NewStringFromAsciiChecked(r.locale.c_str());
@@ -118,8 +111,10 @@ MaybeDirectHandle<JSV8BreakIterator> JSV8BreakIterator::New(
           isolate->factory()->NewFastOrSlowJSObjectFromMap(map));
   DisallowGarbageCollection no_gc;
   break_iterator_holder->set_locale(*locale_str);
-  break_iterator_holder->set_icu_iterator_with_text(*managed);
+  break_iterator_holder->set_break_iterator(*managed_break_iterator);
+  break_iterator_holder->set_unicode_string(*managed_unicode_string);
 
+  // Return break_iterator_holder
   return break_iterator_holder;
 }
 
@@ -164,42 +159,44 @@ DirectHandle<JSObject> JSV8BreakIterator::ResolvedOptions(
 
   JSObject::AddProperty(isolate, result, factory->locale_string(), locale,
                         NONE);
-  DirectHandle<String> string =
-      as_string(break_iterator->icu_iterator_with_text()->ptr()->iterator());
-  JSObject::AddProperty(isolate, result, factory->type_string(), string, NONE);
+  JSObject::AddProperty(isolate, result, factory->type_string(),
+                        as_string(break_iterator->break_iterator()->raw()),
+                        NONE);
   return result;
 }
 
 void JSV8BreakIterator::AdoptText(
-    Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator,
+    Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator_holder,
     DirectHandle<String> text) {
-  break_iterator->icu_iterator_with_text()->ptr()->SetText(isolate, text);
+  icu::BreakIterator* break_iterator =
+      break_iterator_holder->break_iterator()->raw();
+  DCHECK_NOT_NULL(break_iterator);
+  DirectHandle<Managed<icu::UnicodeString>> unicode_string =
+      Intl::SetTextToBreakIterator(isolate, text, break_iterator);
+  break_iterator_holder->set_unicode_string(*unicode_string);
 }
 
 DirectHandle<Object> JSV8BreakIterator::Current(
     Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator) {
   return isolate->factory()->NewNumberFromInt(
-      break_iterator->icu_iterator_with_text()->ptr()->iterator()->current());
+      break_iterator->break_iterator()->raw()->current());
 }
 
 DirectHandle<Object> JSV8BreakIterator::First(
     Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator) {
   return isolate->factory()->NewNumberFromInt(
-      break_iterator->icu_iterator_with_text()->ptr()->iterator()->first());
+      break_iterator->break_iterator()->raw()->first());
 }
 
 DirectHandle<Object> JSV8BreakIterator::Next(
     Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator) {
   return isolate->factory()->NewNumberFromInt(
-      break_iterator->icu_iterator_with_text()->ptr()->iterator()->next());
+      break_iterator->break_iterator()->raw()->next());
 }
 
 Tagged<String> JSV8BreakIterator::BreakType(
     Isolate* isolate, DirectHandle<JSV8BreakIterator> break_iterator) {
-  int32_t status = break_iterator->icu_iterator_with_text()
-                       ->ptr()
-                       ->iterator()
-                       ->getRuleStatus();
+  int32_t status = break_iterator->break_iterator()->raw()->getRuleStatus();
   // Keep return values in sync with JavaScript BreakType enum.
   if (status >= UBRK_WORD_NONE && status < UBRK_WORD_NONE_LIMIT) {
     return ReadOnlyRoots(isolate).none_string();

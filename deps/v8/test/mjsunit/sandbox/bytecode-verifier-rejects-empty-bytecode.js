@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
-// Flags: --allow-natives-syntax --sandbox-testing --verify-bytecode-full
+// Flags: --allow-natives-syntax --sandbox-testing
 
 function f() { return 42; }
 f();

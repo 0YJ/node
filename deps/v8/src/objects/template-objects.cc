@@ -20,7 +20,8 @@ bool CachedTemplateMatches(Isolate* isolate,
                            Tagged<NativeContext> native_context,
                            Tagged<JSArray> entry, int function_literal_id,
                            int slot_id, DisallowGarbageCollection& no_gc) {
-  if (native_context->is_js_array_template_literal_object_map(entry->map())) {
+  if (native_context->is_js_array_template_literal_object_map(
+          entry->map(isolate))) {
     Tagged<TemplateLiteralObject> template_object =
         Cast<TemplateLiteralObject>(entry);
     return template_object->function_literal_id() == function_literal_id &&
@@ -51,12 +52,13 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
   int function_literal_id = shared_info->function_literal_id(kRelaxedLoad);
 
   // Check the template weakmap to see if the template object already exists.
-  DirectHandle<Script> script(Cast<Script>(shared_info->script()), isolate);
+  DirectHandle<Script> script(Cast<Script>(shared_info->script(isolate)),
+                              isolate);
   int32_t hash =
       EphemeronHashTable::TodoShape::Hash(ReadOnlyRoots(isolate), script);
   MaybeDirectHandle<ArrayList> maybe_cached_templates;
 
-  if (!IsUndefined(native_context->template_weakmap())) {
+  if (!IsUndefined(native_context->template_weakmap(), isolate)) {
     DisallowGarbageCollection no_gc;
     // The no_gc keeps this safe, and gcmole is confused because
     // CachedTemplateMatches calls JSReceiver::GetDataProperty.
@@ -65,8 +67,8 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
     Tagged<EphemeronHashTable> template_weakmap =
         Cast<EphemeronHashTable>(native_context->template_weakmap());
     Tagged<Object> cached_templates_lookup =
-        template_weakmap->Lookup(script, hash);
-    if (!IsTheHole(cached_templates_lookup)) {
+        template_weakmap->Lookup(isolate, script, hash);
+    if (!IsTheHole(cached_templates_lookup, roots)) {
       Tagged<ArrayList> cached_templates =
           Cast<ArrayList>(cached_templates_lookup);
       maybe_cached_templates = direct_handle(cached_templates, isolate);
@@ -74,9 +76,7 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
       // Linear search over the cached template array list for a template
       // object matching the given function_literal_id + slot_id.
       // TODO(leszeks): Consider keeping this list sorted for faster lookup.
-      const uint32_t cached_templates_length =
-          cached_templates->ulength().value();
-      for (uint32_t i = 0; i < cached_templates_length; i++) {
+      for (int i = 0; i < cached_templates->length(); i++) {
         Tagged<JSArray> template_object =
             Cast<JSArray>(cached_templates->get(i));
         if (CachedTemplateMatches(isolate, *native_context, template_object,
@@ -124,9 +124,9 @@ DirectHandle<JSArray> TemplateObjectDescription::GetTemplateObject(
   // Check that the list is in the appropriate location on the weakmap, and
   // that the appropriate entry is in the right location in this list.
   DCHECK_EQ(Cast<EphemeronHashTable>(native_context->template_weakmap())
-                ->Lookup(script, hash),
+                ->Lookup(isolate, script, hash),
             *cached_templates);
-  DCHECK_EQ(cached_templates->get(cached_templates->ulength().value() - 1),
+  DCHECK_EQ(cached_templates->get(cached_templates->length() - 1),
             *template_object);
 
   return template_object;

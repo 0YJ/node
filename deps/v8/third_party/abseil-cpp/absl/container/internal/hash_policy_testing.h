@@ -22,12 +22,10 @@
 #include <limits>
 #include <memory>
 #include <ostream>
-#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
-#include "absl/base/config.h"
 #include "absl/hash/hash.h"
 #include "absl/strings/string_view.h"
 
@@ -160,8 +158,9 @@ auto items(const Map& m) -> std::vector<
 }
 
 template <class Set>
-auto keys(const Set& s) -> std::vector<std::decay_t<typename Set::key_type>> {
-  std::vector<std::decay_t<typename Set::key_type>> res;
+auto keys(const Set& s)
+    -> std::vector<typename std::decay<typename Set::key_type>::type> {
+  std::vector<typename std::decay<typename Set::key_type>::type> res;
   res.reserve(s.size());
   for (const auto& v : s) res.emplace_back(v);
   return res;

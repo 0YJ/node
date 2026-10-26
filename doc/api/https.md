@@ -428,9 +428,8 @@ a `timeout` of 5 seconds.
 added: v0.3.6
 changes:
   - version: REPLACEME
-    pr-url: https://github.com/nodejs/node/pull/64777
-    description: Using the `clientCertEngine` option now throws
-                 `ERR_CRYPTO_CUSTOM_ENGINE_NOT_SUPPORTED`.
+    pr-url: https://github.com/nodejs/node/pull/63966
+    description: The `clientCertEngine` option is runtime deprecated.
   - version:
     - v22.4.0
     - v20.16.0
@@ -472,9 +471,10 @@ changes:
 Makes a request to a secure web server.
 
 The following additional `options` from [`tls.connect()`][] are also accepted:
-`ca`, `cert`, `ciphers`, `crl`, `dhparam`, `ecdhCurve`, `honorCipherOrder`,
-`key`, `passphrase`, `pfx`, `rejectUnauthorized`, `secureOptions`,
-`secureProtocol`, `servername`, `sessionIdContext`, `highWaterMark`.
+`ca`, `cert`, `ciphers`, `clientCertEngine` (deprecated), `crl`, `dhparam`, `ecdhCurve`,
+`honorCipherOrder`, `key`, `passphrase`, `pfx`, `rejectUnauthorized`,
+`secureOptions`, `secureProtocol`, `servername`, `sessionIdContext`,
+`highWaterMark`.
 
 `options` can be an object, a string, or a [`URL`][] object. If `options` is a
 string, it is automatically parsed with [`new URL()`][]. If it is a [`URL`][]

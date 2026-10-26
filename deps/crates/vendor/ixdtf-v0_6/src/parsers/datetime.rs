@@ -6,7 +6,7 @@
 
 use crate::{
     assert_syntax,
-    encoding::EncodingType,
+    core::EncodingType,
     parsers::{
         annotations,
         grammar::{is_annotation_open, is_date_time_separator, is_hyphen, is_utc_designator},
@@ -106,7 +106,7 @@ fn parse_date<T: EncodingType>(cursor: &mut Cursor<T>) -> ParserResult<DateRecor
     let year = parse_date_year(cursor)?;
     let hyphenated = cursor
         .check(is_hyphen)?
-        .ok_or(ParseError::AbruptEnd { location: "Date" })?;
+        .ok_or(ParseError::abrupt_end("Date"))?;
 
     cursor.advance_if(hyphenated);
 
@@ -125,7 +125,7 @@ fn parse_date<T: EncodingType>(cursor: &mut Cursor<T>) -> ParserResult<DateRecor
 
 // ==== `YearMonth` parsing functions ====
 
-/// Parse an annotated `YearMonth`
+/// Parse an annotated YearMonth
 pub(crate) fn parse_annotated_year_month<'a, T: EncodingType>(
     cursor: &mut Cursor<'a, T>,
     handler: impl FnMut(Annotation<'a, T>) -> Option<Annotation<'a, T>>,
@@ -144,7 +144,6 @@ pub(crate) fn parse_annotated_year_month<'a, T: EncodingType>(
     }
 
     let annotation_set = annotations::parse_annotation_set(cursor, handler)?;
-    cursor.close()?;
 
     Ok(IxdtfParseRecord {
         date: Some(year_month),
@@ -171,7 +170,7 @@ pub(crate) fn parse_year_month<T: EncodingType>(
 
 // ==== `MonthDay` parsing functions ====
 
-/// Parses an `AnnotatedMonthDay`.
+/// Parses an AnnotatedMonthDay.
 pub(crate) fn parse_annotated_month_day<'a, T: EncodingType>(
     cursor: &mut Cursor<'a, T>,
     handler: impl FnMut(Annotation<'a, T>) -> Option<Annotation<'a, T>>,
@@ -191,7 +190,6 @@ pub(crate) fn parse_annotated_month_day<'a, T: EncodingType>(
     }
 
     let annotation_set = annotations::parse_annotation_set(cursor, handler)?;
-    cursor.close()?;
 
     Ok(IxdtfParseRecord {
         date: Some(date),
@@ -204,14 +202,14 @@ pub(crate) fn parse_annotated_month_day<'a, T: EncodingType>(
 
 /// Parses a `DateSpecMonthDay`
 pub(crate) fn parse_month_day<T: EncodingType>(cursor: &mut Cursor<T>) -> ParserResult<DateRecord> {
-    let hyphenated = cursor.check(is_hyphen)?.ok_or(ParseError::AbruptEnd {
-        location: "MonthDay",
-    })?;
+    let hyphenated = cursor
+        .check(is_hyphen)?
+        .ok_or(ParseError::abrupt_end("MonthDay"))?;
     cursor.advance_if(hyphenated);
     let balanced_hyphens = hyphenated
-        && cursor.check(is_hyphen)?.ok_or(ParseError::AbruptEnd {
-            location: "MonthDay",
-        })?;
+        && cursor
+            .check(is_hyphen)?
+            .ok_or(ParseError::abrupt_end("MonthDay"))?;
     cursor.advance_if(balanced_hyphens);
 
     if hyphenated && !balanced_hyphens {

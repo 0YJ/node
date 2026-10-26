@@ -18,7 +18,6 @@
 #include "src/objects/js-number-format.h"
 #include "src/objects/js-relative-time-format-inl.h"
 #include "src/objects/managed-inl.h"
-#include "src/objects/object-conversions-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/option-utils.h"
 #include "unicode/decimfmt.h"
@@ -32,7 +31,7 @@ namespace internal {
 namespace {
 // Style: identifying the relative time format style used.
 //
-// https://tc39.es/ecma402/#sec-properties-of-intl-relativetimeformat-instances
+// ecma402/#sec-properties-of-intl-relativetimeformat-instances
 
 enum class Style {
   LONG,   // Everything spelled out.
@@ -251,8 +250,8 @@ DirectHandle<String> StyleAsString(Isolate* isolate, Style style) {
 DirectHandle<JSObject> JSRelativeTimeFormat::ResolvedOptions(
     Isolate* isolate, DirectHandle<JSRelativeTimeFormat> format_holder) {
   Factory* factory = isolate->factory();
-  Managed<icu::RelativeDateTimeFormatter>::Ptr formatter =
-      format_holder->icu_formatter()->ptr();
+  icu::RelativeDateTimeFormatter* formatter =
+      format_holder->icu_formatter()->raw();
   DCHECK_NOT_NULL(formatter);
   DirectHandle<JSObject> result =
       factory->NewJSObject(isolate->object_function());
@@ -356,8 +355,7 @@ MaybeDirectHandle<T> FormatCommon(
                      MessageTemplate::kNotFiniteNumber,
                      isolate->factory()->NewStringFromAsciiChecked(func_name)));
   }
-  Managed<icu::RelativeDateTimeFormatter>::Ptr formatter =
-      format->icu_formatter()->ptr();
+  icu::RelativeDateTimeFormatter* formatter = format->icu_formatter()->raw();
   DCHECK_NOT_NULL(formatter);
   URelativeDateTimeUnit unit_enum;
   if (!GetURelativeDateTimeUnit(unit, &unit_enum)) {

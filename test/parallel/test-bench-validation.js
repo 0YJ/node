@@ -1,8 +1,7 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
-const { completeSample } = require('../common/bench');
 const assert = require('assert');
 const { bench, createRunner, run } = require('node:bench');
 
@@ -12,13 +11,17 @@ let objectOverloadCalls = 0;
 
 function functionOverload(b) {
   functionOverloadCalls++;
-  completeSample(b);
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
   b.done();
 }
 
 function objectOverload(b) {
   objectOverloadCalls++;
-  completeSample(b);
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
 }
 
 assert.throws(() => bench('', noop), { code: 'ERR_INVALID_ARG_VALUE' });
@@ -66,10 +69,12 @@ bench(functionOverload);
 bench({ samples: 1 }, objectOverload);
 
 bench('valid', { samples: 1 }, (b) => {
-  completeSample(b);
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
 });
 
-const stream = run({ warmup: 0 });
+const stream = run();
 stream.on('bench:start', common.mustCall(() => {
   assert.throws(() => bench('late', noop), { code: 'ERR_INVALID_STATE' });
 }, 3));

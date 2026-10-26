@@ -68,7 +68,6 @@ export class ScheduleView extends TextView {
 
   private addBlocks(blocks: Array<ScheduleBlock>) {
     for (const block of blocks) {
-      if (!block) continue;
       const blockEl = this.createElementForBlock(block);
       this.divNode.appendChild(blockEl);
     }

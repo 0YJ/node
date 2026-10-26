@@ -42,7 +42,6 @@
 #include <atomic>
 
 #include "absl/base/attributes.h"
-#include "absl/base/config.h"
 #include "absl/debugging/internal/elf_mem_image.h"
 
 #ifdef ABSL_HAVE_ELF_MEM_IMAGE

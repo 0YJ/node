@@ -9,7 +9,6 @@
 #ifndef V8_BASE_SMALL_MAP_H_
 #define V8_BASE_SMALL_MAP_H_
 
-#include "include/v8config.h"
 #include "src/base/macros.h"
 
 namespace v8::base {
@@ -179,7 +178,7 @@ class SmallMap {
 
   class const_iterator;
 
-  class V8_GSL_POINTER iterator {
+  class iterator {
    public:
     typedef typename NormalMap::iterator::iterator_category iterator_category;
     typedef typename NormalMap::iterator::value_type value_type;
@@ -246,7 +245,7 @@ class SmallMap {
     typename NormalMap::iterator map_iter_;
   };
 
-  class V8_GSL_POINTER const_iterator {
+  class const_iterator {
    public:
     typedef
         typename NormalMap::const_iterator::iterator_category iterator_category;
@@ -319,7 +318,7 @@ class SmallMap {
     typename NormalMap::const_iterator map_iter_;
   };
 
-  iterator find(const key_type& key) V8_LIFETIME_BOUND {
+  iterator find(const key_type& key) {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -334,7 +333,7 @@ class SmallMap {
     return iterator(array_ + size_);
   }
 
-  const_iterator find(const key_type& key) const V8_LIFETIME_BOUND {
+  const_iterator find(const key_type& key) const {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -350,7 +349,7 @@ class SmallMap {
   }
 
   // Invalidates iterators.
-  data_type& operator[](const key_type& key) V8_LIFETIME_BOUND {
+  data_type& operator[](const key_type& key) {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -376,7 +375,7 @@ class SmallMap {
   }
 
   // Invalidates iterators.
-  std::pair<iterator, bool> insert(const value_type& x) V8_LIFETIME_BOUND {
+  std::pair<iterator, bool> insert(const value_type& x) {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -412,7 +411,7 @@ class SmallMap {
 
   // Invalidates iterators.
   template <typename... Args>
-  std::pair<iterator, bool> emplace(Args&&... args) V8_LIFETIME_BOUND {
+  std::pair<iterator, bool> emplace(Args&&... args) {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -442,8 +441,7 @@ class SmallMap {
 
   // Invalidates iterators.
   template <typename... Args>
-  std::pair<iterator, bool> try_emplace(const key_type& key,
-                                        Args&&... args) V8_LIFETIME_BOUND {
+  std::pair<iterator, bool> try_emplace(const key_type& key, Args&&... args) {
     key_equal compare;
 
     if (UsingFullMap()) {
@@ -470,20 +468,20 @@ class SmallMap {
     return std::make_pair(iterator(array_ + size_++), true);
   }
 
-  iterator begin() V8_LIFETIME_BOUND {
+  iterator begin() {
     return UsingFullMap() ? iterator(map_.begin()) : iterator(array_);
   }
 
-  const_iterator begin() const V8_LIFETIME_BOUND {
+  const_iterator begin() const {
     return UsingFullMap() ? const_iterator(map_.begin())
                           : const_iterator(array_);
   }
 
-  iterator end() V8_LIFETIME_BOUND {
+  iterator end() {
     return UsingFullMap() ? iterator(map_.end()) : iterator(array_ + size_);
   }
 
-  const_iterator end() const V8_LIFETIME_BOUND {
+  const_iterator end() const {
     return UsingFullMap() ? const_iterator(map_.end())
                           : const_iterator(array_ + size_);
   }
@@ -500,7 +498,7 @@ class SmallMap {
   }
 
   // Invalidates iterators. Returns iterator following the last removed element.
-  iterator erase(const iterator& position) V8_LIFETIME_BOUND {
+  iterator erase(const iterator& position) {
     if (UsingFullMap()) {
       return iterator(map_.erase(position.map_iter_));
     }
@@ -540,12 +538,12 @@ class SmallMap {
   // representation.
   bool UsingFullMap() const { return size_ == kUsingFullMapSentinel; }
 
-  V8_INLINE NormalMap* map() V8_LIFETIME_BOUND {
+  V8_INLINE NormalMap* map() {
     CHECK(UsingFullMap());
     return &map_;
   }
 
-  V8_INLINE const NormalMap* map() const V8_LIFETIME_BOUND {
+  V8_INLINE const NormalMap* map() const {
     CHECK(UsingFullMap());
     return &map_;
   }

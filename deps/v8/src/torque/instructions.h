@@ -8,7 +8,6 @@
 #include <memory>
 #include <optional>
 
-#include "src/base/logging.h"
 #include "src/torque/ast.h"
 #include "src/torque/source-positions.h"
 #include "src/torque/types.h"
@@ -182,7 +181,6 @@ inline std::ostream& operator<<(std::ostream& stream,
                     << loc.GetInstruction() << std::dec << ", "
                     << loc.GetInstructionIndex() << ")";
   }
-  UNREACHABLE();
 }
 
 struct InstructionBase {
@@ -747,7 +745,6 @@ struct AbortInstruction : InstructionBase {
       case Kind::kAssertionFailure:
         return "kAssertionFailure";
     }
-    UNREACHABLE();
   }
 
   Kind kind;

@@ -240,13 +240,14 @@ class V8_EXPORT_PRIVATE FunctionBodyDisassembler
   enum FunctionHeader : bool { kSkipHeader = false, kPrintHeader = true };
 
   FunctionBodyDisassembler(Zone* zone, const WasmModule* module,
-                           uint32_t func_index, WasmDetectedFeatures* detected,
+                           uint32_t func_index, bool shared,
+                           WasmDetectedFeatures* detected,
                            const FunctionSig* sig, const uint8_t* start,
                            const uint8_t* end, uint32_t offset,
                            const ModuleWireBytes wire_bytes,
                            NamesProvider* names)
       : WasmDecoder<ValidationTag>(zone, module, WasmEnabledFeatures::All(),
-                                   detected, sig, start, end, offset),
+                                   detected, sig, shared, start, end, offset),
         func_index_(func_index),
         wire_bytes_(wire_bytes),
         names_(names) {}

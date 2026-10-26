@@ -38,6 +38,33 @@ assert(Buffer.isBuffer(cert));
 assert.strictEqual(typeof passKey.toString(), 'string');
 assert.strictEqual(typeof cert.toString(), 'string');
 
+if (hasFIPS(3)) {
+  const encryptedKeyOptions = {
+    key: passKey,
+    passphrase: 'password',
+    cert,
+  };
+  assert.throws(() => tls.Server(encryptedKeyOptions), {
+    code: 'ERR_OSSL_EVP_UNSUPPORTED',
+  });
+  assert.throws(() => tls.connect(encryptedKeyOptions), {
+    code: 'ERR_OSSL_EVP_UNSUPPORTED',
+  });
+
+  const server = tls.Server({ key: rawKey, passphrase: 'ignored', cert });
+  server.listen(0, common.mustCall(function() {
+    const client = tls.connect({
+      port: this.address().port,
+      key: rawKey,
+      passphrase: 'ignored',
+      cert,
+      rejectUnauthorized: false,
+    }, common.mustCall(() => client.end()));
+    client.on('close', common.mustCall(() => server.close()));
+  }));
+  return;
+}
+
 function onSecureConnect() {
   return common.mustCall(function() { this.end(); });
 }
@@ -225,10 +252,6 @@ server.listen(0, common.mustCall(function() {
 })).unref();
 
 const errMessageDecrypt = /bad[ _]decrypt/i;
-// TLS supplies an empty password when the passphrase is omitted. OpenSSL 4
-// FIPS rejects it during PBKDF2 password-length checks, before decryption.
-const missingPassphraseError = hasFIPS(4) ?
-  { code: 'ERR_OSSL_PASSWORD_STRENGTH_TOO_WEAK' } : errMessageDecrypt;
 
 // Missing passphrase
 assert.throws(function() {
@@ -238,7 +261,7 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, missingPassphraseError);
+}, errMessageDecrypt);
 
 assert.throws(function() {
   tls.connect({
@@ -247,7 +270,7 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, missingPassphraseError);
+}, errMessageDecrypt);
 
 assert.throws(function() {
   tls.connect({
@@ -256,14 +279,14 @@ assert.throws(function() {
     cert: cert,
     rejectUnauthorized: false
   });
-}, missingPassphraseError);
+}, errMessageDecrypt);
 
 // Invalid passphrase
 assert.throws(function() {
   tls.connect({
     port: server.address().port,
     key: passKey,
-    passphrase: 'wrong-password',
+    passphrase: 'invalid',
     cert: cert,
     rejectUnauthorized: false
   });
@@ -273,7 +296,7 @@ assert.throws(function() {
   tls.connect({
     port: server.address().port,
     key: [passKey],
-    passphrase: 'wrong-password',
+    passphrase: 'invalid',
     cert: cert,
     rejectUnauthorized: false
   });
@@ -283,7 +306,7 @@ assert.throws(function() {
   tls.connect({
     port: server.address().port,
     key: [{ pem: passKey }],
-    passphrase: 'wrong-password',
+    passphrase: 'invalid',
     cert: cert,
     rejectUnauthorized: false
   });
@@ -292,7 +315,7 @@ assert.throws(function() {
 assert.throws(function() {
   tls.connect({
     port: server.address().port,
-    key: [{ pem: passKey, passphrase: 'wrong-password' }],
+    key: [{ pem: passKey, passphrase: 'invalid' }],
     passphrase: 'password', // Valid but unused
     cert: cert,
     rejectUnauthorized: false

@@ -353,7 +353,6 @@ class MachineType {
       case CTypeInfo::Type::kApiObject:
         return MachineType::AnyTagged();
     }
-    UNREACHABLE();
   }
 
   constexpr bool LessThanOrEqualPointerSize() const {
@@ -394,10 +393,6 @@ constexpr inline bool IsFloatingPoint(MachineRepresentation rep) {
 
 constexpr inline bool IsSimd128(MachineRepresentation rep) {
   return rep == MachineRepresentation::kSimd128;
-}
-
-constexpr inline bool IsSimd256(MachineRepresentation rep) {
-  return rep == MachineRepresentation::kSimd256;
 }
 
 constexpr inline bool CanBeTaggedPointer(MachineRepresentation rep) {

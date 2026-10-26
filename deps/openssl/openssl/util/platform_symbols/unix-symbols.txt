@@ -1,6 +1,7 @@
 abort
 accept
 aligned_alloc
+atoi
 bcmp
 bind
 calloc
@@ -117,7 +118,6 @@ recvfrom
 recvmmsg
 secure_getenv
 select
-send
 sendmmsg
 sendto
 setbuf
@@ -160,5 +160,4 @@ __timezone
 uname
 usleep
 vfprintf
-vsnprintf
 __xpg_strerror_r

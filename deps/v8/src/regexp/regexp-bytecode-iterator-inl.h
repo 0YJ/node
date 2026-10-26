@@ -12,42 +12,40 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-bool BytecodeIterator::done() const { return cursor_ >= end_; }
+bool RegExpBytecodeIterator::done() const { return cursor_ >= end_; }
 
-void BytecodeIterator::advance() {
+void RegExpBytecodeIterator::advance() {
   DCHECK(!done());
   cursor_ += current_size();
 }
 
-Bytecode BytecodeIterator::current_bytecode() const {
+RegExpBytecode RegExpBytecodeIterator::current_bytecode() const {
   DCHECK(!done());
   DCHECK_LE(cursor_ + sizeof(uint32_t), end_);
-  return Bytecodes::FromPtr(cursor_);
+  return RegExpBytecodes::FromPtr(cursor_);
 }
 
-uint8_t BytecodeIterator::current_size() const {
+uint8_t RegExpBytecodeIterator::current_size() const {
   DCHECK(!done());
-  return Bytecodes::Size(current_bytecode());
+  return RegExpBytecodes::Size(current_bytecode());
 }
 
-uint32_t BytecodeIterator::current_offset() const {
-  return static_cast<uint32_t>(cursor_ - start_);
+int RegExpBytecodeIterator::current_offset() const {
+  return static_cast<int>(cursor_ - start_);
 }
 
-uint8_t* BytecodeIterator::current_address() const { return cursor_; }
+uint8_t* RegExpBytecodeIterator::current_address() const { return cursor_; }
 
-void BytecodeIterator::reset() { cursor_ = start_; }
+void RegExpBytecodeIterator::reset() { cursor_ = start_; }
 
 template <typename Func>
-void BytecodeIterator::ForEachBytecode(Func&& fun) {
+void RegExpBytecodeIterator::ForEachBytecode(Func&& fun) {
   for (; !done(); advance()) {
-    Bytecodes::DispatchOnBytecode(current_bytecode(), fun);
+    RegExpBytecodes::DispatchOnBytecode(current_bytecode(), fun);
   }
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

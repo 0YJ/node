@@ -9,6 +9,7 @@ const {
   testSignVerify,
   spkiExp,
   pkcs8EncExp,
+  hasOpenSSL,
 } = require('../common/crypto');
 
 if (isBoringSSL)
@@ -18,6 +19,7 @@ const assert = require('assert');
 const {
   generateKeyPair,
 } = require('crypto');
+
 // Test async elliptic curve key generation, e.g. for ECDSA, with an encrypted
 // private key with paramEncoding explicit.
 {
@@ -42,9 +44,13 @@ const {
 
     // Since the private key is encrypted, signing shouldn't work anymore.
     assert.throws(() => testSignVerify(publicKey, privateKey),
-                  {
+                  hasOpenSSL(3) ? {
                     message: 'error:07880109:common libcrypto ' +
                              'routines::interrupted or cancelled'
+                  } : {
+                    name: 'TypeError',
+                    code: 'ERR_MISSING_PASSPHRASE',
+                    message: 'Passphrase required for encrypted key'
                   });
 
     testSignVerify(publicKey, {

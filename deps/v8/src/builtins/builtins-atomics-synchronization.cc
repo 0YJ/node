@@ -4,7 +4,6 @@
 
 #include "src/builtins/builtins-utils-inl.h"
 #include "src/objects/js-atomics-synchronization-inl.h"
-#include "src/objects/object-conversions-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -193,7 +192,7 @@ BUILTIN(AtomicsConditionWait) {
   }
 
   std::optional<base::TimeDelta> timeout = std::nullopt;
-  if (!IsUndefined(*timeout_obj)) {
+  if (!IsUndefined(*timeout_obj, isolate)) {
     if (!IsNumber(*timeout_obj)) {
       THROW_NEW_ERROR_RETURN_FAILURE(
           isolate, NewTypeError(MessageTemplate::kIsNotNumber, timeout_obj,
@@ -237,7 +236,7 @@ BUILTIN(AtomicsConditionNotify) {
   }
 
   uint32_t count;
-  if (IsUndefined(*count_obj)) {
+  if (IsUndefined(*count_obj, isolate)) {
     count = JSAtomicsCondition::kAllWaiters;
   } else {
     double count_double;

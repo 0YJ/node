@@ -17,15 +17,15 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <thread>  // NOLINT(build/c++11)
-
-#include "absl/base/config.h"
-#include "absl/container/node_hash_map.h"
+#include <unordered_map>
+#include <utility>
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
+
+#include "absl/container/node_hash_map.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

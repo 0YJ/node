@@ -57,18 +57,12 @@ static const BIO_METHOD methods_filep = {
 BIO *BIO_new_file(const char *filename, const char *mode)
 {
     BIO *ret;
-    FILE *file;
+    FILE *file = openssl_fopen(filename, mode);
     int fp_flags = BIO_CLOSE;
 
     if (strchr(mode, 'b') == NULL)
         fp_flags |= BIO_FP_TEXT;
 
-    if (filename == NULL) {
-        ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
-        return NULL;
-    }
-
-    file = openssl_fopen(filename, mode);
     if (file == NULL) {
         ERR_raise_data(ERR_LIB_SYS, get_last_sys_error(),
             "calling fopen(%s, %s)",
@@ -143,11 +137,11 @@ static int file_read(BIO *b, char *out, int outl)
 {
     int ret = 0;
 
-    if (b->init != 0 && out != NULL && outl > 0) {
+    if (b->init && (out != NULL)) {
         if (b->flags & BIO_FLAGS_UPLINK_INTERNAL)
-            ret = (int)UP_fread(out, 1, outl, b->ptr);
+            ret = UP_fread(out, 1, (int)outl, b->ptr);
         else
-            ret = (int)fread(out, 1, outl, (FILE *)b->ptr);
+            ret = fread(out, 1, (int)outl, (FILE *)b->ptr);
         if (ret == 0
             && (b->flags & BIO_FLAGS_UPLINK_INTERNAL
                     ? UP_ferror((FILE *)b->ptr)
@@ -163,16 +157,23 @@ static int file_read(BIO *b, char *out, int outl)
 
 static int file_write(BIO *b, const char *in, int inl)
 {
-    size_t ret = 0;
+    int ret = 0;
 
-    if (inl < INT_MAX && inl >= 0 && b->init && (in != NULL)) {
+    if (b->init && (in != NULL)) {
         if (b->flags & BIO_FLAGS_UPLINK_INTERNAL)
-            ret = (int)UP_fwrite(in, 1, (size_t)inl, b->ptr);
+            ret = UP_fwrite(in, (int)inl, 1, b->ptr);
         else
-            ret = fwrite(in, 1, (size_t)inl, (FILE *)b->ptr);
+            ret = fwrite(in, (int)inl, 1, (FILE *)b->ptr);
+        if (ret)
+            ret = inl;
+        /* ret=fwrite(in,1,(int)inl,(FILE *)b->ptr); */
+        /*
+         * according to Tim Hudson <tjh@openssl.org>, the commented out
+         * version above can cause 'inl' write calls under some stupid stdio
+         * implementations (VMS)
+         */
     }
-
-    return (int)ret;
+    return ret;
 }
 
 static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
@@ -182,9 +183,6 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
     FILE **fpp;
     char p[4];
     int st;
-#if defined(OPENSSL_SYS_WINDOWS)
-    int oldErr;
-#endif
 
     switch (cmd) {
     case BIO_C_FILE_SEEK:
@@ -195,32 +193,10 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
             ret = (long)fseek(fp, num, 0);
         break;
     case BIO_CTRL_EOF:
-        /*
-         * NOTE feof returns 0 if we're not in an eof condition
-         * and a non-zero value if we are (i.e. any non-zero value
-         * so we map the 0:non-0 return value here to 0:1 with a
-         * double negation
-         */
-#if defined(OPENSSL_SYS_WINDOWS)
-        oldErr = errno;
-        errno = 0;
-#endif
         if (b->flags & BIO_FLAGS_UPLINK_INTERNAL)
-            ret = !!(long)UP_feof(fp);
+            ret = (long)UP_feof(fp);
         else
-            ret = !!(long)feof(fp);
-#if defined(OPENSSL_SYS_WINDOWS)
-        /*
-         * Windows gives us an extra issue to contend with.
-         * In windows feof may return 0 if it is passed an invalid
-         * stream.  In this event, feof sets errno to EINVAL.
-         * Check for that here, and set ret to -EINVAL if its the case.
-         */
-        if (ret == 0 && errno == EINVAL)
-            ret = -EINVAL;
-        else if (errno == 0)
-            errno = oldErr;
-#endif
+            ret = (long)feof(fp);
         break;
     case BIO_C_FILE_TELL:
     case BIO_CTRL_INFO:
@@ -318,11 +294,6 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
         if (!(num & BIO_FP_TEXT))
             OPENSSL_strlcat(p, "b", sizeof(p));
 #endif
-        if (ptr == NULL) {
-            ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
-            ret = 0;
-            break;
-        }
         fp = openssl_fopen(ptr, p);
         if (fp == NULL) {
             ERR_raise_data(ERR_LIB_SYS, get_last_sys_error(),
@@ -395,19 +366,17 @@ static int file_gets(BIO *bp, char *buf, int size)
             goto err;
     }
     if (buf[0] != '\0')
-        ret = (int)strlen(buf);
+        ret = strlen(buf);
 err:
     return ret;
 }
 
 static int file_puts(BIO *bp, const char *str)
 {
-    int ret;
-    size_t n = strlen(str);
+    int n, ret;
 
-    if (n > INT_MAX)
-        return -1;
-    ret = file_write(bp, str, (int)n);
+    n = strlen(str);
+    ret = file_write(bp, str, n);
     return ret;
 }
 

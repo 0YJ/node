@@ -939,14 +939,12 @@ int ossl_quic_wire_decode_transport_param_int(PACKET *pkt,
     uint64_t *value)
 {
     PACKET sub;
-    const unsigned char *body;
-    size_t len = 0;
 
-    body = ossl_quic_wire_decode_transport_param_bytes(pkt, id, &len);
-    if (body == NULL)
+    sub.curr = ossl_quic_wire_decode_transport_param_bytes(pkt,
+        id, &sub.remaining);
+    if (sub.curr == NULL)
         return 0;
-    if (!PACKET_buf_init(&sub, body, len))
-        return 0;
+
     if (!PACKET_get_quic_vlint(&sub, value))
         return 0;
 

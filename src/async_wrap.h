@@ -41,7 +41,6 @@ namespace node {
   V(BLOBREADER)                                                                \
   V(FSEVENTWRAP)                                                               \
   V(FSREQCALLBACK)                                                             \
-  V(GLOBREQUEST)                                                               \
   V(FSREQPROMISE)                                                              \
   V(GETADDRINFOREQWRAP)                                                        \
   V(GETNAMEINFOREQWRAP)                                                        \
@@ -56,6 +55,7 @@ namespace node {
   V(DTLS_ENDPOINT)                                                             \
   V(DTLS_SESSION)                                                              \
   V(JSSTREAM)                                                                  \
+  V(JSUDPWRAP)                                                                 \
   V(MESSAGEPORT)                                                               \
   V(PIPECONNECTWRAP)                                                           \
   V(PIPESERVERWRAP)                                                            \

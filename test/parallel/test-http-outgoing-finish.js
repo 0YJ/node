@@ -33,7 +33,6 @@ http.createServer(function(req, res) {
   this.close();
 }).listen(0, function() {
   const req = http.request({
-    agent: false,
     port: this.address().port,
     method: 'PUT'
   });

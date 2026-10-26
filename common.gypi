@@ -12,13 +12,11 @@
     'msvs_multi_core_compile': '0',   # we do enable multicore compiles, but not using the V8 way
     'enable_pgo_generate%': '0',
     'enable_pgo_use%': '0',
-    'pgo_profile%': '',
     'clang_profile_lib%': '',
     'python%': 'python',
     'emulator%': [],
 
     'node_shared%': 'false',
-    'node_enable_v8debughelper%': 'false',
     'node_enable_experimentals%': 'false',
     'force_dynamic_crt%': 0,
     'node_use_v8_platform%': 'true',
@@ -26,13 +24,7 @@
     'node_module_version%': '',
     'node_with_ltcg%': '',
     'node_shared_openssl%': 'false',
-    'node_shared_openssl_include_dirs%': [],
     'openssl_is_boringssl%': 'false',
-
-    'node_shared_libuv_include_dirs%': [],
-    'node_shared_sqlite%': 'false',
-    'node_shared_sqlite_include_dirs%': [],
-    'node_shared_zlib_include_dirs%': [],
 
     'node_tag%': '',
     'uv_library%': 'static_library',
@@ -50,7 +42,7 @@
 
     # Reset this number to 0 on major V8 upgrades.
     # Increment by one for each non-official patch applied to deps/v8.
-    'v8_embedder_string': '-node.10',
+    'v8_embedder_string': '-node.29',
 
     ##### V8 defaults for Node.js #####
 
@@ -62,6 +54,8 @@
     # Refs: https://github.com/nodejs/node/issues/23167
     # Enable compiler warnings when using V8_DEPRECATED apis from V8 code.
     'v8_deprecation_warnings': 0,
+    # Check that JavaScript execution is disallowed in V8 API interrupts.
+    'v8_disallow_js_in_api_interrupts_is_checked': 1,
     # Enable compiler warnings when using V8_DEPRECATE_SOON apis from V8 code.
     'v8_imminent_deprecation_warnings': 0,
 
@@ -108,7 +102,7 @@
         'v8_base': '<(PRODUCT_DIR)/lib/libv8_snapshot.a',
       }, {
         'os_posix': 1,
-        'v8_postmortem_support%': 0,
+        'v8_postmortem_support%': 1,
       }],
       ['GENERATOR == "ninja"', {
         'obj_dir': '<(PRODUCT_DIR)/obj',
@@ -135,6 +129,10 @@
       ['OS=="linux" or OS=="openharmony"', {
         'node_section_ordering_info%': ''
       }],
+      ['OS == "zos"', {
+        # use ICU data file on z/OS
+        'icu_use_data_file_flag%': 1
+      }]
     ],
   },
 
@@ -196,7 +194,6 @@
             }],
             ['clang==1', {
               'lto': ' -flto ', # Clang
-              'pgo_use': '-fprofile-use=<(pgo_profile)',
             }, {
               'lto': ' -flto=4 -ffat-lto-objects ', # GCC
             }],
@@ -229,7 +226,11 @@
             # pull in V8's postmortem metadata
             'ldflags': [ '-Wl,-z,allextract' ]
           }],
-          ['OS!="mac" and OS!="win"', {
+          ['OS=="zos"', {
+            # increase performance, number from experimentation
+            'cflags': [ '-qINLINE=::150:100000' ]
+          }],
+          ['OS!="mac" and OS!="win" and OS!="zos"', {
             # -fno-omit-frame-pointer is necessary for the --perf_basic_prof
             # flag to work correctly. perf(1) gets confused about JS stack
             # frames otherwise, even with --call-graph dwarf.
@@ -247,34 +248,6 @@
               },],
             ],
           },],
-          ['OS=="mac"', {
-            'conditions': [
-              ['enable_pgo_generate=="true"', {
-                'xcode_settings': {
-                  'OTHER_CFLAGS': ['<(pgo_generate)'],
-                },
-                'target_conditions': [
-                  ['_type!="static_library"', {
-                    'xcode_settings': {
-                      'OTHER_LDFLAGS': ['<(pgo_generate)'],
-                    },
-                  }],
-                ],
-              }],
-              ['enable_pgo_use=="true"', {
-                'xcode_settings': {
-                  'OTHER_CFLAGS': ['<(pgo_use)'],
-                },
-                'target_conditions': [
-                  ['_type!="static_library"', {
-                    'xcode_settings': {
-                      'OTHER_LDFLAGS': ['<(pgo_use)'],
-                    },
-                  }],
-                ],
-              }],
-            ],
-          }],
           ['OS=="win"', {
             'conditions': [
               ['enable_lto=="true"', {
@@ -483,7 +456,7 @@
       [ 'target_arch=="arm64"', {
         'msvs_configuration_platform': 'arm64',
       }],
-      ['asan == 1 and OS != "mac"', {
+      ['asan == 1 and OS != "mac" and OS != "zos"', {
         'cflags+': [
           '-fno-omit-frame-pointer',
           '-fsanitize=address',
@@ -511,7 +484,7 @@
           }],
         ],
       }],
-      ['ubsan == 1 and OS != "mac"', {
+      ['ubsan == 1 and OS != "mac" and OS != "zos"', {
         'cflags+': [
           '-fno-omit-frame-pointer',
           '-fsanitize=undefined',
@@ -563,6 +536,9 @@
       ['v8_deprecation_warnings == 1', {
         'defines': ['V8_DEPRECATION_WARNINGS',],
       }],
+      ['v8_disallow_js_in_api_interrupts_is_checked == 1', {
+        'defines': ['V8_DISALLOW_JS_IN_API_INTERRUPTS_IS_CHECKED',],
+      }],
       ['v8_imminent_deprecation_warnings == 1', {
         'defines': ['V8_IMMINENT_DEPRECATION_WARNINGS',],
       }],
@@ -594,11 +570,11 @@
           'NOMINMAX',
         ],
       }],
-      [ 'OS in "linux freebsd openbsd solaris aix os400 openharmony zos"', {
+      [ 'OS in "linux freebsd openbsd solaris aix os400 openharmony"', {
         'cflags': [ '-pthread' ],
         'ldflags': [ '-pthread' ],
       }],
-      [ 'OS in "linux freebsd openbsd solaris android aix os400 cloudabi openharmony zos"', {
+      [ 'OS in "linux freebsd openbsd solaris android aix os400 cloudabi openharmony"', {
         'cflags': [ '-Wall', '-Wextra', '-Wno-unused-parameter', ],
         'cflags_cc': [
           '-fno-rtti',
@@ -616,9 +592,6 @@
           ['OS=="openbsd"', {
             'cflags': [ '-I/usr/local/include' ],
             'ldflags': [ '-Wl,-z,wxneeded' ],
-          }],
-          [ 'OS=="zos"', {
-            'ldflags!': [ '-rdynamic' ],
           }],
           ['_toolset=="host"', {
             'conditions': [
@@ -686,9 +659,7 @@
             'cflags!': [ '-pthread' ],
             'ldflags!': [ '-pthread' ],
           }],
-          # The V8 static libraries get linked into libv8_debug_helper, so they
-          # have to be position independent too.
-          [ 'node_shared=="true" or node_enable_v8debughelper=="true"', {
+          [ 'node_shared=="true"', {
             'cflags': [ '-fPIC' ],
             'ldflags': [ '-fPIC' ],
           }],
@@ -838,8 +809,6 @@
       }],
       ['OS == "zos"', {
         'defines': [
-          'ZOSLIB_OVERRIDE_CLIB',
-          'ZOSLIB_ALIGNED_NEWDEL',
           '_XOPEN_SOURCE_EXTENDED',
           '_XOPEN_SOURCE=600',
           '_UNIX03_THREADS',
@@ -847,37 +816,40 @@
           '_UNIX03_SOURCE',
           '_OPEN_SYS_SOCK_IPV6',
           '_OPEN_SYS_FILE_EXT=1',
-          '_POSIX_C_SOURCE=200809L',
           '_POSIX_SOURCE',
           '_OPEN_SYS',
           '_OPEN_SYS_IF_EXT',
+          '_OPEN_SYS_SOCK_IPV6',
           '_OPEN_MSGQ_EXT',
           '_LARGE_TIME_API',
+          '_ALL_SOURCE',
           '_AE_BIMODAL=1',
-          '_EXT',
+          '__IBMCPP_TR1__',
           'NODE_PLATFORM="os390"',
           'PATH_MAX=1024',
           '_ENHANCED_ASCII_EXT=0xFFFFFFFF',
+          '_Export=extern',
+          '__static_assert=static_assert',
         ],
         'cflags': [
-          '-fno-short-enums',
-          '-fno-xl-pragma-pack',
-          '-fstack-protector',
-          '-fvisibility=default',
-          '-fzos-le-char-mode=ascii',
-          '-m64',
-          '-march=z14',
-          '-mzos-target=zosv2r5',
+          '-q64',
+          '-Wc,DLL',
+          '-Wa,GOFF',
+          '-qARCH=10',
+          '-qASCII',
+          '-qTUNE=12',
+          '-qENUM=INT',
+          '-qEXPORTALL',
+          '-qASM',
+        ],
+        'cflags_cc': [
+          '-qxclang=-std=c++14',
         ],
         'ldflags': [
-          '-m64',
-          '-mzos-target=zosv2r5',
+          '-q64',
         ],
         # for addons due to v8config.h include of "zos-base.h":
-        'include_dirs':  [
-           '<(zoslib_include_dir)',
-           '<(zoslib_include_dir)/include-wrappers/c++',
-        ],
+        'include_dirs':  ['<(zoslib_include_dir)'],
       }],
     ],
   }

@@ -643,9 +643,7 @@ function assertJsonWebKey(actual, expected) {
     });
   }
 
-  const zeroPasses = converters.Argon2Params({ ...good, passes: 0 }, opts);
-  assert.strictEqual(zeroPasses.passes, 0);
-  assert.throws(() => webidl.validators.Argon2Params(zeroPasses), {
+  assert.throws(() => converters.Argon2Params({ ...good, passes: 0 }, opts), {
     name: 'OperationError',
     message: 'passes must be > 0',
   });
@@ -730,13 +728,11 @@ function assertJsonWebKey(actual, expected) {
   };
   assertIdlDictionary(converters.Argon2Params({ ...good, filtered: 'out' }, opts), good);
 
-  const excessiveParallelism = converters.Argon2Params({
+  assert.throws(() => converters.Argon2Params({
     ...good,
     parallelism: maxParallelism + 1,
     memory: 8 * (maxParallelism + 1),
-  }, opts);
-  assert.strictEqual(excessiveParallelism.parallelism, maxParallelism + 1);
-  assert.throws(() => webidl.validators.Argon2Params(excessiveParallelism), {
+  }, opts), {
     name: 'OperationError',
     message: 'parallelism must be > 0 and <= 16777215',
   });

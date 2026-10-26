@@ -40,9 +40,6 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 #endif
         break;
     case DLL_PROCESS_DETACH:
-#if defined(OSSL_DLLMAIN_DESTRUCTOR)
-        ossl_cleanup_destructor();
-#endif /* defined(OSSL_DLLMAIN_DESTRUCTOR) */
         break;
     }
     return TRUE;

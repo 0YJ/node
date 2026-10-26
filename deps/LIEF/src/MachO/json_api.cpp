@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,17 @@
  * limitations under the License.
  */
 #include "LIEF/config.h"
+#include "logging.hpp"
+#include "LIEF/MachO.hpp"
 
 #ifdef LIEF_JSON_SUPPORT
-  #include "MachO/json_internal.hpp"
-#else
-  #include "logging.hpp"
+#include "MachO/json_internal.hpp"
 #endif
 
 namespace LIEF {
-class Object;
-}
+namespace MachO {
 
-namespace LIEF::MachO {
-
-std::string to_json([[maybe_unused]] const Object& v) {
+std::string to_json(const Object& v) {
 #ifdef LIEF_JSON_SUPPORT
   JsonVisitor visitor;
   visitor(v);
@@ -38,4 +35,5 @@ std::string to_json([[maybe_unused]] const Object& v) {
 #endif
 }
 
-} // namespace LIEF::MachO
+} // namespace MachO
+} // namespace LIEF

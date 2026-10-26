@@ -16,7 +16,7 @@ class StringBuiltinsAssembler : public CodeStubAssembler {
   explicit StringBuiltinsAssembler(compiler::CodeAssemblerState* state)
       : CodeStubAssembler(state) {}
 
-  // https://tc39.es/ecma262/#sec-getsubstitution
+  // ES#sec-getsubstitution
   TNode<String> GetSubstitution(TNode<Context> context,
                                 TNode<String> subject_string,
                                 TNode<Smi> match_start_index,
@@ -26,7 +26,8 @@ class StringBuiltinsAssembler : public CodeStubAssembler {
                         TNode<String> rhs, TNode<Word32T> rhs_instance_type,
                         TNode<IntPtrT> length, Label* if_equal,
                         Label* if_not_equal, Label* if_indirect);
-  void BranchIfStringPrimitiveWithNoCustomIteration(TNode<JSAnyNotSmi> object,
+  void BranchIfStringPrimitiveWithNoCustomIteration(TNode<Object> object,
+                                                    TNode<Context> context,
                                                     Label* if_true,
                                                     Label* if_false);
 
@@ -196,11 +197,9 @@ class StringBuiltinsAssembler : public CodeStubAssembler {
  private:
   template <typename T>
   TNode<String> AllocAndCopyStringCharacters(TNode<T> from,
-                                             TNode<String> tagged_source,
                                              TNode<BoolT> from_is_one_byte,
                                              TNode<IntPtrT> from_index,
-                                             TNode<IntPtrT> character_count,
-                                             Label* if_bailout);
+                                             TNode<IntPtrT> character_count);
 };
 
 }  // namespace internal

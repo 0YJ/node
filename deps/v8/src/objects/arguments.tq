@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-@cppObjectLayoutDefinition
 extern class JSArgumentsObject extends JSObject {}
 
 type JSArgumentsObjectWithLength =
@@ -26,40 +25,19 @@ extern shape JSStrictArgumentsObject extends JSArgumentsObject {
 }
 
 @cppObjectLayoutDefinition
-extern class SloppyArgumentsElements extends FixedArrayBase {
+class SloppyArgumentsElements extends FixedArrayBase {
   context: Context;
   arguments: FixedArray|NumberDictionary;
   mapped_entries[length]: Smi|TheHole;
 }
 
-@if(TAGGED_SIZE_8_BYTES)
-  macro NewSloppyArgumentsElements<Iterator: type>(
-      length: uint32, context: Context, arguments: FixedArray,
-      it: Iterator): SloppyArgumentsElements {
-    return new SloppyArgumentsElements{
-      map: %GetClassMapConstant<SloppyArgumentsElements>(),
-      length,
-      optional_padding: 0,
-      context,
-      arguments,
-      mapped_entries: ...it
-    };
-  }
+macro NewSloppyArgumentsElements<Iterator: type>(
+    length: Smi, context: Context, arguments: FixedArray,
+    it: Iterator): SloppyArgumentsElements {
+  return new
+  SloppyArgumentsElements{length, context, arguments, mapped_entries: ...it};
+}
 
-@ifnot(TAGGED_SIZE_8_BYTES)
-  macro NewSloppyArgumentsElements<Iterator: type>(
-      length: uint32, context: Context, arguments: FixedArray,
-      it: Iterator): SloppyArgumentsElements {
-    return new SloppyArgumentsElements{
-      map: %GetClassMapConstant<SloppyArgumentsElements>(),
-      length,
-      context,
-      arguments,
-      mapped_entries: ...it
-    };
-  }
-
-@cppObjectLayoutDefinition
 extern class AliasedArgumentsEntry extends Struct {
   aliased_context_slot: Smi;
 }
@@ -74,7 +52,7 @@ macro NewJSStrictArgumentsObject(
     map,
     properties_or_hash: kEmptyFixedArray,
     elements,
-    length: Convert<Smi>(elements.length_intptr)
+    length: elements.length
   };
 }
 
@@ -86,7 +64,7 @@ macro NewJSSloppyArgumentsObject(
     map,
     properties_or_hash: kEmptyFixedArray,
     elements,
-    length: Convert<Smi>(elements.length_intptr),
+    length: elements.length,
     callee
   };
 }
@@ -236,7 +214,7 @@ macro NewSloppyArguments(
   const mappedCount = IntPtrMin(formalParameterCount, argumentCount);
   let paramIter =
       NewParameterMapIterator(context, formalParameterCount, mappedCount);
-  const elementsLength = Unsigned(Convert<int32>(mappedCount));
+  const elementsLength = Convert<Smi>(mappedCount);
   const elements = NewSloppyArgumentsElements(
       elementsLength, context, parameterValues, paramIter);
   const length = Convert<Smi>(argumentCount);

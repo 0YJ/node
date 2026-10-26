@@ -5,7 +5,6 @@
 #ifndef V8_SANDBOX_INDIRECT_POINTER_TAG_H_
 #define V8_SANDBOX_INDIRECT_POINTER_TAG_H_
 
-#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 #include "src/objects/instance-type.h"
 
@@ -56,25 +55,20 @@ enum IndirectPointerTag : uint16_t {
   kWasmTrustedInstanceDataIndirectPointerTag = 4,
   kWasmDispatchTableIndirectPointerTag,
   kWasmSuspenderIndirectPointerTag,
-  kRegExpDataIndirectPointerTag,
-  kDebugInfoIndirectPointerTag,
-
-  kFirstSFITrustedDataTag = kDebugInfoIndirectPointerTag + 1,
-  kWasmExportedFunctionDataIndirectPointerTag = kFirstSFITrustedDataTag,
+  kAsmWasmDataIndirectPointerTag,
+  kWasmExportedFunctionDataIndirectPointerTag,
+  kWasmJSFunctionDataIndirectPointerTag,
   kWasmCapiFunctionDataIndirectPointerTag,
+  kRegExpDataIndirectPointerTag,
   kInterpreterDataIndirectPointerTag,
   kUncompiledDataIndirectPointerTag,
-  kBytecodeArrayIndirectPointerTag,
-  // All code pointers share the same tag (pointing to Code objects). Their
-  // instruction stream start is guarded by another tag (CodeEntrypointTag).
-  kCodeIndirectPointerTag,
-  kLastSFITrustedDataTag = kCodeIndirectPointerTag,
-  kLastPerIsolateTrustedPointerTag = kLastSFITrustedDataTag,
+  kBytecodeArrayIndirectPointerTag = 0x3f,
+  kLastPerIsolateTrustedPointerTag = kBytecodeArrayIndirectPointerTag,
 
-  // The maximum tag in kAllIndirectPointerTags. Padded to a (pow2-1) to enable
-  // fast, single-instruction bitwise untagging (see
-  // IsFastIndirectPointerTagRange).
-  kLastIndirectPointerFastTag = 0x0f,
+  // Code pointers are special as they use a dedicated table (CodePointerTable).
+  // We place the tag here (at 0x40) so that the "regular" trusted pointer tags
+  // form a coherent range [1, 0x3f] which can be untagged with a single mask.
+  kCodeIndirectPointerTag = 0x40,
 
   // Special tags.
   //
@@ -107,16 +101,6 @@ enum IndirectPointerTag : uint16_t {
 
 using IndirectPointerTagRange = TagRange<IndirectPointerTag>;
 
-#if V8_TARGET_ARCH_ARM64
-// On ARM64 with TBI we must not have fast tags that set bits in the top byte
-// as these will be ignored.
-// 0x3f (63) has its highest bit at position 5. When shifted by 49 for untagging
-// masks, it sets bits exactly up to 54, keeping bit 55 (the kernel address
-// switch) and bits 56-63 (the TBI ignored byte) fully set. To prevent clearing
-// bit 55 or higher, tags must not exceed 0x3f (63).
-constexpr uint16_t kMaxFastIndirectPointerTagForARM64 = 0x3f;
-#endif
-
 // "Fast" tags are those that are powers of two. In that case, we can simply
 // mask out the tag bit (and the marking bit) from the payload to untag the
 // pointer. If the tags don't match, we'll be left with a non-canonical pointer
@@ -124,11 +108,6 @@ constexpr uint16_t kMaxFastIndirectPointerTagForARM64 = 0x3f;
 // the generic tag-extract-and-compare approach.
 V8_INLINE constexpr bool IsFastIndirectPointerTag(IndirectPointerTag tag) {
   DCHECK_NE(tag, kIndirectPointerNullTag);
-#if V8_TARGET_ARCH_ARM64
-  if (static_cast<uint16_t>(tag) > kMaxFastIndirectPointerTagForARM64) {
-    return false;
-  }
-#endif
   return base::bits::IsPowerOfTwo(tag);
 }
 
@@ -149,9 +128,6 @@ V8_INLINE constexpr bool IsFastIndirectPointerTagRange(
   } else {
     uint16_t first = static_cast<uint16_t>(tag_range.first);
     uint16_t last = static_cast<uint16_t>(tag_range.last);
-#if V8_TARGET_ARCH_ARM64
-    if (last > kMaxFastIndirectPointerTagForARM64) return false;
-#endif
     return first == 1 && base::bits::IsPowerOfTwo(last + 1);
   }
 }
@@ -168,8 +144,10 @@ constexpr IndirectPointerTagRange kAllSharedIndirectPointerTags(
     kFirstSharedTrustedPointerTag, kLastSharedTrustedPointerTag);
 constexpr IndirectPointerTagRange kAllPerIsolateIndirectPointerTags(
     kFirstPerIsolateTrustedPointerTag, kLastPerIsolateTrustedPointerTag);
+constexpr IndirectPointerTagRange kAllTrustedPointerTags(
+    kFirstSharedTrustedPointerTag, static_cast<IndirectPointerTag>(0x3f));
 constexpr IndirectPointerTagRange kAllIndirectPointerTags(
-    kFirstSharedTrustedPointerTag, kLastIndirectPointerFastTag);
+    kFirstSharedTrustedPointerTag, static_cast<IndirectPointerTag>(0x7f));
 constexpr IndirectPointerTagRange kAllIndirectPointerTagsIncludingUnpublished(
     kFirstSharedTrustedPointerTag, kUnpublishedIndirectPointerTag);
 
@@ -177,21 +155,25 @@ constexpr IndirectPointerTagRange kWasmFunctionDataIndirectPointerTagRange(
     kWasmExportedFunctionDataIndirectPointerTag,
     kWasmCapiFunctionDataIndirectPointerTag);
 
-constexpr IndirectPointerTagRange kSFITrustedDataIndirectPointerRange(
-    kFirstSFITrustedDataTag, kLastSFITrustedDataTag);
+// The kAllTrustedPointerTags contains all trusted pointer tags but not code.
+static_assert(kAllTrustedPointerTags.Contains(kAllSharedIndirectPointerTags));
+static_assert(
+    kAllTrustedPointerTags.Contains(kAllPerIsolateIndirectPointerTags));
+static_assert(!kAllTrustedPointerTags.Contains(kCodeIndirectPointerTag));
 
 // The kAllIndirectPointerTags contains all regular tags including the code tag.
-static_assert(kAllIndirectPointerTags.Contains(kAllSharedIndirectPointerTags));
-static_assert(
-    kAllIndirectPointerTags.Contains(kAllPerIsolateIndirectPointerTags));
+static_assert(kAllIndirectPointerTags.Contains(kAllTrustedPointerTags));
+static_assert(kAllIndirectPointerTags.Contains(kAllTrustedPointerTags));
 static_assert(kAllIndirectPointerTags.Contains(kCodeIndirectPointerTag));
 
 // None of the above must contain any special entries though.
 static_assert(
     !kAllIndirectPointerTags.Contains(kUnpublishedIndirectPointerTag));
+static_assert(!kAllTrustedPointerTags.Contains(kUnpublishedIndirectPointerTag));
 
-// The range is expected to be fast.
+// Both ranges are expected to be fast.
 static_assert(IsFastIndirectPointerTagRange(kAllIndirectPointerTags));
+static_assert(IsFastIndirectPointerTagRange(kAllTrustedPointerTags));
 
 // These are only included in kAllIndirectPointerTagsIncludingUnpublished.
 static_assert(kAllIndirectPointerTagsIncludingUnpublished.Contains(
@@ -247,8 +229,8 @@ V8_INLINE static constexpr bool ExternalPointerCanBeEmpty(
 // field should be using this tag.
 static_assert(!IsValidIndirectPointerTag(kIndirectPointerNullTag));
 
-V8_INLINE IndirectPointerTag IndirectPointerTagFromInstanceType(
-    InstanceType instance_type, SharedFlag shared) {
+V8_INLINE IndirectPointerTag
+IndirectPointerTagFromInstanceType(InstanceType instance_type, bool shared) {
   switch (instance_type) {
     case CODE_TYPE:
       return kCodeIndirectPointerTag;
@@ -256,8 +238,6 @@ V8_INLINE IndirectPointerTag IndirectPointerTagFromInstanceType(
       return kBytecodeArrayIndirectPointerTag;
     case INTERPRETER_DATA_TYPE:
       return kInterpreterDataIndirectPointerTag;
-    case DEBUG_INFO_TYPE:
-      return kDebugInfoIndirectPointerTag;
     case UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_TYPE:
     case UNCOMPILED_DATA_WITH_PREPARSE_DATA_TYPE:
     case UNCOMPILED_DATA_WITHOUT_PREPARSE_DATA_WITH_JOB_TYPE:
@@ -287,6 +267,8 @@ V8_INLINE IndirectPointerTag IndirectPointerTagFromInstanceType(
       UNREACHABLE();
     case WASM_EXPORTED_FUNCTION_DATA_TYPE:
       return kWasmExportedFunctionDataIndirectPointerTag;
+    case WASM_JS_FUNCTION_DATA_TYPE:
+      return kWasmJSFunctionDataIndirectPointerTag;
     case WASM_CAPI_FUNCTION_DATA_TYPE:
       return kWasmCapiFunctionDataIndirectPointerTag;
 #endif  // V8_ENABLE_WEBASSEMBLY

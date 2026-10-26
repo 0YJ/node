@@ -21,7 +21,5 @@ declare namespace Socks5ProxyAgent {
     connect?: buildConnector.connector;
     /** TLS options for the proxy connection (for SOCKS5 over TLS) */
     proxyTls?: buildConnector.BuildOptions;
-    /** TLS options for the end-to-end connection to the target */
-    requestTls?: buildConnector.BuildOptions;
   }
 }

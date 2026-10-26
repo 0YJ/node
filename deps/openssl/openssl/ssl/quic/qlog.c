@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2023-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,8 +7,6 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include <stdbool.h>
-#include <stdio.h>
 #include "internal/qlog.h"
 #include "internal/json_enc.h"
 #include "internal/common.h"
@@ -132,20 +130,11 @@ QLOG *ossl_qlog_new_from_env(const QLOG_TRACE_INFO *info)
     if (qlogdir_sep != '\0')
         filename[l++] = qlogdir_sep;
 
-    for (i = 0; i < info->odcid.id_len; ++i) {
-        int n = snprintf(filename + l, strl - l, "%02x", info->odcid.id[i]);
+    for (i = 0; i < info->odcid.id_len; ++i)
+        l += BIO_snprintf(filename + l, strl - l, "%02x", info->odcid.id[i]);
 
-        if (n < 0 || (size_t)n >= strl - l)
-            goto err;
-        l += n;
-    }
-
-    int n = snprintf(filename + l, strl - l, "_%s.sqlog",
+    l += BIO_snprintf(filename + l, strl - l, "_%s.sqlog",
         info->is_server ? "server" : "client");
-
-    if (n < 0 || (size_t)n >= strl - l)
-        goto err;
-    l += n;
 
     qlog = ossl_qlog_new(info);
     if (qlog == NULL)
@@ -350,7 +339,7 @@ static void qlog_event_seq_header(QLOG *qlog)
                 if (qlog->info.override_impl_name != NULL) {
                     p = qlog->info.override_impl_name;
                 } else {
-                    snprintf(buf, sizeof(buf), "OpenSSL/%s (%s)",
+                    BIO_snprintf(buf, sizeof(buf), "OpenSSL/%s (%s)",
                         OpenSSL_version(OPENSSL_FULL_VERSION_STRING),
                         OpenSSL_version(OPENSSL_PLATFORM) + 10);
                 }
@@ -504,7 +493,7 @@ void ossl_qlog_i64(QLOG *qlog, const char *name, int64_t value)
     ossl_json_i64(&qlog->json, value);
 }
 
-void ossl_qlog_bool(QLOG *qlog, const char *name, bool value)
+void ossl_qlog_bool(QLOG *qlog, const char *name, int value)
 {
     if (name != NULL)
         ossl_json_key(&qlog->json, name);
@@ -652,14 +641,13 @@ static void filter_apply(size_t *enabled, int add,
     const char *cat, size_t cat_l,
     const char *event, size_t event_l)
 {
-    /* clang-format off */
-	/* Find events which match the given filters. */
-#define QLOG_EVENT(e_cat, e_name)                                            \
-	if (filter_match_event(cat, cat_l, event, event_l, #e_cat, #e_name)) \
-		bit_set(enabled, QLOG_EVENT_TYPE_##e_cat##_##e_name, add);
-#include "internal/qlog_events.inc"
+    /* Find events which match the given filters. */
+#define QLOG_EVENT(e_cat, e_name)                      \
+    if (filter_match_event(cat, cat_l, event, event_l, \
+            #e_cat, #e_name))                          \
+        bit_set(enabled, QLOG_EVENT_TYPE_##e_cat##_##e_name, add);
+#include "internal/qlog_events.h"
 #undef QLOG_EVENT
-    /* clang-format on */
 }
 
 static int lex_fail(struct lexer *lex, const char *msg)

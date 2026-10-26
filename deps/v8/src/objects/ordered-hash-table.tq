@@ -4,22 +4,25 @@
 
 #include 'src/objects/ordered-hash-table.h'
 
+// Using int as a dummy type-parameter to get access to these constants which
+// don't actually depend on the derived class. This avoids accidentially
+// depending on something from a concrete derived class.
 const kSmallOrderedHashTableMaxCapacity: constexpr int31
-    generates 'SmallOrderedHashTable::kMaxCapacity';
+    generates 'SmallOrderedHashTable<int>::kMaxCapacity';
 const kSmallOrderedHashTableNotFound: constexpr int31
-    generates 'SmallOrderedHashTable::kNotFound';
+    generates 'SmallOrderedHashTable<int>::kNotFound';
 const kSmallOrderedHashTableLoadFactor: constexpr int31
-    generates 'SmallOrderedHashTable::kLoadFactor';
+    generates 'SmallOrderedHashTable<int>::kLoadFactor';
 
 @abstract
-@cppObjectLayoutDefinition
+@doNotGenerateCppClass
 extern class SmallOrderedHashTable extends HeapObject
-    generates 'HeapObject' {}
+    generates 'TNode<HeapObject>' {}
 
 extern macro SmallOrderedHashSetMapConstant(): Map;
 const kSmallOrderedHashSetMap: Map = SmallOrderedHashSetMapConstant();
 
-@cppObjectLayoutDefinition
+@doNotGenerateCppClass
 extern class SmallOrderedHashSet extends SmallOrderedHashTable {
   number_of_elements: uint8;
   number_of_deleted_elements: uint8;
@@ -58,7 +61,7 @@ struct HashMapEntry {
 extern macro SmallOrderedHashMapMapConstant(): Map;
 const kSmallOrderedHashMapMap: Map = SmallOrderedHashMapMapConstant();
 
-@cppObjectLayoutDefinition
+@doNotGenerateCppClass
 extern class SmallOrderedHashMap extends SmallOrderedHashTable {
   number_of_elements: uint8;
   number_of_deleted_elements: uint8;
@@ -95,7 +98,7 @@ struct NameDictionaryEntry {
   property_details: Smi|TheHole;
 }
 
-@cppObjectLayoutDefinition
+@doNotGenerateCppClass
 extern class SmallOrderedNameDictionary extends SmallOrderedHashTable {
   hash: int32;
   @if(TAGGED_SIZE_8_BYTES) padding_0: int32;

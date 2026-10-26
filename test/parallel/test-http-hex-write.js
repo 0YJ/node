@@ -34,7 +34,7 @@ http.createServer(function(q, s) {
   s.end();
   this.close();
 }).listen(0, common.mustCall(function() {
-  http.request({ port: this.address().port, agent: false })
+  http.request({ port: this.address().port })
     .on('response', common.mustCall(function(res) {
       let data = '';
 

@@ -10,7 +10,6 @@
 #include "src/base/base-export.h"
 #include "src/base/logging.h"
 #include "src/codegen/bailout-reason.h"
-#include "src/compiler/heap-refs.h"
 #include "src/compiler/js-heap-broker.h"
 #include "src/maglev/maglev-basic-block.h"
 #include "src/maglev/maglev-graph-processor.h"
@@ -18,19 +17,10 @@
 #include "src/maglev/maglev-ir.h"
 #include "src/maglev/maglev-known-node-aspects.h"
 #include "src/maglev/maglev-node-type.h"
-#include "src/maglev/maglev-post-hoc-optimizations-processors.h"
-#include "src/maglev/maglev-reducer.h"
-#include "src/maglev/maglev-tracer.h"
-#include "src/objects/map.h"
 
 namespace v8 {
 namespace internal {
 namespace maglev {
-
-#define TRACE_KNA(...)                   \
-  if (V8_UNLIKELY(is_tracing())) {       \
-    TraceLogger(tracer_) << __VA_ARGS__; \
-  }
 
 template <typename T>
 concept IsNodeT = std::is_base_of_v<Node, T>;
@@ -47,13 +37,10 @@ concept IsNodeT = std::is_base_of_v<Node, T>;
 // successor basic blocks.
 class RecomputeKnownNodeAspectsProcessor {
  public:
-  RecomputeKnownNodeAspectsProcessor(Graph* graph,
-                                     ReachableExceptionHandlerTracker& tracker)
+  explicit RecomputeKnownNodeAspectsProcessor(Graph* graph)
       : graph_(graph),
         known_node_aspects_(nullptr),
-        tracker_(tracker),
-        tracer_(graph->compilation_info()),
-        reducer_(this, graph) {}
+        reachable_exception_handlers_(zone()) {}
 
   void PreProcessGraph(Graph* graph) {
     known_node_aspects_ = zone()->New<KnownNodeAspects>(zone());
@@ -64,91 +51,45 @@ class RecomputeKnownNodeAspectsProcessor {
     }
   }
   void PostProcessGraph(Graph* graph) {}
-  BlockProcessResult PostProcessBasicBlock(BasicBlock* block) {
-    return BlockProcessResult::kContinue;
-  }
-
-  NodeBase* current_node() const { return current_node_; }
-
-  bool CanEagerDeopt() const {
-    return current_node()->properties().has_eager_deopt_info();
-  }
-
-  DeoptFrame* GetDeoptFrameForEagerDeopt() {
-    CHECK(CanEagerDeopt());
-    return &current_node()->eager_deopt_info()->top_frame();
-  }
-
-  static BasicBlock* SkipEdgeSplits(BasicBlock* block) {
-    while (block->is_edge_split_block()) {
-      block = block->control_node()->Cast<Jump>()->target();
-    }
-    return block;
-  }
-
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
-    // TODO(victorgomes): Clean up set_current_block usage; now both
-    // MaglevGraphOptimizer and RecomputeKnownNodeAspectsProcessor set it.
-    reducer_.set_current_block(block);
-    bool is_fallthrough = false;
+    // TODO(victorgomes): Support removing the unreachable blocks instead of
+    // just skipping it.
+    if (V8_UNLIKELY(block->IsUnreachable())) {
+      // Ensure successors can also be unreachable.
+      return AbortBlock(block);
+    }
+
+    if (block->is_exception_handler_block()) {
+      if (!reachable_exception_handlers_.contains(block)) {
+        // This is an unreachable exception handler block.
+        // Ensure successors can also be unreachable.
+        return AbortBlock(block);
+      }
+    }
+
     if (block->is_loop() && block->state()->is_resumable_loop()) {
       // TODO(victorgomes): Ideally, we should use the loop backedge KNA cache
       // for all loops.
       known_node_aspects_ = zone()->New<KnownNodeAspects>(zone());
     } else if (block->is_loop()) {
-      DCHECK_EQ(block->predecessor_count(), 2);
-      known_node_aspects_ = block->state()->TakeKnownNodeAspects();
-      KnownNodeAspects* backedge_known_node_aspects =
-          block->state()->AsLoopHeader()->backedge_known_node_aspects();
-      // Merge saved backedge KNA to the forward one.
-      TRACE_KNA("Merging KNA at loop header B"
-                << block->id() << ":" << TraceNewline{}
-                << "## Forward KNA:" << TraceNewline{} << *known_node_aspects_
-                << TraceNewline{} << "## Backward KNA:" << TraceNewline{}
-                << *backedge_known_node_aspects);
-      backedge_known_node_aspects->UnwrapIdentitiesAndPhisInKeys(zone());
-      known_node_aspects_->MergeForLoop(
-          *backedge_known_node_aspects, zone(),
-          block->state()->AsLoopHeader()->loop_effects(),
-          block->state()->AsLoopHeader()->loop_has_effects());
+      known_node_aspects_ =
+          block->state()->TakeKnownNodeAspects()->CloneForLoopHeader(
+              false, nullptr, zone());
     } else if (block->has_state()) {
       known_node_aspects_ = block->state()->TakeKnownNodeAspects();
     } else if (block->is_edge_split_block()) {
       // Clone the next available KNA.
-      known_node_aspects_ =
-          SkipEdgeSplits(block)->state()->CloneKnownNodeAspects(zone());
-    } else {
-      is_fallthrough = true;
+      BasicBlock* next_block = block;
+      while (next_block->is_edge_split_block()) {
+        next_block = next_block->control_node()->Cast<Jump>()->target();
+      }
+      known_node_aspects_ = next_block->state()->CloneKnownNodeAspects(zone());
     }
     DCHECK_NOT_NULL(known_node_aspects_);
 
-    if (block->is_exception_handler_block()) {
-      known_node_aspects_->ClearAvailableExpressions();
-      known_node_aspects_->ClearTaggedKeyedProperties();
-    }
-
-    // We might now have more accurate types for phi inputs; recompute the phi
-    // types based on them.
-    RecomputePhiTypes(block);
-
-    if (!is_fallthrough) {
-      TRACE_KNA("KNA at entry of block B" << block->id() << ":"
-                                          << TraceNewline{}
-                                          << *known_node_aspects_);
-    }
-
-    return BlockProcessResult::kContinue;
-  }
-
-  void RecomputePhiTypes(BasicBlock* block) {
-    if (!block->has_state()) return;
-    if (block->is_exception_handler_block()) return;
-    if (!block->has_phi()) return;
-    // Loop-header phis can use other phis of the same block
-    // as input, so we iterate until we reach a fixpoint.
-    bool changed;
-    do {
-      changed = false;
+    if (block->has_state() && !block->is_exception_handler_block()) {
+      // We might now have more accurate types for phi inputs; recompute the phi
+      // types based on them.
       for (Phi* phi : *block->state()->phis()) {
         DCHECK_GE(phi->input_count(), 1);
         NodeType new_type = NodeType::kNone;
@@ -158,58 +99,30 @@ class RecomputeKnownNodeAspectsProcessor {
               known_node_aspects_->GetTypeUnchecked(broker(), input);
           new_type = UnionType(new_type, input_type);
         }
-        NodeInfo* info = known_node_aspects_->GetOrCreateInfoFor(broker(), phi);
-        NodeType old_type = info->type();
-        info->IntersectType(new_type);
-        changed |= info->type() != old_type;
-        phi->set_type(info->type());
+        known_node_aspects_->GetOrCreateInfoFor(broker(), phi)
+            ->IntersectType(new_type);
       }
-    } while (changed && block->is_loop());
-  }
+    }
 
+    return BlockProcessResult::kContinue;
+  }
+  void PostProcessBasicBlock(BasicBlock* block) {}
   void PostPhiProcessing() {}
 
-  void ProcessThrowingNode(NodeBase* node, bool mark_handler_reachable = true) {
-    DCHECK(node->properties().can_throw());
+  template <typename NodeT>
+  void ProcessThrowingNode(NodeT* node) {
+    static_assert(NodeT::kProperties.can_throw());
     ExceptionHandlerInfo* info = node->exception_handler_info();
     if (info->HasExceptionHandler() && !info->ShouldLazyDeopt()) {
-      BasicBlock* exception_handler = info->catch_block();
-      if (mark_handler_reachable) {
-        tracker_.MarkReachable(exception_handler);
-      }
-      // Temporarily clear the cached constant value before merging into the
-      // exception handler so that the catch block does not cache this load. On
-      // the exception path, the value is guaranteed to be the_hole, and the
-      // catch block may resume a generator that initializes the variable.
-      // Restore the cached value afterward for the non-throwing fallthrough
-      // path where the value is known not to be the_hole.
-      // TODO(verwaest): Look into making loaded_context_constants_ monotonic,
-      // e.g. by folding the hole check into the context load rather than
-      // temporarily clearing the cached constant here.
-      ValueNode** cached_slot = nullptr;
-      ValueNode* value = nullptr;
-      if (auto* throw_if_hole = node->TryCast<ThrowReferenceErrorIfTdzHole>()) {
-        value = throw_if_hole->ValueInput().node();
-        if (auto* load = value->TryCast<LoadContextSlotNoCells>();
-            load && load->maybe_assigned() == kNotAssigned) {
-          ValueNode*& slot = known_node_aspects().GetContextCachedValue(
-              load->input(0).node(), load->offset(), kNotAssigned);
-          if (slot == value) {
-            cached_slot = &slot;
-            *cached_slot = nullptr;
-          }
-        }
-      }
+      BasicBlock* exception_handler =
+          node->exception_handler_info()->catch_block();
+      reachable_exception_handlers_.insert(exception_handler);
       Merge(exception_handler);
-      if (cached_slot) {
-        *cached_slot = value;
-      }
     }
   }
 
   template <IsNodeT NodeT>
   ProcessResult Process(NodeT* node, const ProcessingState& state) {
-    current_node_ = node;
     if constexpr (NodeT::kProperties.can_throw()) {
       ProcessThrowingNode(node);
     }
@@ -234,12 +147,12 @@ class RecomputeKnownNodeAspectsProcessor {
   }
 
   ProcessResult Process(Jump* node, const ProcessingState& state) {
-    MergeFromDeadSource(node->target());
+    Merge(node->target());
     return ProcessResult::kContinue;
   }
 
   ProcessResult Process(CheckpointedJump* node, const ProcessingState& state) {
-    MergeFromDeadSource(node->target());
+    Merge(node->target());
     return ProcessResult::kContinue;
   }
 
@@ -275,24 +188,10 @@ class RecomputeKnownNodeAspectsProcessor {
     return *known_node_aspects_;
   }
 
-  // Swap the active KNA pointer. Used by Subgraph<MaglevGraphOptimizer> to
-  // maintain a per-branch KNA snapshot during off-graph subgraph construction.
-  void set_known_node_aspects(KnownNodeAspects* known_node_aspects) {
-    known_node_aspects_ = known_node_aspects;
-  }
-
  private:
-  bool is_tracing() const {
-    return v8_flags.trace_maglev_kna_processor &&
-           graph_->compilation_info()->is_tracing_enabled();
-  }
-
   Graph* graph_;
   KnownNodeAspects* known_node_aspects_;
-  ReachableExceptionHandlerTracker& tracker_;
-  Tracer tracer_;
-  MaglevReducer<RecomputeKnownNodeAspectsProcessor> reducer_;
-  NodeBase* current_node_ = nullptr;
+  ZoneAbslFlatHashSet<BasicBlock*> reachable_exception_handlers_;
 
   Zone* zone() { return graph_->zone(); }
   compiler::JSHeapBroker* broker() { return graph_->broker(); }
@@ -300,25 +199,28 @@ class RecomputeKnownNodeAspectsProcessor {
   NodeInfo* GetOrCreateInfoFor(ValueNode* node) {
     return known_node_aspects().GetOrCreateInfoFor(broker(), node);
   }
+  bool EnsureType(ValueNode* node, NodeType type) {
+    return known_node_aspects().EnsureType(broker(), node, type);
+  }
 
-  V8_NODISCARD ProcessResult RecordType(ValueNode* node, NodeType type);
-  V8_NODISCARD ProcessResult RecordMaps(ValueNode* object,
-                                        const compiler::ZoneRefSet<Map>& maps);
-  V8_NODISCARD ProcessResult OnContradiction();
+  BlockProcessResult AbortBlock(BasicBlock* block) {
+    ControlNode* control = block->reset_control_node();
+    block->RemovePredecessorFollowing(control);
+    control->OverwriteWith<Abort>()->set_reason(AbortReason::kUnreachable);
+    block->set_deferred(true);
+    block->set_control_node(control);
+    block->mark_dead();
+    graph_->set_may_have_unreachable_blocks();
+    return BlockProcessResult::kSkip;
+  }
 
   void Merge(BasicBlock* block) {
-    block = SkipEdgeSplits(block);
+    while (block->is_edge_split_block()) {
+      block = block->control_node()->Cast<Jump>()->target();
+    }
     // If we don't have state, this must be a fallthrough basic block.
     if (!block->has_state()) return;
     block->state()->MergeNodeAspects(zone(), *known_node_aspects_);
-  }
-
-  // Like Merge, but consume known_node_aspects_ instead of copying it.
-  void MergeFromDeadSource(BasicBlock* block) {
-    block = SkipEdgeSplits(block);
-    // If we don't have state, this must be a fallthrough basic block.
-    if (!block->has_state()) return;
-    block->state()->MergeNodeAspects(zone(), &known_node_aspects_);
   }
 
   template <typename NodeT>
@@ -327,12 +229,14 @@ class RecomputeKnownNodeAspectsProcessor {
                                                 graph_->is_tracing_enabled());
   }
 
-#define PROCESS_CHECK(Type)                                    \
-  ProcessResult ProcessNode(Check##Type* node) {               \
-    return RecordType(node->input_node(0), NodeType::k##Type); \
+#define PROCESS_CHECK(Type)                             \
+  ProcessResult ProcessNode(Check##Type* node) {        \
+    EnsureType(node->input_node(0), NodeType::k##Type); \
+    return ProcessResult::kContinue;                    \
   }
   PROCESS_CHECK(Smi)
   PROCESS_CHECK(String)
+  PROCESS_CHECK(SeqOneByteString)
   PROCESS_CHECK(StringOrStringWrapper)
   PROCESS_CHECK(StringOrOddball)
   PROCESS_CHECK(Symbol)
@@ -341,42 +245,29 @@ class RecomputeKnownNodeAspectsProcessor {
   ProcessResult ProcessNode(CheckNumber* node) {
     switch (node->mode()) {
       case Object::Conversion::kToNumber:
-        return RecordType(node->input_node(0), NodeType::kNumber);
+        EnsureType(node->input_node(0), NodeType::kNumber);
+        break;
       case Object::Conversion::kToNumeric:
-        // Smi, HeapNumber or BigInt.
-        return RecordType(node->input_node(0), NodeType::kNumeric);
+        // Smi, HeapNumber or BigInt. There's no separate type for BigInt, but
+        // it's a kOtherHeapObject.
+        EnsureType(node->input_node(0),
+                   UnionType(NodeType::kNumber, NodeType::kOtherHeapObject));
+        break;
     }
     return ProcessResult::kContinue;
   }
 
-#define SAFE_CONVERSION_LIST(V)                                            \
-  V(CheckedSmiUntag, int32, Smi)                                           \
-  V(CheckedSmiTagInt32, tagged, Smi)                                       \
-  V(CheckedSmiTagUint32, tagged, Smi)                                      \
-  V(CheckedSmiTagIntPtr, tagged, Smi)                                      \
-  V(CheckedSmiTagFloat64, tagged, Smi)                                     \
-  V(TruncateCheckedNumberOrOddballToInt32, truncated_int32_to_number,      \
-    NumberOrOddball)                                                       \
-  V(CheckedUint32ToInt32, int32, Number)                                   \
-  V(CheckedIntPtrToInt32, int32, Number)                                   \
-  V(CheckedFloat64ToInt32, int32, Number)                                  \
-  V(CheckedHoleyFloat64ToInt32, int32, Number)                             \
-  V(CheckedNumberToInt32, int32, Number)                                   \
-  V(CheckedNumberToFloat64, float64, Number)                               \
-  V(CheckedHoleyFloat64ToFloat64, float64, Number)                         \
-  V(ChangeInt32ToFloat64, float64, Number)                                 \
-  V(ChangeInt32ToHoleyFloat64, holey_float64, Number)
-
-#define DECLARE_ProcessNode(Node, Alt, Type) \
-  ProcessResult ProcessNode(Node* node);
-
-  SAFE_CONVERSION_LIST(DECLARE_ProcessNode)
-#undef DECLARE_ProcessNode
-
-  ProcessResult ProcessNode(CheckedNumberOrOddballToFloat64* node);
-  ProcessResult ProcessNode(UnsafeNumberOrOddballToFloat64* node);
-  ProcessResult ProcessNode(UnsafeHoleyFloat64ToFloat64* node);
-
+#define PROCESS_SAFE_CONV(Node, Alt, Type)                                     \
+  ProcessResult ProcessNode(Node* node) {                                      \
+    NodeInfo* info = GetOrCreateInfoFor(node->input_node(0));                  \
+    if (!info->alternative().Alt()) {                                          \
+      /* TODO(victorgomes): What happens if we we have an alternative already? \
+       * Should we remove this one as well? */                                 \
+      info->alternative().set_##Alt(node);                                     \
+    }                                                                          \
+    info->IntersectType(NodeType::k##Type);                                    \
+    return ProcessResult::kContinue;                                           \
+  }
 // TODO(victorgomes): Ideally we would like to check we already know the type,
 // but currently we cannot. The issue is that if the GraphBuilder emits a
 // node A and then Ensure(A, kSmi), we are not able to recover that A is an Smi.
@@ -392,47 +283,41 @@ class RecomputeKnownNodeAspectsProcessor {
     /* CHECK(NodeTypeIs(GetType(node->input_node(0)), NodeType::k##Type)); */  \
     return ProcessResult::kContinue;                                           \
   }
+  PROCESS_SAFE_CONV(CheckedSmiUntag, int32, Smi)
   PROCESS_UNSAFE_CONV(UnsafeSmiUntag, int32, Smi)
+  PROCESS_SAFE_CONV(CheckedSmiTagInt32, tagged, Smi)
   PROCESS_UNSAFE_CONV(UnsafeSmiTagInt32, tagged, Smi)
+  PROCESS_SAFE_CONV(CheckedSmiTagUint32, tagged, Smi)
   PROCESS_UNSAFE_CONV(UnsafeSmiTagUint32, tagged, Smi)
+  PROCESS_SAFE_CONV(CheckedSmiTagIntPtr, tagged, Smi)
   PROCESS_UNSAFE_CONV(UnsafeSmiTagIntPtr, tagged, Smi)
-  PROCESS_UNSAFE_CONV(UnsafeSmiTagFloat64, tagged, Smi)
-  PROCESS_UNSAFE_CONV(UnsafeSmiTagHoleyFloat64, tagged, Smi)
+  PROCESS_SAFE_CONV(CheckedSmiTagFloat64, tagged, Smi)
+  PROCESS_SAFE_CONV(TruncateCheckedNumberOrOddballToInt32,
+                    truncated_int32_to_number, NumberOrOddball)
   PROCESS_UNSAFE_CONV(TruncateUnsafeNumberOrOddballToInt32,
                       truncated_int32_to_number, NumberOrOddball)
+  PROCESS_SAFE_CONV(CheckedUint32ToInt32, int32, Number)
+  PROCESS_SAFE_CONV(CheckedIntPtrToInt32, int32, Number)
+  PROCESS_SAFE_CONV(CheckedFloat64ToInt32, int32, Number)
+  PROCESS_SAFE_CONV(CheckedHoleyFloat64ToInt32, int32, Number)
   PROCESS_UNSAFE_CONV(UnsafeFloat64ToInt32, int32, Number)
   PROCESS_UNSAFE_CONV(UnsafeHoleyFloat64ToInt32, int32, Number)
+  PROCESS_SAFE_CONV(CheckedNumberToInt32, int32, Number)
   PROCESS_UNSAFE_CONV(ChangeIntPtrToFloat64, float64, Number)
+  // TODO(victorgomes): pass node->conversion_type() rather than always
+  // NumberOrOddball for CheckedNumberOrOddballToFloat64.
+  PROCESS_SAFE_CONV(CheckedNumberOrOddballToFloat64, float64, NumberOrOddball)
+  PROCESS_SAFE_CONV(CheckedNumberToFloat64, float64, Number)
+  PROCESS_UNSAFE_CONV(UnsafeNumberOrOddballToFloat64, float64, NumberOrOddball)
   PROCESS_UNSAFE_CONV(UnsafeNumberToFloat64, float64, Number)
-  // Note: NumberOrOddball->Float64 conversions (such as
-  // UnsafeNumberOrOddballToFloat64 and UnsafeHoleyFloat64ToFloat64) lose
-  // oddball identity and are promoted to float64 alternative by explicit
-  // handlers if and only if KNA has statically proven the input is strictly
-  // NodeType::kNumber without oddballs.
+  PROCESS_SAFE_CONV(CheckedHoleyFloat64ToFloat64, float64, Number)
+  PROCESS_UNSAFE_CONV(HoleyFloat64ToSilencedFloat64, float64, Number)
+  PROCESS_SAFE_CONV(ChangeInt32ToFloat64, float64, Number)
+  PROCESS_SAFE_CONV(ChangeInt32ToHoleyFloat64, holey_float64, Number)
+#undef PROCESS_SAFE_CONV
 #undef PROCESS_UNSAFE_CONV
 
-  ProcessResult ProcessNode(CheckMaps* node) {
-    // Re-establish map knowledge implied by an emitted check, so that later
-    // phases re-running check building (e.g. the graph optimizer) do not
-    // pessimize checks that the graph builder could fold.
-    return RecordMaps(node->ReceiverInput().node(), node->maps());
-  }
-
   ProcessResult ProcessNode(LoadTaggedField* node) {
-    // Re-establish the static type recorded at graph building time (field
-    // representation / stable field map derived).
-    if (node->type() != NodeType::kUnknown) {
-      ProcessResult result = RecordType(node, node->type());
-      if (result != ProcessResult::kContinue) return result;
-    }
-    if (node->stable_field_map().has_value()) {
-      compiler::MapRef map = node->stable_field_map().value();
-      if (!GetOrCreateInfoFor(node)->SetPossibleMaps(
-              PossibleMaps{map}, false, StaticTypeForMap(map, broker()),
-              broker(), known_node_aspects())) {
-        return OnContradiction();
-      }
-    }
     if (!node->property_key().is_none()) {
       auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
           zone(), node->is_const(), node->property_key());
@@ -441,34 +326,18 @@ class RecomputeKnownNodeAspectsProcessor {
     return ProcessResult::kContinue;
   }
 
-  ProcessResult ProcessNode(LoadFixedArrayElement* node) {
-    known_node_aspects().RecordTaggedKeyedProperty(
-        node->ElementsInput().node(), node->IndexInput().node(), node);
-    return ProcessResult::kContinue;
-  }
-
   ProcessResult ProcessNode(LoadDataViewByteLength* node) {
-    bool is_const = !v8_flags.track_array_buffer_views;
     auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
-        zone(), is_const, PropertyKey::ArrayBufferViewByteLength());
+        zone(), true, PropertyKey::ArrayBufferViewByteLength());
     props_for_key[node->ValueInput().node()] = node;
     return ProcessResult::kContinue;
   }
 
-  ProcessResult ProcessNode(LoadTypedArrayLength* node) {
-    if (!IsRabGsabTypedArrayElementsKind(node->elements_kind())) {
-      bool is_const = !v8_flags.track_array_buffer_views;
-      auto& props_for_key = known_node_aspects().GetLoadedPropertiesForKey(
-          zone(), is_const, PropertyKey::TypedArrayLength());
-      props_for_key[node->ValueInput().node()] = node;
-    }
-    return ProcessResult::kContinue;
-  }
-
-  void ProcessStoreContextSlot(ValueNode* context, ValueNode* value, int offset,
-                               MaybeAssignedFlag maybe_assigned) {
-    known_node_aspects().RecordContextSlotStore(graph_, context, offset, value,
-                                                maybe_assigned);
+  void ProcessStoreContextSlot(ValueNode* context, ValueNode* value,
+                               int offset) {
+    known_node_aspects().ClearAliasedContextSlotsFor(graph_, context, offset,
+                                                     value);
+    known_node_aspects().SetContextCachedValue(context, offset, value);
   }
 
   template <typename NodeT>
@@ -476,8 +345,7 @@ class RecomputeKnownNodeAspectsProcessor {
     // If a store to a context, we use the specialized context slot cache.
     if (node->is_store_to_context()) {
       return ProcessStoreContextSlot(node->ObjectInput().node(),
-                                     node->ValueInput().node(), node->offset(),
-                                     node->maybe_assigned());
+                                     node->ValueInput().node(), node->offset());
     }
     // ... otherwise we try the properties cache.
     if (node->property_key().is_none()) return;
@@ -506,11 +374,12 @@ class RecomputeKnownNodeAspectsProcessor {
   template <typename NodeT>
   void ProcessLoadContextSlot(NodeT* node) {
     ValueNode* context = node->input_node(0);
-    MaybeAssignedFlag assigned = node->maybe_assigned();
     ValueNode*& cached_value = known_node_aspects().GetContextCachedValue(
-        context, node->offset(), assigned);
+        context, node->offset(),
+        node->is_const() ? ContextSlotMutability::kImmutable
+                         : ContextSlotMutability::kMutable);
     if (!cached_value) cached_value = node;
-    if (assigned == kMaybeAssigned) {
+    if (!node->is_const()) {
       known_node_aspects().UpdateMayHaveAliasingContexts(
           broker(), broker()->local_isolate(), context);
     }
@@ -528,48 +397,30 @@ class RecomputeKnownNodeAspectsProcessor {
 
   ProcessResult ProcessNode(StoreContextSlotWithWriteBarrier* node) {
     ProcessStoreContextSlot(node->ContextInput().node(),
-                            node->NewValueInput().node(), node->offset(),
-                            kMaybeAssigned);
+                            node->NewValueInput().node(), node->offset());
     return ProcessResult::kContinue;
   }
 
   ProcessResult ProcessNode(StoreSmiContextCell* node) {
     ProcessStoreContextSlot(graph_->GetConstant(node->context()),
-                            node->ValueInput().node(), node->slot_offset(),
-                            kMaybeAssigned);
+                            node->ValueInput().node(), node->slot_offset());
     return ProcessResult::kContinue;
   }
 
   ProcessResult ProcessNode(StoreInt32ContextCell* node) {
     ProcessStoreContextSlot(graph_->GetConstant(node->context()),
-                            node->ValueInput().node(), node->slot_offset(),
-                            kMaybeAssigned);
+                            node->ValueInput().node(), node->slot_offset());
     return ProcessResult::kContinue;
   }
 
   ProcessResult ProcessNode(StoreFloat64ContextCell* node) {
     ProcessStoreContextSlot(graph_->GetConstant(node->context()),
-                            node->ValueInput().node(), node->slot_offset(),
-                            kMaybeAssigned);
-    return ProcessResult::kContinue;
-  }
-
-  ProcessResult ProcessNode(AssumeMap* node);
-
-  ProcessResult ProcessNode(AssumeType* node) {
-    return RecordType(node->input_node(0), node->asserted_type());
-  }
-
-  ProcessResult ProcessNode(CheckInt32IsSmi* node) {
-    NodeInfo* info = GetOrCreateInfoFor(node->input_node(0));
-    info->IntersectType(NodeType::kSmi);
+                            node->ValueInput().node(), node->slot_offset());
     return ProcessResult::kContinue;
   }
 
   ProcessResult ProcessNode(Node* node) { return ProcessResult::kContinue; }
 };
-
-#undef TRACE_KNA
 
 }  // namespace maglev
 }  // namespace internal

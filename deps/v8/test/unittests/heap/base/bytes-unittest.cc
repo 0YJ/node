@@ -97,7 +97,7 @@ TEST(BytesAndDurationTest, RingBufferAverage) {
 
 TEST(SmoothedBytesAndDuration, ZeroDelta) {
   SmoothedBytesAndDuration smoothed_throughput(
-      v8::base::TimeDelta::FromSeconds(1), v8::base::TimeDelta::FromSeconds(1));
+      v8::base::TimeDelta::FromSeconds(1));
 
   EXPECT_EQ(smoothed_throughput.GetThroughput(), 0);
 
@@ -108,7 +108,6 @@ TEST(SmoothedBytesAndDuration, ZeroDelta) {
 
 TEST(SmoothedBytesAndDuration, Update) {
   SmoothedBytesAndDuration smoothed_throughput(
-      v8::base::TimeDelta::FromMilliseconds(1),
       v8::base::TimeDelta::FromMilliseconds(1));
 
   EXPECT_EQ(smoothed_throughput.GetThroughput(), 0);
@@ -124,7 +123,7 @@ TEST(SmoothedBytesAndDuration, Update) {
   EXPECT_EQ(smoothed_throughput.GetThroughput(), 1.0);
 
   // The throughput decays with a half-life of 1ms.
-  EXPECT_EQ(smoothed_throughput.GetThroughputForTesting(
+  EXPECT_EQ(smoothed_throughput.GetThroughput(
                 v8::base::TimeDelta::FromMilliseconds(1)),
             0.5);
   smoothed_throughput.Update(

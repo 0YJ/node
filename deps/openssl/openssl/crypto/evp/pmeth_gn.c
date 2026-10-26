@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2025 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -13,7 +13,6 @@
 #include <openssl/core_names.h>
 #include "internal/cryptlib.h"
 #include "internal/core.h"
-#include "internal/common.h"
 #include <openssl/objects.h>
 #include <openssl/evp.h>
 #include "crypto/bn.h"
@@ -34,7 +33,7 @@ static int gen_init(EVP_PKEY_CTX *ctx, int operation)
     ctx->operation = operation;
 
     if (ctx->keymgmt == NULL || ctx->keymgmt->gen_init == NULL)
-        goto not_supported;
+        goto legacy;
 
     switch (operation) {
     case EVP_PKEY_OP_PARAMGEN:
@@ -52,6 +51,30 @@ static int gen_init(EVP_PKEY_CTX *ctx, int operation)
     else
         ret = 1;
     goto end;
+
+legacy:
+#ifdef FIPS_MODULE
+    goto not_supported;
+#else
+    if (ctx->pmeth == NULL
+        || (operation == EVP_PKEY_OP_PARAMGEN
+            && ctx->pmeth->paramgen == NULL)
+        || (operation == EVP_PKEY_OP_KEYGEN
+            && ctx->pmeth->keygen == NULL))
+        goto not_supported;
+
+    ret = 1;
+    switch (operation) {
+    case EVP_PKEY_OP_PARAMGEN:
+        if (ctx->pmeth->paramgen_init != NULL)
+            ret = ctx->pmeth->paramgen_init(ctx);
+        break;
+    case EVP_PKEY_OP_KEYGEN:
+        if (ctx->pmeth->keygen_init != NULL)
+            ret = ctx->pmeth->keygen_init(ctx);
+        break;
+    }
+#endif
 
 end:
     if (ret <= 0 && ctx != NULL) {
@@ -125,7 +148,7 @@ int EVP_PKEY_generate(EVP_PKEY_CTX *ctx, EVP_PKEY **ppkey)
     }
 
     if (ctx->op.keymgmt.genctx == NULL)
-        goto not_supported;
+        goto legacy;
 
     /*
      * Assigning gentmp to ctx->keygen_info is something our legacy
@@ -166,7 +189,7 @@ int EVP_PKEY_generate(EVP_PKEY_CTX *ctx, EVP_PKEY **ppkey)
 
     ctx->keygen_info = NULL;
 
-#if !defined(FIPS_MODULE) && !defined(OPENSSL_NO_DEPRECATED_3_6)
+#ifndef FIPS_MODULE
     /* In case |*ppkey| was originally a legacy key */
     if (ret)
         evp_pkey_free_legacy(*ppkey);
@@ -178,6 +201,33 @@ int EVP_PKEY_generate(EVP_PKEY_CTX *ctx, EVP_PKEY **ppkey)
     (*ppkey)->type = ctx->legacy_keytype;
 
     goto end;
+
+legacy:
+#ifdef FIPS_MODULE
+    goto not_supported;
+#else
+    /*
+     * If we get here then we're using legacy paramgen/keygen. In that case
+     * the pkey in ctx (if there is one) had better not be provided (because the
+     * legacy methods may not know how to handle it). However we can only get
+     * here if ctx->op.keymgmt.genctx == NULL, but that should never be the case
+     * if ctx->pkey is provided because we don't allow this when we initialise
+     * the ctx.
+     */
+    if (ctx->pkey != NULL && !ossl_assert(!evp_pkey_is_provided(ctx->pkey)))
+        goto not_accessible;
+
+    switch (ctx->operation) {
+    case EVP_PKEY_OP_PARAMGEN:
+        ret = ctx->pmeth->paramgen(ctx, *ppkey);
+        break;
+    case EVP_PKEY_OP_KEYGEN:
+        ret = ctx->pmeth->keygen(ctx, *ppkey);
+        break;
+    default:
+        goto not_supported;
+    }
+#endif
 
 end:
     if (ret <= 0) {
@@ -195,6 +245,12 @@ not_initialized:
     ERR_raise(ERR_LIB_EVP, EVP_R_OPERATION_NOT_INITIALIZED);
     ret = -1;
     goto end;
+#ifndef FIPS_MODULE
+not_accessible:
+    ERR_raise(ERR_LIB_EVP, EVP_R_INACCESSIBLE_DOMAIN_PARAMETERS);
+    ret = -1;
+    goto end;
+#endif
 }
 
 int EVP_PKEY_paramgen(EVP_PKEY_CTX *ctx, EVP_PKEY **ppkey)
@@ -259,10 +315,7 @@ EVP_PKEY *EVP_PKEY_new_mac_key(int type, ENGINE *e,
 {
     EVP_PKEY_CTX *mac_ctx = NULL;
     EVP_PKEY *mac_key = NULL;
-
-    if (!ossl_assert(e == NULL))
-        return NULL;
-    mac_ctx = EVP_PKEY_CTX_new_id(type, NULL);
+    mac_ctx = EVP_PKEY_CTX_new_id(type, e);
     if (!mac_ctx)
         return NULL;
     if (EVP_PKEY_keygen_init(mac_ctx) <= 0)

@@ -13,6 +13,7 @@
 
 #include "include/v8config.h"
 #include "src/common/globals.h"
+#include "src/flags/flags.h"
 #include "src/torque/ast.h"
 #include "src/torque/constants.h"
 #include "src/torque/declarations.h"
@@ -88,11 +89,6 @@ class BuildFlags : public base::ContextualClass<BuildFlags> {
     build_flags_["V8_ENABLE_SEEDED_ARRAY_INDEX_HASH"] = true;
 #else
     build_flags_["V8_ENABLE_SEEDED_ARRAY_INDEX_HASH"] = false;
-#endif
-#ifdef V8_IS_TSAN
-    build_flags_["V8_IS_TSAN"] = true;
-#else
-    build_flags_["V8_IS_TSAN"] = false;
 #endif
   }
   static bool GetFlag(const std::string& name, const char* production) {
@@ -1042,11 +1038,13 @@ std::optional<ParseResult> MakeClassDeclaration(
       child_results,
       {ANNOTATION_ABSTRACT, ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT,
        ANNOTATION_DO_NOT_GENERATE_CPP_CLASS, ANNOTATION_CUSTOM_CPP_CLASS,
-       ANNOTATION_CUSTOM_MAP, ANNOTATION_EXPORT,
-       ANNOTATION_DO_NOT_GENERATE_CAST,
+       ANNOTATION_CUSTOM_MAP, ANNOTATION_GENERATE_BODY_DESCRIPTOR,
+       ANNOTATION_EXPORT, ANNOTATION_DO_NOT_GENERATE_CAST,
        ANNOTATION_DO_NOT_GENERATE_INSTANCE_TYPE_CHECK,
+       ANNOTATION_GENERATE_UNIQUE_MAP, ANNOTATION_GENERATE_FACTORY_FUNCTION,
        ANNOTATION_HIGHEST_INSTANCE_TYPE_WITHIN_PARENT,
        ANNOTATION_LOWEST_INSTANCE_TYPE_WITHIN_PARENT,
+       ANNOTATION_CPP_OBJECT_DEFINITION,
        ANNOTATION_CPP_OBJECT_LAYOUT_DEFINITION},
       {ANNOTATION_RESERVE_BITS_IN_INSTANCE_TYPE,
        ANNOTATION_INSTANCE_TYPE_VALUE});
@@ -1057,14 +1055,17 @@ std::optional<ParseResult> MakeClassDeclaration(
   if (annotations.Contains(ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT)) {
     flags |= ClassFlag::kHasSameInstanceTypeAsParent;
   }
+  if (annotations.Contains(ANNOTATION_DO_NOT_GENERATE_INSTANCE_TYPE_CHECK)) {
+    flags |= ClassFlag::kDoNotGenerateInstanceTypeCheck;
+  }
   bool do_not_generate_cpp_class =
       annotations.Contains(ANNOTATION_DO_NOT_GENERATE_CPP_CLASS);
   if (annotations.Contains(ANNOTATION_CUSTOM_CPP_CLASS)) {
     Error(
         "@customCppClass is deprecated. Use 'extern' instead. "
-        "@generateUniqueMap accomplishes most of what '@export "
-        "@customCppClass' "
-        "used to.");
+        "@generateBodyDescriptor, @generateUniqueMap, and "
+        "@generateFactoryFunction accomplish most of what '@export "
+        "@customCppClass' used to.");
   }
   if (annotations.Contains(ANNOTATION_CUSTOM_MAP)) {
     Error(
@@ -1074,8 +1075,14 @@ std::optional<ParseResult> MakeClassDeclaration(
   if (annotations.Contains(ANNOTATION_DO_NOT_GENERATE_CAST)) {
     flags |= ClassFlag::kDoNotGenerateCast;
   }
-  if (annotations.Contains(ANNOTATION_DO_NOT_GENERATE_INSTANCE_TYPE_CHECK)) {
-    flags |= ClassFlag::kDoNotGenerateInstanceTypeCheck;
+  if (annotations.Contains(ANNOTATION_GENERATE_BODY_DESCRIPTOR)) {
+    flags |= ClassFlag::kGenerateBodyDescriptor;
+  }
+  if (annotations.Contains(ANNOTATION_GENERATE_UNIQUE_MAP)) {
+    flags |= ClassFlag::kGenerateUniqueMap;
+  }
+  if (annotations.Contains(ANNOTATION_GENERATE_FACTORY_FUNCTION)) {
+    flags |= ClassFlag::kGenerateFactoryFunction;
   }
   if (annotations.Contains(ANNOTATION_EXPORT)) {
     flags |= ClassFlag::kExport;
@@ -1085,6 +1092,9 @@ std::optional<ParseResult> MakeClassDeclaration(
   }
   if (annotations.Contains(ANNOTATION_LOWEST_INSTANCE_TYPE_WITHIN_PARENT)) {
     flags |= ClassFlag::kLowestInstanceTypeWithinParent;
+  }
+  if (annotations.Contains(ANNOTATION_CPP_OBJECT_DEFINITION)) {
+    flags |= ClassFlag::kCppObjectDefinition;
   }
   if (annotations.Contains(ANNOTATION_CPP_OBJECT_LAYOUT_DEFINITION)) {
     flags |= ClassFlag::kCppObjectLayoutDefinition;
@@ -1122,8 +1132,7 @@ std::optional<ParseResult> MakeClassDeclaration(
     flags |= ClassFlag::kUndefinedLayout;
   }
 
-  const bool is_shape = (flags & ClassFlag::kIsShape) != 0;
-  if (is_extern && body.has_value() && !is_shape) {
+  if (is_extern && body.has_value()) {
     if (!do_not_generate_cpp_class) {
       flags |= ClassFlag::kGenerateCppClassDefinitions;
     }
@@ -1161,7 +1170,7 @@ std::optional<ParseResult> MakeClassDeclaration(
   if (transient) abstract_type_flags |= AbstractTypeFlag::kTransient;
   TypeDeclaration* constexpr_decl = MakeNode<AbstractTypeDeclaration>(
       constexpr_name, abstract_type_flags, constexpr_extends,
-      generates ? *generates : name->value);
+      generates ? UnwrapTNodeTypeName(*generates) : name->value);
   constexpr_decl->pos = name->pos;
   result.push_back(constexpr_decl);
 
@@ -1274,17 +1283,14 @@ std::optional<ParseResult> MakeStructDeclaration(
 
 std::optional<ParseResult> MakeBitFieldStructDeclaration(
     ParseResultIterator* child_results) {
-  AnnotationSet annotations(child_results, {}, {ANNOTATION_CPP_SCOPE});
-  std::optional<std::string> cpp_scope =
-      annotations.GetStringParam(ANNOTATION_CPP_SCOPE);
   auto name = child_results->NextAs<Identifier*>();
   if (!IsValidTypeName(name->value)) {
     NamingConventionError("Bitfield struct", name, "UpperCamelCase");
   }
   auto extends = child_results->NextAs<TypeExpression*>();
   auto fields = child_results->NextAs<std::vector<BitFieldDeclaration>>();
-  Declaration* decl = MakeNode<BitFieldStructDeclaration>(
-      name, extends, std::move(fields), std::move(cpp_scope));
+  Declaration* decl =
+      MakeNode<BitFieldStructDeclaration>(name, extends, std::move(fields));
   return ParseResult{decl};
 }
 
@@ -1822,9 +1828,8 @@ std::optional<ParseResult> MakeVarDeclarationStatement(
 
   auto type = child_results->NextAs<std::optional<TypeExpression*>>();
   std::optional<Expression*> initializer;
-  if (child_results->HasNext()) {
+  if (child_results->HasNext())
     initializer = child_results->NextAs<Expression*>();
-  }
   if (!initializer && !type) {
     ReportError("Declaration is missing a type.");
   }
@@ -2897,8 +2902,8 @@ struct TorqueGrammar : Grammar {
             ListAllowIfAnnotation<StructFieldExpression>(&structField),
             Token("}")},
            AsSingletonVector<Declaration*, MakeStructDeclaration>()),
-      Rule({annotations, Token("bitfield"), Token("struct"), &name,
-            Token("extends"), &type, Token("{"),
+      Rule({Token("bitfield"), Token("struct"), &name, Token("extends"), &type,
+            Token("{"),
             ListAllowIfAnnotation<BitFieldDeclaration>(&bitFieldDeclaration),
             Token("}")},
            AsSingletonVector<Declaration*, MakeBitFieldStructDeclaration>()),

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ class LIEF_API VolatileMetadata {
     return access_table_rva_;
   }
 
-  const access_table_t& access_table() const LIEF_LIFETIMEBOUND {
+  const access_table_t& access_table() const {
     return access_table_;
   }
 
@@ -89,55 +89,55 @@ class LIEF_API VolatileMetadata {
   }
 
   uint32_t info_ranges_size() const {
-    static_assert(sizeof(range_t) == 8,
-                  "Can't be used for computing the raw size");
+    static_assert(sizeof(range_t) == 8, "Can't be used for computing the raw size");
     return info_ranges_.size() * sizeof(range_t);
   }
 
-  it_const_info_ranges_t info_ranges() const LIEF_LIFETIMEBOUND {
+  it_const_info_ranges_t info_ranges() const {
     return info_ranges_;
   }
 
-  it_info_ranges_t info_ranges() LIEF_LIFETIMEBOUND {
+  it_info_ranges_t info_ranges() {
     return info_ranges_;
   }
 
-  VolatileMetadata& size(uint32_t value) LIEF_LIFETIMEBOUND {
+  VolatileMetadata& size(uint32_t value) {
     size_ = value;
     return *this;
   }
 
-  VolatileMetadata& min_version(uint16_t min) LIEF_LIFETIMEBOUND {
+  VolatileMetadata& min_version(uint16_t min) {
     min_version_ = min;
     return *this;
   }
 
-  VolatileMetadata& max_version(uint16_t max) LIEF_LIFETIMEBOUND {
+  VolatileMetadata& max_version(uint16_t max) {
     max_version_ = max;
     return *this;
   }
 
-  VolatileMetadata& access_table_rva(uint32_t value) LIEF_LIFETIMEBOUND {
+  VolatileMetadata& access_table_rva(uint32_t value) {
     access_table_rva_ = value;
     return *this;
   }
 
-  VolatileMetadata& info_range_rva(uint32_t value) LIEF_LIFETIMEBOUND {
+  VolatileMetadata& info_range_rva(uint32_t value) {
     info_range_rva_ = value;
     return *this;
   }
 
   std::string to_string() const;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const VolatileMetadata& meta) {
+  LIEF_API friend
+    std::ostream& operator<<(std::ostream& os, const VolatileMetadata& meta)
+  {
     os << meta.to_string();
     return os;
   }
 
-  /// @private
-  LIEF_LOCAL static std::unique_ptr<VolatileMetadata> parse(Parser& ctx,
-                                                            BinaryStream& stream);
+  /// \private
+  LIEF_LOCAL static std::unique_ptr<VolatileMetadata>
+    parse(Parser& ctx, BinaryStream& stream);
 
   private:
   uint32_t size_ = 0;
@@ -149,6 +149,7 @@ class LIEF_API VolatileMetadata {
 
   access_table_t access_table_;
   info_ranges_t info_ranges_;
+
 };
 }
 }

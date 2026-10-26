@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -12,7 +12,8 @@
 #include <openssl/rand.h>
 
 #if defined(OPENSSL_SYS_WINDOWS) || defined(OPENSSL_SYS_WIN32)
-#ifndef OPENSSL_NO_DEPRECATED_1_1_0
+#include <windows.h>
+#if OPENSSL_API_COMPAT < 0x10100000L
 
 #define DEPRECATED_RAND_FUNCTIONS_DEFINED
 

@@ -33,9 +33,8 @@ export class TurboshaftGraphPhase extends Phase {
   transform: { x: number, y: number, scale: number };
 
   constructor(name: string, dataJson, nodeMap: Array<GraphNode | TurboshaftGraphOperation>,
-              sources: Array<Source>, inlinings: Array<InliningPosition>,
-              type: PhaseType = PhaseType.TurboshaftGraph) {
-    super(name, type);
+              sources: Array<Source>, inlinings: Array<InliningPosition>) {
+    super(name, PhaseType.TurboshaftGraph);
     this.stateType = GraphStateType.NeedToFullRebuild;
     this.instructionsPhase = new InstructionsPhase();
     this.customData = new TurboshaftCustomData();
@@ -68,19 +67,14 @@ export class TurboshaftGraphPhase extends Phase {
   private parseBlocksFromJSON(blocksJson): void {
     for (const blockJson of blocksJson) {
       const block = new TurboshaftGraphBlock(blockJson.id, blockJson.type,
-        blockJson.deferred, blockJson.predecessors, blockJson.exception);
+        blockJson.deferred, blockJson.predecessors);
       this.data.blocks.push(block);
       this.blockIdToBlockMap[block.identifier()] = block;
     }
     for (const block of this.blockIdToBlockMap) {
-      if (!block) continue;
       for (const [idx, predecessor] of block.predecessors.entries()) {
         const source = this.blockIdToBlockMap[predecessor];
-        if (!source) {
-          console.warn(`Predecessor block ${predecessor} of block ${block.id} not found.`);
-          continue;
-        }
-        const edge = new TurboshaftGraphEdge(block, idx, source, "control");
+        const edge = new TurboshaftGraphEdge(block, idx, source);
         block.inputs.push(edge);
         source.outputs.push(edge);
       }
@@ -117,7 +111,7 @@ export class TurboshaftGraphPhase extends Phase {
       }
 
       const node = new TurboshaftGraphOperation(nodeJson.id, nodeJson.title, block, sourcePosition,
-        bytecodePosition, origin, nodeJson.op_effects, nodeJson.properties);
+        bytecodePosition, origin, nodeJson.op_effects);
 
       block.nodes.push(node);
       this.data.nodes.push(node);
@@ -145,7 +139,6 @@ export class TurboshaftGraphPhase extends Phase {
       }
     }
     for (const block of this.blockIdToBlockMap) {
-      if (!block) continue;
       block.initCollapsedLabel();
     }
   }
@@ -154,12 +147,7 @@ export class TurboshaftGraphPhase extends Phase {
     for (const edgeJson of edgesJson) {
       const target = this.nodeIdToNodeMap[edgeJson.target];
       const source = this.nodeIdToNodeMap[edgeJson.source];
-      if (!target || !source) {
-        console.warn(`Edge from ${edgeJson.source} to ${edgeJson.target} has missing source or target.`);
-        continue;
-      }
-      const index = target.inputs.length;
-      const edge = new TurboshaftGraphEdge(target, index, source, edgeJson.type);
+      const edge = new TurboshaftGraphEdge(target, -1, source);
       this.data.edges.push(edge);
       target.inputs.push(edge);
       source.outputs.push(edge);

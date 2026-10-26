@@ -24,9 +24,8 @@ namespace internal {
 static Tagged<HeapObject> AllocateUnaligned(MainAllocator* allocator,
                                             SpaceWithLinearArea* space,
                                             int size) {
-  AllocationResult allocation =
-      allocator->AllocateRaw(SafeHeapObjectSize(size), kTaggedAligned,
-                             AllocationOrigin::kRuntime, AllocationHint());
+  AllocationResult allocation = allocator->AllocateRaw(
+      size, kTaggedAligned, AllocationOrigin::kRuntime, AllocationHint());
   CHECK(!allocation.IsFailure());
   Tagged<HeapObject> filler;
   CHECK(allocation.To(&filler));
@@ -78,9 +77,8 @@ TEST_F(SpacesTest, CompactionSpaceMerge) {
   for (int i = 0; i < kNumObjects; i++) {
     Tagged<HeapObject> object =
         allocator
-            .AllocateRaw(SafeHeapObjectSize(kMaxRegularHeapObjectSize),
-                         kTaggedAligned, AllocationOrigin::kGC,
-                         AllocationHint())
+            .AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
+                         AllocationOrigin::kGC, AllocationHint())
             .ToObjectChecked();
     heap->CreateFillerObjectAt(object.address(), kMaxRegularHeapObjectSize);
   }
@@ -120,9 +118,8 @@ TEST_F(SpacesTest, WriteBarriers) {
 
     Tagged<HeapObject> object =
         allocator
-            .AllocateRaw(SafeHeapObjectSize(kMaxRegularHeapObjectSize),
-                         kTaggedAligned, AllocationOrigin::kGC,
-                         AllocationHint())
+            .AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
+                         AllocationOrigin::kGC, AllocationHint())
             .ToObjectChecked();
     heap->CreateFillerObjectAt(object.address(), kMaxRegularHeapObjectSize);
     EXPECT_EQ(1, compaction_space->CountTotalPages());

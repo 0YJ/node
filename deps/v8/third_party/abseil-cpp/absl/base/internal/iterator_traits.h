@@ -37,7 +37,7 @@ struct IteratorCategory {};
 template <typename Iterator>
 struct IteratorCategory<
     Iterator,
-    std::void_t<typename std::iterator_traits<Iterator>::iterator_category>> {
+    absl::void_t<typename std::iterator_traits<Iterator>::iterator_category>> {
   using type = typename std::iterator_traits<Iterator>::iterator_category;
 };
 
@@ -47,7 +47,7 @@ struct IteratorConceptImpl : IteratorCategory<Iterator> {};
 template <typename Iterator>
 struct IteratorConceptImpl<
     Iterator,
-    std::void_t<typename std::iterator_traits<Iterator>::iterator_concept>> {
+    absl::void_t<typename std::iterator_traits<Iterator>::iterator_concept>> {
   using type = typename std::iterator_traits<Iterator>::iterator_concept;
 };
 

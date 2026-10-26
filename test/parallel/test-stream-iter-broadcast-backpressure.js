@@ -3,8 +3,7 @@
 
 const common = require('../common');
 const assert = require('assert');
-const { broadcast, ondrain, text } = require('stream/iter');
-const { setImmediate } = require('timers/promises');
+const { broadcast, text } = require('stream/iter');
 
 // =============================================================================
 // Backpressure policies
@@ -48,36 +47,6 @@ async function testDropNewest() {
   assert.strictEqual(data, 'K'.repeat(16384));
 }
 
-async function testDropPoliciesReportPhysicalCapacity() {
-  const chunk = new Uint8Array(16384);
-
-  for (const backpressure of ['drop-oldest', 'drop-newest']) {
-    const { writer, broadcast: bc } = broadcast({
-      budget: chunk.byteLength,
-      backpressure,
-    });
-    const iterator = bc.push()[Symbol.asyncIterator]();
-
-    assert.strictEqual(writer.writeSync(chunk), true);
-    assert.strictEqual(writer.canWrite, false);
-
-    let drained = false;
-    const drain = ondrain(writer);
-    drain.then(common.mustCall(() => { drained = true; }));
-
-    // Drop policies still accept writes despite having no physical capacity.
-    assert.strictEqual(writer.writeSync(chunk), true);
-    assert.strictEqual(writer.canWrite, false);
-    await setImmediate();
-    assert.strictEqual(drained, false);
-
-    assert.strictEqual((await iterator.next()).done, false);
-    assert.strictEqual(await drain, true);
-    assert.strictEqual(writer.canWrite, true);
-    bc.cancel();
-  }
-}
-
 // =============================================================================
 // Block backpressure
 // =============================================================================
@@ -94,14 +63,14 @@ async function testBlockBackpressure() {
   // Next write should block
   let writeResolved = false;
   const writePromise = writer.write(kChunk).then(() => { writeResolved = true; });
-  await setImmediate();
+  await new Promise(setImmediate);
   assert.strictEqual(writeResolved, false);
 
   // Drain consumer to unblock the pending write
   const iter = consumer[Symbol.asyncIterator]();
   const first = await iter.next();
   assert.strictEqual(first.done, false);
-  await setImmediate();
+  await new Promise(setImmediate);
   assert.strictEqual(writeResolved, true);
 
   writer.endSync();
@@ -123,7 +92,7 @@ async function testBlockBackpressureContent() {
 
   writer.writeSync(chunk1);
   const writePromise = writer.write(chunk2);
-  await setImmediate();
+  await new Promise(setImmediate);
 
   // Read all and verify content
   const iter = consumer[Symbol.asyncIterator]();
@@ -159,7 +128,11 @@ async function testStrictBackpressureOverflow() {
   });
 
   writer.fail();
-  await assert.rejects(pending, (reason) => reason === undefined);
+  await assert.rejects(pending, {
+    name: 'TypeError',
+    code: 'ERR_INVALID_STATE',
+    message: 'Invalid state: Failed',
+  });
 }
 
 async function testEndDrainsPendingWrite() {
@@ -192,7 +165,7 @@ async function testEndDrainsPendingWrite() {
 
   let endResolved = false;
   endPromise.then(common.mustCall(() => { endResolved = true; }));
-  await setImmediate();
+  await new Promise(setImmediate);
   assert.strictEqual(endResolved, false);
 
   assert.strictEqual((await iter.next()).done, true);
@@ -296,7 +269,6 @@ async function testEndSyncReturnValue() {
 Promise.all([
   testDropOldest(),
   testDropNewest(),
-  testDropPoliciesReportPhysicalCapacity(),
   testBlockBackpressure(),
   testBlockBackpressureContent(),
   testStrictBackpressureOverflow(),

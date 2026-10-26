@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 //
 // Flags: --allow-natives-syntax --turbolev --turbofan
-// Flags: --typed-array-length-loading --multi-mapped-mock-allocator
+// Flags: --typed-array-length-loading
 
 function foo(size) {
   let a = new Uint8Array(size);

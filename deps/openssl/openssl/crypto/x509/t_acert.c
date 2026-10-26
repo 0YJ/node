@@ -14,11 +14,9 @@
 #include <openssl/objects.h>
 #include <openssl/x509_acert.h>
 
-#include <crypto/asn1.h>
-
 static int print_attribute(BIO *bp, X509_ATTRIBUTE *a)
 {
-    const ASN1_OBJECT *aobj;
+    ASN1_OBJECT *aobj;
     int i, j, count;
     int ret = 0;
 
@@ -42,7 +40,7 @@ static int print_attribute(BIO *bp, X509_ATTRIBUTE *a)
         goto err;
 
     for (i = 0; i < count; i++) {
-        const ASN1_TYPE *at;
+        ASN1_TYPE *at;
         int type;
         ASN1_BIT_STRING *bs;
 
@@ -244,8 +242,8 @@ int X509_ACERT_print_ex(BIO *bp, X509_ACERT *x, unsigned long nmflags,
             if (BIO_printf(bp, "%8sExtensions:\n", "") <= 0)
                 goto err;
             for (i = 0; i < sk_X509_EXTENSION_num(exts); i++) {
-                const ASN1_OBJECT *obj;
-                const X509_EXTENSION *ex;
+                ASN1_OBJECT *obj;
+                X509_EXTENSION *ex;
                 int critical;
 
                 ex = sk_X509_EXTENSION_value(exts, i);

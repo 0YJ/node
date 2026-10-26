@@ -25,9 +25,9 @@ if (%Is64Bit()) {
   %OptimizeMaglevOnNextCall(foo);
   foo(100);
   assertEquals(100, scriptContextSlot);
-  assertMaglevved(foo);
+  assertTrue(isMaglevved(foo));
 
   foo(largeLength);
   assertEquals(largeLength, scriptContextSlot);
-  assertMaglevved(foo);
+  assertTrue(isMaglevved(foo));
 }

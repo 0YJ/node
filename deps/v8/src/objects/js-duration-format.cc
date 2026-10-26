@@ -13,7 +13,6 @@
 #include <string>
 #include <string_view>
 
-#include "src/base/logging.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
@@ -44,7 +43,7 @@ using temporal::DurationRecord;
 
 namespace {
 
-// https://tc39.es/ecma262/#sec-getdurationunitoptions
+// #sec-getdurationunitoptions
 enum class StylesList { k3Styles, k4Styles, k5Styles };
 enum class Unit {
   kYears,
@@ -244,12 +243,6 @@ JSDurationFormat::Separator GetSeparator(const icu::Locale& l) {
 MaybeDirectHandle<JSDurationFormat> JSDurationFormat::New(
     Isolate* isolate, DirectHandle<Map> map, DirectHandle<Object> locales,
     DirectHandle<Object> input_options, const char* method_name) {
-  StackLimitCheck stack_check(isolate);
-  if (stack_check.JsHasOverflowed(16 * KB)) {
-    isolate->StackOverflow();
-    return {};
-  }
-
   Factory* factory = isolate->factory();
 
   // 3. Let requestedLocales be ? CanonicalizeLocaleList(locales).
@@ -559,10 +552,10 @@ DirectHandle<JSObject> JSDurationFormat::ResolvedOptions(
       factory->NewJSObject(isolate->object_function());
 
   DirectHandle<String> locale = factory->NewStringFromAsciiChecked(
-      Intl::ToLanguageTag(*format->icu_locale()->ptr()).FromJust().c_str());
+      Intl::ToLanguageTag(*format->icu_locale()->raw()).FromJust().c_str());
   UErrorCode status = U_ZERO_ERROR;
   icu::UnicodeString skeleton =
-      format->icu_number_formatter()->ptr()->toSkeleton(status);
+      format->icu_number_formatter()->raw()->toSkeleton(status);
   DCHECK(U_SUCCESS(status));
 
   DirectHandle<String> numbering_system;
@@ -664,7 +657,6 @@ char16_t SeparatorToChar(JSDurationFormat::Separator separator) {
     case JSDurationFormat::Separator::kArabicDecimalSeparator:
       return u'\u066B';
   }
-  UNREACHABLE();
 }
 
 bool FormattedToParts(const char*, icu::number::FormattedNumber&, bool, bool,
@@ -738,9 +730,8 @@ bool OutputLongShortOrNarrow(const char* type, double value,
                              JSDurationFormat::Separator separator,
                              std::vector<std::vector<Part>>* parts,
                              std::vector<icu::UnicodeString>* strings) {
-  if (value == 0 && display == JSDurationFormat::Display::kAuto) {
+  if (value == 0 && display == JSDurationFormat::Display::kAuto)
     return display_negative_sign;
-  }
   return Output(type, value, fmt, addToLast, display_negative_sign,
                 negative_duration, separator, parts, strings);
 }
@@ -753,9 +744,8 @@ bool OutputLongShortNarrowOrNumeric(
     JSDurationFormat::Separator separator,
     std::vector<std::vector<Part>>* parts,
     std::vector<icu::UnicodeString>* strings) {
-  if (value == 0 && display == JSDurationFormat::Display::kAuto) {
+  if (value == 0 && display == JSDurationFormat::Display::kAuto)
     return display_negative_sign;
-  }
   if (style == JSDurationFormat::FieldStyle::kNumeric) {
     return Output(type, value,
                   fmt.grouping(UNumberGroupingStrategy::UNUM_GROUPING_OFF),
@@ -1072,7 +1062,7 @@ MaybeDirectHandle<T> PartitionDurationFormatPattern(
   // 9. Let lf be ! Construct(%ListFormat%, « durationFormat.[[Locale]], lfOpts
   // »).
   UErrorCode status = U_ZERO_ERROR;
-  icu::Locale icu_locale = *df->icu_locale()->ptr();
+  icu::Locale icu_locale = *df->icu_locale()->raw();
   std::unique_ptr<icu::ListFormatter> formatter(
       icu::ListFormatter::createInstance(icu_locale, type, list_style, status));
   DCHECK(U_SUCCESS(status));
@@ -1082,7 +1072,7 @@ MaybeDirectHandle<T> PartitionDurationFormatPattern(
   std::vector<icu::UnicodeString> string_list;
 
   DurationRecordToListOfFormattedNumber(
-      df, *(df->icu_number_formatter()->ptr()), record, parts, &string_list);
+      df, *(df->icu_number_formatter()->raw()), record, parts, &string_list);
 
   icu::FormattedList formatted = formatter->formatStringsToValue(
       string_list.data(), static_cast<int32_t>(string_list.size()), status);
@@ -1091,7 +1081,7 @@ MaybeDirectHandle<T> PartitionDurationFormatPattern(
 }
 
 #ifndef V8_TEMPORAL_SUPPORT
-// https://tc39.es/ecma262/#sec-todurationrecord
+// #sec-todurationrecord
 // ToDurationRecord is almost the same as temporal::ToPartialDuration
 // except:
 // 1) In the beginning it will throw RangeError if the type of input is String,

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -83,22 +83,22 @@ class LIEF_API DynamicRelocation {
     return symbol_;
   }
 
-  const DynamicFixup* fixups() const LIEF_LIFETIMEBOUND {
+  const DynamicFixup* fixups() const {
     return fixups_.get();
   }
 
   /// Return fixups information, where the interpretation may depend on the
   /// symbol's value
-  DynamicFixup* fixups() LIEF_LIFETIMEBOUND {
+  DynamicFixup* fixups() {
     return fixups_.get();
   }
 
-  DynamicRelocation& symbol(uint64_t value) LIEF_LIFETIMEBOUND {
+  DynamicRelocation& symbol(uint64_t value) {
     symbol_ = value;
     return *this;
   }
 
-  DynamicRelocation& fixups(std::unique_ptr<DynamicFixup> F) LIEF_LIFETIMEBOUND;
+  DynamicRelocation& fixups(std::unique_ptr<DynamicFixup> F);
 
   virtual std::string to_string() const = 0;
 
@@ -117,8 +117,9 @@ class LIEF_API DynamicRelocation {
     return const_cast<DynamicRelocation*>(this)->as<T>();
   }
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const DynamicRelocation& reloc) {
+  LIEF_API friend
+    std::ostream& operator<<(std::ostream& os, const DynamicRelocation& reloc)
+  {
     os << reloc.to_string();
     return os;
   }

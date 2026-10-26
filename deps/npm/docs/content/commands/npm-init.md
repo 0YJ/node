@@ -157,11 +157,10 @@ homepage.
 
 #### `init-license`
 
-* Default: ""
+* Default: "ISC"
 * Type: String
 
-The value `npm init` should use by default for the package license. If not
-set, the license field will be omitted from new packages.
+The value `npm init` should use by default for the package license.
 
 
 

@@ -17,21 +17,15 @@
 #include <assert.h>
 #include <string.h>
 #include <wchar.h>
-
-#include <algorithm>
 #include <cctype>
 #include <cstdint>
+
+#include <algorithm>
 #include <initializer_list>
 #include <limits>
 #include <ostream>
 #include <string>
 #include <unordered_set>
-
-#include "absl/base/attributes.h"
-#include "absl/base/config.h"
-#include "absl/strings/internal/str_format/constexpr_parser.h"
-#include "absl/strings/internal/str_format/extension.h"
-#include "absl/strings/string_view.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN

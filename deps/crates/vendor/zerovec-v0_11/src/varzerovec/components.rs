@@ -279,19 +279,11 @@ impl<'a, T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecComponents<'a, T, F>
         };
         // The indices array is one element shorter since the first index is always 0,
         // so we use len_minus_one
-        //
-        // We do the math in u32 space so that we can be sure that VZVs constructed
-        // on 64 bit computers can still be used on 32 bit ones.
-        let indices_len = u32::try_from(F::Index::SIZE)
-            .ok()
-            .and_then(|x| x.checked_mul(len_minus_one))
-            .and_then(|x| usize::try_from(x).ok())
-            .ok_or(VarZeroVecFormatError::Metadata)?;
         let indices_bytes = slice
-            .get(..indices_len)
+            .get(..F::Index::SIZE * (len_minus_one as usize))
             .ok_or(VarZeroVecFormatError::Metadata)?;
         let things = slice
-            .get(indices_len..)
+            .get(F::Index::SIZE * (len_minus_one as usize)..)
             .ok_or(VarZeroVecFormatError::Metadata)?;
 
         let borrowed = VarZeroVecComponents {
@@ -330,7 +322,6 @@ impl<'a, T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecComponents<'a, T, F>
 
         let len = len_ule.get_unchecked(0).iule_to_usize();
         let len_u32 = len as u32;
-        debug_assert_eq!(len, len_u32 as usize);
 
         // Safety: This method requires the bytes to have passed through `parse_bytes()`
         // whereas we're calling something that asks for `parse_bytes_with_length()`.
@@ -360,10 +351,8 @@ impl<'a, T: VarULE + ?Sized, F: VarZeroVecFormat> VarZeroVecComponents<'a, T, F>
         };
         // The indices array is one element shorter since the first index is always 0,
         // so we use len_minus_one
-        let indices_len = F::Index::SIZE.wrapping_mul(len_minus_one as usize);
-        debug_assert!(F::Index::SIZE.checked_mul(len_minus_one as usize).is_some());
-        let indices_bytes = slice.get_unchecked(..indices_len);
-        let things = slice.get_unchecked(indices_len..);
+        let indices_bytes = slice.get_unchecked(..F::Index::SIZE * (len_minus_one as usize));
+        let things = slice.get_unchecked(F::Index::SIZE * (len_minus_one as usize)..);
 
         VarZeroVecComponents {
             len,
@@ -740,14 +729,7 @@ where
     // idx_offset = offset from the start of the buffer for the next index
     let mut idx_offset: usize = 0;
     // first_dat_offset = offset from the start of the buffer of the first data block
-    #[expect(
-        clippy::expect_used,
-        reason = "Function contract allows panicky behavior"
-    )]
-    let indices_size = F::Index::SIZE
-        .checked_mul(elements.len() - 1)
-        .expect(F::Index::TOO_LARGE_ERROR);
-    let first_dat_offset: usize = idx_offset + indices_size;
+    let first_dat_offset: usize = idx_offset + (elements.len() - 1) * F::Index::SIZE;
     // dat_offset = offset from the start of the buffer of the next data block
     let mut dat_offset: usize = first_dat_offset;
 
@@ -770,24 +752,14 @@ where
         }
 
         let dat_limit = dat_offset + element_len;
-        #[expect(
-            clippy::indexing_slicing,
-            reason = "Function contract allows panicky behavior"
-        )]
+        #[expect(clippy::indexing_slicing)] // Function contract allows panicky behavior
         let dat_slice = &mut output[dat_offset..dat_limit];
         element.encode_var_ule_write(dat_slice);
         debug_assert_eq!(T::validate_bytes(dat_slice), Ok(()));
         dat_offset = dat_limit;
     }
 
-    #[expect(
-        clippy::expect_used,
-        reason = "Function contract allows panicky behavior"
-    )]
-    let indices_size = F::Index::SIZE
-        .checked_mul(elements.len() - 1)
-        .expect(F::Index::TOO_LARGE_ERROR);
-    debug_assert_eq!(idx_offset, indices_size);
+    debug_assert_eq!(idx_offset, F::Index::SIZE * (elements.len() - 1));
     assert_eq!(dat_offset, output.len());
 }
 

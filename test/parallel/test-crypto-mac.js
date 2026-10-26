@@ -8,10 +8,10 @@ if (!common.hasCrypto) {
   common.skip('missing crypto');
 }
 
-const { isBoringSSL } = require('../common/crypto');
+const { hasOpenSSL, isBoringSSL } = require('../common/crypto');
 
-if (isBoringSSL) {
-  common.skip('OpenSSL EVP_MAC support is required');
+if (!hasOpenSSL(3) || isBoringSSL) {
+  common.skip('OpenSSL 3 EVP_MAC support is required');
 }
 
 const assert = require('node:assert');
@@ -28,11 +28,20 @@ const { Transform } = require('node:stream');
 
 assert.strictEqual(crypto.Mac, undefined);
 
-const macs = getMacs();
-assert(macs.every((name) => name === name.toLowerCase()));
-assert(macs.every((name) => !/^\d+(?:\.\d+)+$/.test(name)));
+const firstMacs = getMacs();
+const secondMacs = getMacs();
 
-const availableMacs = new Set(macs);
+assert.notStrictEqual(firstMacs, secondMacs);
+assert.deepStrictEqual(firstMacs, [...firstMacs].sort());
+assert.strictEqual(firstMacs.length, new Set(firstMacs).size);
+assert(firstMacs.every((name) => typeof name === 'string'));
+assert(firstMacs.every((name) => name === name.toLowerCase()));
+assert(firstMacs.every((name) => !/^\d+(?:\.\d+)+$/.test(name)));
+
+firstMacs.push('not-a-real-mac');
+assert(!getMacs().includes('not-a-real-mac'));
+
+const availableMacs = new Set(secondMacs);
 if (!availableMacs.has('hmac')) {
   common.printSkipMessage('HMAC is not available from the active providers');
 } else {

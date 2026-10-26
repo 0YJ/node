@@ -1,8 +1,7 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
-const { completeSample } = require('../common/bench');
 const assert = require('assert');
 const { createRunner } = require('node:bench');
 const { setImmediate } = require('timers/promises');
@@ -15,9 +14,11 @@ async function observe(factoryOptions, runOptions) {
     turnOccurred = true;
   });
 
-  runner.bench('yielding', { samples: 2, warmup: 0 }, (b) => {
+  runner.bench('yielding', { samples: 2 }, (b) => {
     observed.push(turnOccurred);
-    completeSample(b);
+    b.start();
+    process.hrtime.bigint();
+    b.end(1);
   });
 
   await runner.run(runOptions).toArray();
@@ -54,7 +55,9 @@ async function observeAfterEachTimeout() {
     samples: 1,
     timeout: 5,
   }, (b) => {
-    completeSample(b);
+    b.start();
+    process.hrtime.bigint();
+    b.end(1);
   });
   await runner.run().toArray();
   const result = await completion;

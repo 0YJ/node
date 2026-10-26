@@ -1,4 +1,4 @@
-/* Copyright 2021 - 2026 R. Thomas
+/* Copyright 2021 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -30,10 +30,9 @@ namespace DEX {
 class Parser;
 class Class;
 
-/// Class which represents a DEX Field
+/// Class which represent a DEX Field
 class LIEF_API Field : public Object {
   friend class Parser;
-
   public:
   using access_flags_list_t = std::vector<ACCESS_FLAGS>;
 
@@ -52,8 +51,8 @@ class LIEF_API Field : public Object {
   bool has_class() const;
 
   /// Class associated with this Field
-  const Class* cls() const LIEF_LIFETIMEBOUND;
-  Class* cls() LIEF_LIFETIMEBOUND;
+  const Class* cls() const;
+  Class* cls();
 
   /// Index in the DEX Fields pool
   size_t index() const;
@@ -62,8 +61,8 @@ class LIEF_API Field : public Object {
   bool is_static() const;
 
   /// Field's prototype
-  const Type* type() const LIEF_LIFETIMEBOUND;
-  Type* type() LIEF_LIFETIMEBOUND;
+  const Type* type() const;
+  Type* type();
 
   void accept(Visitor& visitor) const override;
 

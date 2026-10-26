@@ -1,8 +1,7 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
-const { completeSample } = require('../common/bench');
 const assert = require('assert');
 const { Readable } = require('stream');
 const { bench, run } = require('node:bench');
@@ -12,7 +11,9 @@ bench('json completed', {
   params: { size: 'small' },
   samples: 1,
 }, (b) => {
-  completeSample(b);
+  b.start();
+  process.hrtime.bigint();
+  b.end(1);
 });
 
 bench('json failed', { samples: 1 }, () => {
@@ -55,9 +56,6 @@ bench('json failed', { samples: 1 }, () => {
     skipped: 0,
     total: 2,
   });
-  // The failed run sets the exit code; reset it so the test itself passes.
-  assert.strictEqual(process.exitCode, 1);
-  process.exitCode = 0;
 
   const synthetic = [
     {

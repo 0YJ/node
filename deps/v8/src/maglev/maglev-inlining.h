@@ -11,9 +11,7 @@
 #include "src/maglev/maglev-compilation-info.h"
 #include "src/maglev/maglev-compilation-unit.h"
 #include "src/maglev/maglev-graph-builder.h"
-#include "src/maglev/maglev-graph-processor.h"
 #include "src/maglev/maglev-ir.h"
-#include "src/maglev/maglev-tracer.h"
 
 namespace v8::internal::maglev {
 
@@ -24,9 +22,7 @@ class ReturnedValueRepresentationSelector {
  public:
   void PreProcessGraph(Graph* graph) {}
   void PostProcessGraph(Graph* graph) {}
-  BlockProcessResult PostProcessBasicBlock(BasicBlock* block) {
-    return BlockProcessResult::kContinue;
-  }
+  void PostProcessBasicBlock(BasicBlock* block) {}
   BlockProcessResult PreProcessBasicBlock(BasicBlock* block) {
     return BlockProcessResult::kContinue;
   }
@@ -40,20 +36,15 @@ class ReturnedValueRepresentationSelector {
 class MaglevInliner {
  public:
   explicit MaglevInliner(Graph* graph)
-      : graph_(graph),
-        tracer_(graph->compilation_info()),
-        flags_(graph->compilation_info()->flags()) {}
+      : graph_(graph), flags_(graph->compilation_info()->flags()) {}
 
   bool Run();
 
  private:
   Graph* graph_;
-  Tracer tracer_;
   const CompilationFlags flags_;
 
-  bool returned_constant_function_ = false;
-
-  int GetExistingInlinedSize(MaglevCallSiteInfo* call_site) const;
+  bool IsSmallWithHeapNumberInputsOutputs(MaglevCallSiteInfo* call_site) const;
 
   compiler::JSHeapBroker* broker() const { return graph_->broker(); }
   Zone* zone() const { return graph_->zone(); }

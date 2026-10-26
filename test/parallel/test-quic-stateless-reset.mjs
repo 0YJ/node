@@ -10,7 +10,6 @@
 
 import { hasQuic, skip, mustCall, expectsError, mustNotCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -55,7 +54,7 @@ const encoder = new TextEncoder();
   const stream1 = await clientSession.createBidirectionalStream({
     body: encoder.encode('hello'),
   });
-  await dump(stream1);
+  for await (const _ of stream1) { /* drain */ } // eslint-disable-line no-unused-vars
   await stream1.closed;
 
   // Wait for the server to destroy.
@@ -114,7 +113,7 @@ const encoder = new TextEncoder();
   const stream1 = await clientSession.createBidirectionalStream({
     body: encoder.encode('hello'),
   });
-  await dump(stream1);
+  for await (const _ of stream1) { /* drain */ } // eslint-disable-line no-unused-vars
   await stream1.closed;
 
   await serverDestroyed.promise;

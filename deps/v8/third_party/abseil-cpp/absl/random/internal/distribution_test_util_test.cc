@@ -14,9 +14,6 @@
 
 #include "absl/random/internal/distribution_test_util.h"
 
-#include <utility>
-#include <vector>
-
 #include "gtest/gtest.h"
 
 namespace {

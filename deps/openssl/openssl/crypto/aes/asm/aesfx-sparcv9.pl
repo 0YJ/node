@@ -8,10 +8,10 @@
 
 #
 # ====================================================================
-# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
+# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see https://github.com/dot-asm/cryptogams/.
+# details see http://www.openssl.org/~appro/cryptogams/.
 # ====================================================================
 
 # March 2016
@@ -42,7 +42,7 @@ $code.=<<___;
 #ifndef __ASSEMBLER__
 # define __ASSEMBLER__ 1
 #endif
-#include "arch/sparc_arch.h"
+#include "crypto/sparc_arch.h"
 
 #define LOCALS (STACK_BIAS+STACK_FRAME)
 
@@ -1142,7 +1142,7 @@ aes_fx_ctr32_encrypt_blocks:
 	.byte	0, 0, 56,  8,	0, 56,  8, -56
 .Lone:
 	.word	0, 1
-.asciz	"AES for Fujitsu SPARC64 X, CRYPTOGAMS by <https://github.com/dot-asm>"
+.asciz	"AES for Fujitsu SPARC64 X, CRYPTOGAMS by <appro\@openssl.org>"
 .align	4
 ___
 }

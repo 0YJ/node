@@ -16,12 +16,12 @@ assertEquals(100, foo(100));
 %OptimizeMaglevOnNextCall(foo);
 const val1 = foo(100);
 assertEquals(100, val1);
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 
 Object.defineProperty(Uint8Array.prototype, 'length',
                       {get: () => { return 3; }});
 
-assertNotMaglevved(foo);
+assertFalse(isMaglevved(foo));
 
 const val2 = foo(100);
 assertEquals(3, val2);

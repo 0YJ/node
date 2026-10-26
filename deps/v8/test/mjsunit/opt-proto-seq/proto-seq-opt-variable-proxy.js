@@ -8,20 +8,13 @@
 // Flags: --no-lazy-feedback-allocation
 // Flags: --maglev --turbofan
 
-// Keep the objects and their maps alive throughout the test so that GC
-// doesn't collect them, which would trigger a lazy deopt.
-let keep_alive = [];
-
 function test_variable_proxy() {
   var calls = 0;
   let foo = {
     get prototype() {
       calls += 1;
-      keep_alive.push(foo);
       foo = {};
-      let p = { prototype: {} };
-      keep_alive.push(p, p.prototype);
-      return p;
+      return { prototype: {} };
     },
   };
   assertThrows(() => {
@@ -48,7 +41,7 @@ assert_test_variable_proxy(test_variable_proxy());
 %OptimizeMaglevOnNextCall(test_variable_proxy);
 assert_test_variable_proxy(test_variable_proxy());
 assertOptimized(test_variable_proxy);
-assertMaglevved(test_variable_proxy);
+assertTrue(isMaglevved(test_variable_proxy));
 assert_test_variable_proxy(test_variable_proxy());
 %OptimizeFunctionOnNextCall(test_variable_proxy);
 assert_test_variable_proxy(test_variable_proxy());

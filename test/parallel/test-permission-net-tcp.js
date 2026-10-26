@@ -21,7 +21,6 @@ const server = net.createServer().listen(0, common.mustCall(() => {
     process.execPath,
     [
       '--permission',
-      '--allow-env=HOST,PORT',
       '--allow-fs-read=*',
       file,
     ],

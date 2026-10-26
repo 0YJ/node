@@ -41,7 +41,7 @@ class Cache {
   }
 
   async match (request, options = {}) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.match'
     webidl.argumentLengthCheck(arguments, 1, prefix)
@@ -59,7 +59,7 @@ class Cache {
   }
 
   async matchAll (request = undefined, options = {}) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.matchAll'
     if (request !== undefined) request = webidl.converters.RequestInfo(request)
@@ -69,7 +69,7 @@ class Cache {
   }
 
   async add (request) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.add'
     webidl.argumentLengthCheck(arguments, 1, prefix)
@@ -87,7 +87,7 @@ class Cache {
   }
 
   async addAll (requests) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.addAll'
     webidl.argumentLengthCheck(arguments, 1, prefix)
@@ -185,10 +185,7 @@ class Cache {
             }
           }
         },
-        // Possible spec bug. If the body is never read, `processResponseEndOfBody` (which is attached to a TransformStream's flush hook)
-        // never runs, so this would hang. This hook, on the other hand, always reads the body.
-        // https://github.com/nodejs/undici/issues/5615
-        processResponseConsumeBody (response) {
+        processResponseEndOfBody (response) {
           // 1.
           if (response.aborted) {
             responsePromise.reject(new DOMException('aborted', 'AbortError'))
@@ -260,7 +257,7 @@ class Cache {
   }
 
   async put (request, response) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.put'
     webidl.argumentLengthCheck(arguments, 2, prefix)
@@ -391,7 +388,7 @@ class Cache {
   }
 
   async delete (request, options = {}) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.delete'
     webidl.argumentLengthCheck(arguments, 1, prefix)
@@ -457,7 +454,7 @@ class Cache {
    * @returns {Promise<readonly Request[]>}
    */
   async keys (request = undefined, options = {}) {
-    webidl.brandCheck(this, webidl.is.Cache)
+    webidl.brandCheck(this, Cache)
 
     const prefix = 'Cache.keys'
 
@@ -806,12 +803,6 @@ class Cache {
 
     // 6.
     return Object.freeze(responseList)
-  }
-
-  static {
-    webidl.is.Cache = (arg) => {
-      return arg != null && typeof arg === 'object' && #relevantRequestResponseList in arg
-    }
   }
 }
 

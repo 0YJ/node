@@ -9,7 +9,6 @@ const fixtures = require('../common/fixtures');
 const {
   assert, connect, keys, tls
 } = require(fixtures.path('tls-connect'));
-const { untrustedLeafErrorCode } = require('../common/tls');
 
 const contextWithoutCert = tls.createSecureContext({});
 const contextWithCert = tls.createSecureContext({});
@@ -35,7 +34,7 @@ connect({
   server: serverOptions,
 }, common.mustCall((err, pair, cleanup) => {
   assert(err);
-  assert.strictEqual(err.code, untrustedLeafErrorCode);
+  assert.strictEqual(err.code, 'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
   cleanup();
 
   // This time it should connect because contextWithCert includes the needed CA

@@ -384,7 +384,7 @@ consts_misc = [
     },
     {
         'name': 'class_Map__instance_descriptors_offset',
-        'value': 'offsetof(Map, instance_descriptors_)'
+        'value': 'Map::kInstanceDescriptorsOffset'
     },
     {
         'name': 'off_fp_context_or_frame_type',
@@ -509,6 +509,7 @@ extras_accessors = [
     'JSArrayBufferView, byte_length, size_t, kRawByteLengthOffset',
     'JSArrayBufferView, byte_offset, size_t, kRawByteOffsetOffset',
     'JSDate, value, Object, kValueOffset',
+    'JSRegExp, source, Object, kSourceOffset',
     'JSTypedArray, external_pointer, uintptr_t, kExternalPointerOffset',
     'Map, instance_size_in_words, char, kInstanceSizeInWordsOffset',
     'Map, inobject_properties_start_or_constructor_function_index, char, kInobjectPropertiesStartOrConstructorFunctionIndexOffset',
@@ -545,7 +546,7 @@ extras_accessors = [
     'SlicedString, offset, SMI, offsetof(SlicedString, offset_)',
     'ThinString, actual, String, offsetof(ThinString, actual_)',
     'Symbol, name, Object, offsetof(Symbol, description_)',
-    'FixedArrayBase, length, uint32_t, kLengthOffset',
+    'FixedArrayBase, length, SMI, kLengthOffset',
 ]
 
 #
@@ -672,7 +673,7 @@ def load_objects_from_file(objfilename, checktypes):
       in_torque_insttype = True
       continue
 
-    if (line.startswith('#define TORQUE_DEBUG_READER_CLASSES_SINGLE')):
+    if (line.startswith('#define TORQUE_INSTANCE_CHECKERS_SINGLE_FULLY_DEFINED')):
       in_torque_fulldef = True
       continue
 

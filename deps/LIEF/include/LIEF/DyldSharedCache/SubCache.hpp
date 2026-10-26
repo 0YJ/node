@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
  */
 #ifndef LIEF_DSC_SUBCACHE_H
 #define LIEF_DSC_SUBCACHE_H
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/iterators.hpp"
 #include "LIEF/DyldSharedCache/uuid.hpp"
@@ -35,19 +34,19 @@ class SubCacheIt;
 /// This class represents a subcache in the case of large/split dyld shared
 /// cache.
 ///
-/// It mirrors (and abstracts) the original `dyld_subcache_entry` /
-/// `dyld_subcache_entry_v1`
+/// It mirror (and abstracts) the original `dyld_subcache_entry` / `dyld_subcache_entry_v1`
 class LIEF_API SubCache {
   public:
   /// SubCache Iterator
-  class LIEF_API Iterator
-    : public iterator_facade_base<Iterator, std::random_access_iterator_tag,
-                                  SubCache, std::ptrdiff_t, const SubCache*,
-                                  const SubCache&> {
+  class LIEF_API Iterator :
+    public iterator_facade_base<Iterator, std::random_access_iterator_tag,
+                                std::unique_ptr<SubCache>, std::ptrdiff_t, SubCache*,
+                                std::unique_ptr<SubCache>
+
+    >
+  {
     public:
     using implementation = details::SubCacheIt;
-
-    Iterator();
 
     Iterator(std::unique_ptr<details::SubCacheIt> impl);
     Iterator(const Iterator&);
@@ -70,20 +69,10 @@ class LIEF_API SubCache {
       return !(LHS == RHS);
     }
 
-    const SubCache& operator*() const LIEF_LIFETIMEBOUND;
-
-    // NOLINTNEXTLINE(bugprone-derived-method-shadowing-base-method)
-    const SubCache* operator->() const LIEF_LIFETIMEBOUND;
-
-    /// Transfer ownership of the subcache at the current position to the
-    /// caller. Returns `nullptr` if the iterator is past-the-end.
-    std::unique_ptr<SubCache> yield();
+    std::unique_ptr<SubCache> operator*() const;
 
     private:
-    void load() const;
-
     std::unique_ptr<details::SubCacheIt> impl_;
-    mutable std::unique_ptr<SubCache> cached_;
   };
 
   public:
@@ -96,15 +85,14 @@ class LIEF_API SubCache {
   /// The offset of this subcache from the main cache base address
   uint64_t vm_offset() const;
 
-  /// The file name suffix of the subCache file (e.g. `.25.data`,
-  /// `.03.development`)
+  /// The file name suffix of the subCache file (e.g. `.25.data`, `.03.development`)
   std::string suffix() const;
 
   /// The associated DyldSharedCache object for this subcache
-  std::unique_ptr<const DyldSharedCache> cache() const LIEF_LIFETIMEBOUND;
+  std::unique_ptr<const DyldSharedCache> cache() const;
 
-  friend LIEF_API std::ostream& operator<<(std::ostream& os,
-                                           const SubCache& subcache);
+  friend LIEF_API
+    std::ostream& operator<<(std::ostream& os, const SubCache& subcache);
 
   private:
   std::unique_ptr<details::SubCache> impl_;

@@ -15,7 +15,6 @@
 #ifndef ABSL_STRINGS_INTERNAL_STRING_CONSTANT_H_
 #define ABSL_STRINGS_INTERNAL_STRING_CONSTANT_H_
 
-#include "absl/base/config.h"
 #include "absl/meta/type_traits.h"
 #include "absl/strings/string_view.h"
 

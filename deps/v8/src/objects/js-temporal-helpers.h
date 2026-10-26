@@ -45,7 +45,7 @@ namespace temporal {
 
 // For Intl.DurationFormat
 
-// https://tc39.es/proposal-temporal/#sec-temporal-time-duration-records
+// #sec-temporal-time-duration-records
 struct TimeDurationRecord {
   double days;
   double hours;
@@ -55,7 +55,7 @@ struct TimeDurationRecord {
   double microseconds;
   double nanoseconds;
 
-  // https://tc39.es/proposal-temporal/#sec-temporal-createtimedurationrecord
+  // #sec-temporal-createtimedurationrecord
   static Maybe<TimeDurationRecord> Create(Isolate* isolate, double days,
                                           double hours, double minutes,
                                           double seconds, double milliseconds,
@@ -63,13 +63,13 @@ struct TimeDurationRecord {
                                           double nanoseconds);
 };
 
-// https://tc39.es/proposal-temporal/#sec-temporal-duration-records
+// #sec-temporal-duration-records
 struct DurationRecord {
   double years;
   double months;
   double weeks;
   TimeDurationRecord time_duration;
-  // https://tc39.es/proposal-temporal/#sec-temporal-createdurationrecord
+  // #sec-temporal-createdurationrecord
   static Maybe<DurationRecord> Create(Isolate* isolate, double years,
                                       double months, double weeks, double days,
                                       double hours, double minutes,
@@ -84,7 +84,7 @@ Maybe<DurationRecord> ToDurationRecord(
     Isolate* isolate, DirectHandle<Object> temporal_duration_like_obj,
     const DurationRecord& input);
 
-// https://tc39.es/proposal-temporal/#sec-temporal-isvalidduration
+// #sec-temporal-isvalidduration
 bool IsValidDuration(Isolate* isolate, const DurationRecord& dur);
 
 }  // namespace temporal

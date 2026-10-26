@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,8 +45,7 @@ enum class OPCODES {
   END,
   END_C,
   SAVE_NEXT,
-  SAVE_ANY_REG,
-  E7,
+  SAVE_ANY_REG, E7,
   TRAP_FRAME,
   MACHINE_FRAME,
   CONTEXT,

@@ -204,7 +204,6 @@ class View extends BaseCommand {
     const includeVersions = versions.length > 1
 
     let includeFields
-    // TODO if we ask for two fields but only one existed we treat it as if we only asked for one field, this needs to be fixed
     const res = versions.flatMap((v) => {
       const fields = Object.entries(data[v])
 
@@ -240,13 +239,16 @@ class View extends BaseCommand {
     })
 
     if (json) {
+      // TODO(BREAKING_CHANGE): all unwrapping should be removed.
+      // Users should know based on their arguments if they can expect an array or an object.
+      // And this unwrapping can break that assumption.
+      // e.g. `npm view abbrev@^2` should always return an array, but currently since there is only one version matching `^2` this will return a single object instead.
       const first = Object.keys(res[0] || {})
       const jsonRes = first.length === 1 ? res.map(m => m[first[0]]) : res
       if (jsonRes.length === 0) {
         return
       }
-      // Avoid wrapping a single array-valued result in another array.
-      if (jsonRes.length === 1 && Array.isArray(jsonRes[0])) {
+      if (jsonRes.length === 1) {
         return jsonRes[0]
       }
       return jsonRes

@@ -16,12 +16,10 @@
 // AbslInternalSpinLockDelay() and AbslInternalSpinLockWake().
 // See spinlock_wait.h for the specs.
 
-#include "absl/base/internal/spinlock_wait.h"
-
 #include <atomic>
 #include <cstdint>
 
-#include "absl/base/config.h"
+#include "absl/base/internal/spinlock_wait.h"
 
 #if defined(_WIN32)
 #include "absl/base/internal/spinlock_win32.inc"

@@ -363,12 +363,9 @@ class BlocksData {
     this.blockBorders = new Set<number>();
     this.blockInstructionCountMap = new Map<number, number>();
     for (const block of blocks) {
-      if (!block) continue;
       this.blockInstructionCountMap.set(block.id, block.instructions.length);
-      if (block.instructions.length > 0) {
-        const maxInstructionInBlock = block.instructions[block.instructions.length - 1].id;
-        this.blockBorders.add(maxInstructionInBlock);
-      }
+      const maxInstructionInBlock = block.instructions[block.instructions.length - 1].id;
+      this.blockBorders.add(maxInstructionInBlock);
     }
   }
 

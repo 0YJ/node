@@ -284,11 +284,9 @@ static int ktls_configure_crypto(OSSL_LIB_CTX *libctx, int version, const EVP_CI
 #endif /* OPENSSL_SYS_LINUX */
 
 static int ktls_set_crypto_state(OSSL_RECORD_LAYER *rl, int level,
-    unsigned char *snkey,
     unsigned char *key, size_t keylen,
     unsigned char *iv, size_t ivlen,
     unsigned char *mackey, size_t mackeylen,
-    const EVP_CIPHER *snciph,
     const EVP_CIPHER *ciph,
     size_t taglen,
     int mactype,
@@ -296,9 +294,6 @@ static int ktls_set_crypto_state(OSSL_RECORD_LAYER *rl, int level,
     COMP_METHOD *comp)
 {
     ktls_crypto_info_t crypto_info;
-    unsigned char recseq[SEQ_NUM_SIZE], *p_recseq = recseq;
-
-    l2n8(rl->sequence, p_recseq);
 
     /*
      * Check if we are suitable for KTLS. If not suitable we return
@@ -327,7 +322,7 @@ static int ktls_set_crypto_state(OSSL_RECORD_LAYER *rl, int level,
             return OSSL_RECORD_RETURN_NON_FATAL_ERR;
     }
 
-    if (!ktls_configure_crypto(rl->libctx, rl->version, ciph, md, recseq,
+    if (!ktls_configure_crypto(rl->libctx, rl->version, ciph, md, rl->sequence,
             &crypto_info,
             rl->direction == OSSL_RECORD_DIRECTION_WRITE,
             iv, ivlen, key, keylen, mackey, mackeylen))
@@ -402,18 +397,15 @@ static int ktls_post_process_record(OSSL_RECORD_LAYER *rl, TLS_RL_RECORD *rec)
 
 static int
 ktls_new_record_layer(OSSL_LIB_CTX *libctx, const char *propq, int vers,
-    int role, int direction, int level, uint64_t epoch,
+    int role, int direction, int level, uint16_t epoch,
     unsigned char *secret, size_t secretlen,
-    unsigned char *snkey, unsigned char *key, size_t keylen,
-    unsigned char *iv, size_t ivlen,
-    unsigned char *mackey, size_t mackeylen,
-    const EVP_CIPHER *snciph,
+    unsigned char *key, size_t keylen, unsigned char *iv,
+    size_t ivlen, unsigned char *mackey, size_t mackeylen,
     const EVP_CIPHER *ciph, size_t taglen,
     int mactype,
     const EVP_MD *md, COMP_METHOD *comp,
     const EVP_MD *kdfdigest, BIO *prev, BIO *transport,
-    BIO *next,
-    int use_urxe,
+    BIO *next, BIO_ADDR *local, BIO_ADDR *peer,
     const OSSL_PARAM *settings, const OSSL_PARAM *options,
     const OSSL_DISPATCH *fns, void *cbarg, void *rlarg,
     OSSL_RECORD_LAYER **retrl)
@@ -430,10 +422,9 @@ ktls_new_record_layer(OSSL_LIB_CTX *libctx, const char *propq, int vers,
 
     (*retrl)->funcs = &ossl_ktls_funcs;
 
-    ret = (*retrl)->funcs->set_crypto_state(*retrl, level, snkey, key, keylen,
-        iv, ivlen, mackey, mackeylen,
-        snciph, ciph, taglen, mactype, md,
-        comp);
+    ret = (*retrl)->funcs->set_crypto_state(*retrl, level, key, keylen, iv,
+        ivlen, mackey, mackeylen, ciph,
+        taglen, mactype, md, comp);
 
     if (ret != OSSL_RECORD_RETURN_SUCCESS) {
         tls_free(*retrl);
@@ -595,8 +586,6 @@ const OSSL_RECORD_METHOD ossl_ktls_record_method = {
     tls_release_record,
     tls_get_alert_code,
     tls_set1_bio,
-    NULL, /* set1_peer: Not used for KTLS */
-    NULL, /* set_use_urxe: Not used for KTLS */
     tls_set_protocol_version,
     tls_set_plain_alerts,
     tls_set_first_handshake,
@@ -608,12 +597,6 @@ const OSSL_RECORD_METHOD ossl_ktls_record_method = {
     tls_set_max_frag_len,
     NULL,
     tls_increment_sequence_ctr,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
     ktls_alloc_buffers,
-    tls_free_buffers,
-    NULL /* set_prev_epoch_rl: DTLS only */
+    tls_free_buffers
 };

@@ -41,10 +41,10 @@ absl_cc_test(
 absl_cc_library(
   NAME
     exponential_biased
-  HDRS
-    "internal/exponential_biased.h"
   SRCS
     "internal/exponential_biased.cc"
+  HDRS
+    "internal/exponential_biased.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -68,10 +68,10 @@ absl_cc_test(
 absl_cc_library(
   NAME
     periodic_sampler
-  HDRS
-    "internal/periodic_sampler.h"
   SRCS
     "internal/periodic_sampler.cc"
+  HDRS
+    "internal/periodic_sampler.h"
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
@@ -103,15 +103,14 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
-    absl::btree
     absl::config
     absl::core_headers
-    absl::flat_hash_map
     absl::raw_logging_internal
-    absl::span
-    absl::str_format
-    absl::string_view
+    absl::flat_hash_map
+    absl::btree
     absl::strings
+    absl::str_format
+    absl::span
 )
 
 absl_cc_library(
@@ -124,10 +123,10 @@ absl_cc_library(
   COPTS
     ${ABSL_DEFAULT_COPTS}
   DEPS
+    absl::profile_builder
     absl::config
     absl::core_headers
-    absl::hashtablez_sampler
-    absl::profile_builder
-    absl::span
     absl::strings
+    absl::span
+    absl::hashtablez_sampler
 )

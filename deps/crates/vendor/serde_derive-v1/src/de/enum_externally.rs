@@ -19,8 +19,7 @@ use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
 use syn::spanned::Spanned;
 
-/// Generates `Deserialize::deserialize` body for an `enum Enum {...}` without
-/// additional attributes
+/// Generates `Deserialize::deserialize` body for an `enum Enum {...}` without additional attributes
 pub(super) fn deserialize(
     params: &Parameters,
     variants: &[Variant],
@@ -45,14 +44,18 @@ pub(super) fn deserialize(
         .map(|(i, variant)| {
             let variant_name = field_i(i);
 
-            let block = Match(deserialize_externally_tagged_variant(params, variant, cattrs));
+            let block = Match(deserialize_externally_tagged_variant(
+                params, variant, cattrs,
+            ));
 
             quote! {
-                _serde::#private::Ok((__Field::#variant_name, __variant)) => #block
+                (__Field::#variant_name, __variant) => #block
             }
         });
 
-    let all_skipped = variants.iter().all(|variant| variant.attrs.skip_deserializing());
+    let all_skipped = variants
+        .iter()
+        .all(|variant| variant.attrs.skip_deserializing());
     let match_variant = if all_skipped {
         // This is an empty enum like `enum Impossible {}` or an enum in which
         // all variants have `#[serde(skip_deserializing)]`.
@@ -66,9 +69,8 @@ pub(super) fn deserialize(
         }
     } else {
         quote! {
-            match _serde::de::EnumAccess::variant(__data) {
+            match _serde::de::EnumAccess::variant(__data)? {
                 #(#variant_arms)*
-                _serde::#private::Err(__err) => _serde::#private::Err(__err),
             }
         }
     };

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/base/logging.h"
 #include "src/objects/objects-inl.h"
 #include "test/cctest/cctest.h"
 #include "test/cctest/compiler/turboshaft-codegen-tester.h"
@@ -55,7 +54,6 @@ bool SelectIsSupported(SelectOperator op) {
     case SelectOperator::kFloat64:
       return SupportedOperations::float64_select();
   }
-  UNREACHABLE();
 }
 
 // kOneUse:
@@ -187,7 +185,6 @@ class ConditionalSelectGen {
       SELECT_OP_LIST(CASE)
 #undef CASE
     }
-    UNREACHABLE();
   }
 
   BufferedRawMachineAssemblerTester<ResultType>& m_;
@@ -221,7 +218,6 @@ class UInt32ConditionalSelectGen
         return m.Word64Add(this->select(),
                            m.ChangeUint32ToUint64(this->bin_node()));
     }
-    UNREACHABLE();
   }
 
   bool Is32() const override { return true; }
@@ -248,7 +244,6 @@ class UInt64ConditionalSelectGen
       case SelectOperator::kWord64:
         return m.Word64Add(this->select(), this->bin_node());
     }
-    UNREACHABLE();
   }
 
   bool Is32() const override { return false; }

@@ -16,19 +16,17 @@ META_TIMEOUT_REGEXP = re.compile(r"META:\s*timeout=(.*)")
 
 # Flags per Wasm proposal.
 proposal_flags = {
-    # Entries should have the form:
-    # 'subdirectory-name': ['--wasm-feature-flag'],
+    # currently none; if needed add entries in this form:
+    # 'exception-handling': ['--experimental-wasm-exnref'],
     'custom-descriptors': [
-        '--wasm-custom-descriptors',
-        '--wasm-js-interop',
+        '--experimental-wasm-custom-descriptors',
+        '--experimental-wasm-js-interop',
     ],
 }
 
 # Flags per WPT subdirectory.
-wpt_flags = {
-    # Entries should have the form:
-    # 'subdirectory-name': ['--wasm-feature-flag'],
-}
+wpt_flags = {'memory': ['--experimental-wasm-rab-integration']}
+
 
 class TestLoader(testsuite.JSTestLoader):
   @property

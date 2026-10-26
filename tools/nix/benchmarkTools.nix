@@ -8,3 +8,4 @@
   pkgs.rPackages.plyr
 ]
 ++ pkgs.lib.optional withHttpBenchmarkDeps pkgs.wrk
+++ pkgs.lib.optional pkgs.stdenv.buildPlatform.isLinux pkgs.glibcLocales

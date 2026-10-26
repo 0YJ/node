@@ -35,9 +35,7 @@ class TaskQueue {
     void NotifyOfOutstandingCompletion();
     void BlockingDrain();
     void Stop();
-    // All queued tasks, in the order Pop() would have returned them. Store the
-    // result before iterating it: used directly as a range-for initializer,
-    // `Lock().PopAll()` keeps the lock held for the whole loop from C++23 on.
+    // All queued tasks, in the order Pop() would have returned them.
     std::vector<std::unique_ptr<T>> PopAll();
 
    private:

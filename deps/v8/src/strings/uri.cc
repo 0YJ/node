@@ -7,9 +7,9 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <new>
 #include <vector>
 
-#include "src/base/logging.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate-inl.h"
 #include "src/strings/char-predicates-inl.h"
@@ -186,8 +186,7 @@ MaybeDirectHandle<String> Uri::Decode(Isolate* isolate,
   std::vector<base::uc16> two_byte_buffer;
 
   if (!IntoOneAndTwoByte(uri, is_uri, &one_byte_buffer, &two_byte_buffer)) {
-    THROW_NEW_ERROR(isolate, NewError(isolate->uri_error_function(),
-                                      MessageTemplate::kURIMalformed));
+    THROW_NEW_ERROR(isolate, NewURIError());
   }
 
   if (two_byte_buffer.empty()) {
@@ -408,13 +407,10 @@ MaybeDirectHandle<String> Uri::Encode(Isolate* isolate,
     case EncodeStatus::kSuccess:
       return isolate->factory()->NewStringFromOneByte(base::VectorOf(buffer));
     case EncodeStatus::kUriError:
-      THROW_NEW_ERROR(isolate, NewError(isolate->uri_error_function(),
-                                        MessageTemplate::kURIMalformed));
-
+      THROW_NEW_ERROR(isolate, NewURIError());
     case EncodeStatus::kAllocationFailure:
       THROW_NEW_ERROR(isolate, NewInvalidStringLengthError());
   }
-  UNREACHABLE();
 }
 
 namespace {  // Anonymous namespace for Escape and Unescape

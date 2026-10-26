@@ -3,10 +3,10 @@
 'use strict';
 require('../common');
 const { parentPort, workerData } = require('worker_threads');
-const { Database, constants } = require('node:sqlite');
+const { DatabaseSync, constants } = require('node:sqlite');
 const { changeset, mode, dbPath } = workerData;
 
-const db = new Database(dbPath);
+const db = new DatabaseSync(dbPath);
 
 const options = {};
 if (mode !== constants.SQLITE_CHANGESET_ABORT && mode !== constants.SQLITE_CHANGESET_OMIT) {

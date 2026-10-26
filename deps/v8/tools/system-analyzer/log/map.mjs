@@ -35,9 +35,6 @@ define(Array.prototype, 'last', function() {
 // Map Log Events
 
 export class MapLogEntry extends LogEntry {
-  static get typeName() {
-    return 'map';
-  }
   constructor(id, time) {
     if (!time) throw new Error('Invalid time');
     // Use MapLogEntry.type getter instead of property, since we only know the
@@ -68,12 +65,12 @@ export class MapLogEntry extends LogEntry {
     return `Map(${this.id})`;
   }
 
-  finalizeRootMap(id, processor) {
+  finalizeRootMap(id) {
     let stack = [this];
     while (stack.length > 0) {
       let current = stack.pop();
       if (current.leftId !== 0) {
-        processor.warn('Skipping potential parent loop between maps:', current)
+        console.warn('Skipping potential parent loop between maps:', current)
         continue;
       }
       current.finalize(id);
@@ -195,18 +192,6 @@ export class MapLogEntry extends LogEntry {
     }
   }
 
-  toDetailJSON() {
-    return {
-      ...super.toDetailJSON(),
-      reason: this.reason,
-      property: this.property,
-      functionName: this.functionName,
-      id: this.id,
-      description: this.description,
-      script: this.script?.url || this.script?.name || '<unknown>'
-    };
-  }
-
   static get propertyNames() {
     return [
       'type', 'reason', 'property', 'parent', 'functionName', 'sourcePosition',
@@ -238,13 +223,13 @@ export class Edge {
     this.time = edge.time;
   }
 
-  finishSetup(processor) {
+  finishSetup() {
     const from = this.from;
     const to = this.to;
     if (to?.time < from?.time) {
       // This happens for map deprecation where the transition tree is converted
       // in reverse order.
-      processor.warn('Invalid time order');
+      console.warn('Invalid time order');
     }
     if (from) from.addEdge(this);
     if (to === undefined) return;
@@ -253,7 +238,7 @@ export class Edge {
     if (to === from) throw 'From and to must be distinct.';
     let newDepth = from.depth + 1;
     if (to.depth > 0 && to.depth != newDepth) {
-      processor.warn('Depth has already been initialized');
+      console.warn('Depth has already been initialized');
     }
     to.depth = newDepth;
   }

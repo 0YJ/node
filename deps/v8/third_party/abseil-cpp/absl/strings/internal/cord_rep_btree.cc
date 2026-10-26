@@ -14,12 +14,9 @@
 
 #include "absl/strings/internal/cord_rep_btree.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <ostream>
 #include <string>
@@ -34,7 +31,6 @@
 #include "absl/strings/internal/cord_rep_flat.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -282,7 +278,7 @@ struct StackOperations {
         return tree;
       case CordRepBtree::kCopied:
         CordRep::Unref(tree);
-        [[fallthrough]];
+        ABSL_FALLTHROUGH_INTENDED;
       case CordRepBtree::kSelf:
         return result.tree;
     }
@@ -1118,10 +1114,7 @@ void CordRepBtree::Rebuild(CordRepBtree** stack, CordRepBtree* tree,
       OpResult result = node->AddEdge<kBack>(true, edge, length);
       while (result.action == CordRepBtree::kPopped) {
         stack[height] = result.tree;
-        if (ABSL_PREDICT_FALSE(++height >= kMaxDepth)) {
-          ABSL_RAW_LOG(FATAL, "CordRepBtree::Rebuild() exceeded max depth");
-        }
-        if (stack[height] == nullptr) {
+        if (stack[++height] == nullptr) {
           result.action = CordRepBtree::kSelf;
           stack[height] = CordRepBtree::New(node, result.tree);
         } else {
@@ -1129,7 +1122,7 @@ void CordRepBtree::Rebuild(CordRepBtree** stack, CordRepBtree* tree,
           result = node->AddEdge<kBack>(true, result.tree, length);
         }
       }
-      while (++height < kMaxDepth && stack[height] != nullptr) {
+      while (stack[++height] != nullptr) {
         stack[height]->length += length;
       }
     }

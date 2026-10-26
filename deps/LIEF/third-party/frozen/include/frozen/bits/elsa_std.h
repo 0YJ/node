@@ -1,7 +1,6 @@
 #ifndef FROZEN_LETITGO_BITS_ELSA_STD_H
 #define FROZEN_LETITGO_BITS_ELSA_STD_H
 
-#include "defines.h"
 #include "elsa.h"
 #include "hash_string.h"
 

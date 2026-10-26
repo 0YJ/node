@@ -28,7 +28,6 @@ describe('getOptionsAsFlagsFromBinding', () => {
 
     assert.strictEqual(flags.includes('--no-warnings'), true);
     assert.strictEqual(flags.includes('--stack-trace-limit=512'), true);
-    assert.strictEqual(flags.some((flag) => flag.startsWith('--bench-')), false);
   });
 
   it('should extract flags from NODE_OPTIONS environment variable', onlyIfNodeOptionsSupport, async () => {
@@ -56,7 +55,7 @@ describe('getOptionsAsFlagsFromBinding', () => {
     const result = await spawnPromisified(process.execPath, [
       '--no-warnings',
       '--expose-internals',
-      `--config-file=${configFile}`,
+      `--experimental-config-file=${configFile}`,
       fixtureFile,
     ]);
 
@@ -75,7 +74,7 @@ describe('getOptionsAsFlagsFromBinding', () => {
       '--no-warnings',
       '--expose-internals',
       '--stack-trace-limit=512',
-      `--config-file=${configFile}`,
+      `--experimental-config-file=${configFile}`,
       fixtureFile,
     ]);
 

@@ -14,12 +14,9 @@
 
 #include "absl/random/log_uniform_int_distribution.h"
 
-#include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
-#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -27,7 +24,6 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/base/macros.h"
 #include "absl/log/log.h"
 #include "absl/random/internal/chi_square.h"
 #include "absl/random/internal/distribution_test_util.h"

@@ -61,9 +61,9 @@ class MemoryMeasurementResultBuilder final {
   }
   DirectHandle<JSObject> Build() {
     if (detailed_) {
-      const uint32_t length = static_cast<uint32_t>(other_.size());
+      int length = static_cast<int>(other_.size());
       DirectHandle<FixedArray> other = factory_->NewFixedArray(length);
-      for (uint32_t i = 0; i < length; i++) {
+      for (int i = 0; i < length; i++) {
         other->set(i, *other_[i]);
       }
       AddProperty(result_, factory_->other_string(),
@@ -194,10 +194,10 @@ bool MemoryMeasurement::EnqueueRequest(
     std::unique_ptr<v8::MeasureMemoryDelegate> delegate,
     v8::MeasureMemoryExecution execution,
     const std::vector<Handle<NativeContext>>& contexts) {
-  const uint32_t length = static_cast<uint32_t>(contexts.size());
+  int length = static_cast<int>(contexts.size());
   DirectHandle<WeakFixedArray> weak_contexts =
       isolate_->factory()->NewWeakFixedArray(length);
-  for (uint32_t i = 0; i < length; ++i) {
+  for (int i = 0; i < length; ++i) {
     weak_contexts->set(i, MakeWeak(*contexts[i]));
   }
   Handle<WeakFixedArray> global_weak_contexts =
@@ -222,8 +222,7 @@ std::vector<Address> MemoryMeasurement::StartProcessing() {
   processing_ = std::move(received_);
   for (const auto& request : processing_) {
     DirectHandle<WeakFixedArray> contexts = request.contexts;
-    const uint32_t contexts_len = contexts->ulength().value();
-    for (uint32_t i = 0; i < contexts_len; i++) {
+    for (int i = 0; i < contexts->length(); i++) {
       Tagged<HeapObject> context;
       if (contexts->get(i).GetHeapObject(&context)) {
         unique_contexts.insert(context.ptr());
@@ -248,8 +247,7 @@ void MemoryMeasurement::FinishProcessing(const NativeContextStats& stats) {
   while (!processing_.empty()) {
     Request request = std::move(processing_.front());
     processing_.pop_front();
-    const uint32_t length = static_cast<uint32_t>(request.sizes.size());
-    for (uint32_t i = 0; i < length; i++) {
+    for (int i = 0; i < static_cast<int>(request.sizes.size()); i++) {
       Tagged<HeapObject> context;
       if (!request.contexts->get(i).GetHeapObject(&context)) {
         continue;
@@ -346,9 +344,9 @@ void MemoryMeasurement::ReportResults() {
     v8::LocalVector<v8::Context> contexts(
         reinterpret_cast<v8::Isolate*>(isolate_));
     std::vector<size_t> size_in_bytes;
-    const uint32_t contexts_len = request.contexts->ulength().value();
-    DCHECK_EQ(request.sizes.size(), contexts_len);
-    for (uint32_t i = 0; i < contexts_len; i++) {
+    DCHECK_EQ(request.sizes.size(),
+              static_cast<size_t>(request.contexts->length()));
+    for (int i = 0; i < request.contexts->length(); i++) {
       Tagged<HeapObject> raw_context;
       if (!request.contexts->get(i).GetHeapObject(&raw_context)) {
         continue;
@@ -358,9 +356,12 @@ void MemoryMeasurement::ReportResults() {
       contexts.push_back(context);
       size_in_bytes.push_back(request.sizes[i]);
     }
-    request.delegate->MeasurementComplete({contexts, size_in_bytes,
-                                           request.shared, request.wasm_code,
-                                           request.wasm_metadata});
+    request.delegate->MeasurementComplete(
+        {{contexts.begin(), contexts.end()},
+         {size_in_bytes.begin(), size_in_bytes.end()},
+         request.shared,
+         request.wasm_code,
+         request.wasm_metadata});
     isolate_->counters()->measure_memory_delay_ms()->AddSample(
         static_cast<int>(request.timer.Elapsed().InMilliseconds()));
   }
@@ -386,22 +387,7 @@ void NativeContextStats::IncrementExternalSize(Address context, Tagged<Map> map,
   InstanceType instance_type = map->instance_type();
   size_t external_size = 0;
   if (instance_type == JS_ARRAY_BUFFER_TYPE) {
-    auto js_array_buffer = Cast<JSArrayBuffer>(object);
-    if (!js_array_buffer->is_shared()) {
-      // Reading the JS-visible byte length of a non-shared ArrayBuffer during
-      // concurrent marking can cause a data race because the main thread may
-      // update it concurrently (e.g. when materializing an on-heap TypedArray's
-      // buffer, detaching, or resizing a RAB). Instead, we use the atomically
-      // updated accounting length from the extension.
-      if (auto ext = js_array_buffer->extension()) {
-        ext->InitializationBarrier();
-        external_size = ext->accounting_length();
-      }
-    } else {
-      // For SharedArrayBuffers, accounting_length() is always 0 (see
-      // BackingStore::PerIsolateAccountingLength()), so use GetByteLength().
-      external_size = js_array_buffer->GetByteLength();
-    }
+    external_size = Cast<JSArrayBuffer>(object)->GetByteLength();
   } else {
     DCHECK(InstanceTypeChecker::IsExternalString(instance_type));
     external_size = Cast<ExternalString>(object)->ExternalPayloadSize();

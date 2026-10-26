@@ -19,10 +19,8 @@ class PromiseCapability;
 class PromiseReaction;
 class MicrotaskQueueBuiltinsAssembler;
 class SandboxTesting;
-class JSGeneratorObject;
 
-using PromiseReactionHandler =
-    UnionOf<Undefined, JSGeneratorObject, JSCallable>;
+#include "torque-generated/src/objects/promise-tq.inc"
 
 // Struct to hold state required for PromiseReactionJob. See the comment on the
 // PromiseReaction below for details on how this is being managed to reduce the
@@ -34,8 +32,6 @@ using PromiseReactionHandler =
 // classes, which are used to represent either reactions, and we distinguish
 // them by their instance types.
 V8_OBJECT class PromiseReactionJobTask : public Microtask {
-  V8_IT_ABSTRACT;
-
  public:
   inline Tagged<Object> argument() const;
   inline void set_argument(Tagged<Object> value,
@@ -45,11 +41,9 @@ V8_OBJECT class PromiseReactionJobTask : public Microtask {
   inline void set_context(Tagged<Context> value,
                           WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<PromiseReactionHandler> handler()
-      const;
-  inline void set_handler(
-      Tagged<PromiseReactionHandler> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline Tagged<UnionOf<JSCallable, Undefined>> handler() const;
+  inline void set_handler(Tagged<UnionOf<JSCallable, Undefined>> value,
+                          WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Tagged<UnionOf<JSPromise, PromiseCapability, Undefined>>
   promise_or_capability() const;
@@ -70,7 +64,7 @@ V8_OBJECT class PromiseReactionJobTask : public Microtask {
 
   TaggedMember<Object> argument_;
   TaggedMember<Context> context_;
-  TaggedMember<PromiseReactionHandler> handler_;
+  TaggedMember<UnionOf<JSCallable, Undefined>> handler_;
   TaggedMember<UnionOf<JSPromise, PromiseCapability, Undefined>>
       promise_or_capability_;
 } V8_OBJECT_END;
@@ -128,7 +122,7 @@ V8_OBJECT class PromiseResolveThenableJobTask : public Microtask {
 } V8_OBJECT_END;
 
 // Struct to hold the state of a PromiseCapability.
-V8_OBJECT class PromiseCapability : public Struct {
+V8_OBJECT class PromiseCapability : public StructLayout {
  public:
   inline Tagged<UnionOf<JSReceiver, Undefined>> promise() const;
   inline void set_promise(Tagged<UnionOf<JSReceiver, Undefined>> value,
@@ -171,7 +165,7 @@ V8_OBJECT class PromiseCapability : public Struct {
 // Smi 0. On the JSPromise instance they are linked in reverse order,
 // and are turned into the proper order again when scheduling them on
 // the microtask queue.
-V8_OBJECT class PromiseReaction : public Struct {
+V8_OBJECT class PromiseReaction : public StructLayout {
  public:
   enum Type { kFulfill, kReject };
 
@@ -185,17 +179,13 @@ V8_OBJECT class PromiseReaction : public Struct {
   inline void set_next(Tagged<UnionOf<PromiseReaction, Smi>> value,
                        WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<UnionOf<JSCallable, JSGeneratorObject, Undefined>>
-  reject_handler() const;
-  inline void set_reject_handler(
-      Tagged<UnionOf<JSCallable, JSGeneratorObject, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline Tagged<UnionOf<JSCallable, Undefined>> reject_handler() const;
+  inline void set_reject_handler(Tagged<UnionOf<JSCallable, Undefined>> value,
+                                 WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<UnionOf<JSCallable, JSGeneratorObject, Undefined>>
-  fulfill_handler() const;
-  inline void set_fulfill_handler(
-      Tagged<UnionOf<JSCallable, JSGeneratorObject, Undefined>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  inline Tagged<UnionOf<JSCallable, Undefined>> fulfill_handler() const;
+  inline void set_fulfill_handler(Tagged<UnionOf<JSCallable, Undefined>> value,
+                                  WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Tagged<UnionOf<JSPromise, PromiseCapability, Undefined>>
   promise_or_capability() const;
@@ -219,10 +209,8 @@ V8_OBJECT class PromiseReaction : public Struct {
   TaggedMember<Object> continuation_preserved_embedder_data_;
 #endif
   TaggedMember<UnionOf<PromiseReaction, Smi>> next_;
-  TaggedMember<UnionOf<JSCallable, JSGeneratorObject, Undefined>>
-      reject_handler_;
-  TaggedMember<UnionOf<JSCallable, JSGeneratorObject, Undefined>>
-      fulfill_handler_;
+  TaggedMember<UnionOf<JSCallable, Undefined>> reject_handler_;
+  TaggedMember<UnionOf<JSCallable, Undefined>> fulfill_handler_;
   TaggedMember<UnionOf<JSPromise, PromiseCapability, Undefined>>
       promise_or_capability_;
 } V8_OBJECT_END;

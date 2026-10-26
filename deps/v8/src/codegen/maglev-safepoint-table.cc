@@ -39,12 +39,9 @@ MaglevSafepointTable::MaglevSafepointTable(Address instruction_start,
                                                kNumTaggedSlotsOffset)) {}
 
 int MaglevSafepointTable::find_return_pc(int pc_offset) {
-  int index = BinarySearchPc(pc_offset);
-  if (index != -1) return GetEntryPc(index);
-  // Fall back to trampoline scan.
   for (int i = 0; i < length(); i++) {
     MaglevSafepointEntry entry = GetEntry(i);
-    if (entry.trampoline_pc() == pc_offset) {
+    if (entry.trampoline_pc() == pc_offset || entry.pc() == pc_offset) {
       return entry.pc();
     }
   }
@@ -54,23 +51,22 @@ int MaglevSafepointTable::find_return_pc(int pc_offset) {
 MaglevSafepointEntry MaglevSafepointTable::FindEntry(Address pc) const {
   int pc_offset = static_cast<int>(pc - instruction_start_);
 
-  // Trampoline PCs are larger than all entry PCs, so we can distinguish them
-  // with a single comparison against the last entry.
-  bool is_trampoline =
-      has_deopt_data() && length_ > 0 && pc_offset > GetEntryPc(length_ - 1);
-
-  if (is_trampoline) {
-    // Linear scan over just the trampoline PC field (cheap — avoids decoding
-    // full entries).  Trampolines are sorted, so we can break early.
+  // Check if the PC is pointing at a trampoline.
+  if (has_deopt_data()) {
     for (int i = 0; i < length_; ++i) {
-      int trampoline = GetEntryTrampolinePc(i);
-      if (trampoline == pc_offset) return GetEntry(i);
-      if (trampoline > pc_offset) break;
+      MaglevSafepointEntry entry = GetEntry(i);
+      int trampoline_pc = GetEntry(i).trampoline_pc();
+      if (trampoline_pc != -1 && trampoline_pc == pc_offset) return entry;
+      if (trampoline_pc > pc_offset) break;
     }
-  } else {
-    // Binary search for an exact pc match.  Entries are sorted by PC offset.
-    int index = BinarySearchPc(pc_offset);
-    if (index != -1) return GetEntry(index);
+  }
+
+  // Try to find an exact pc match.
+  for (int i = 0; i < length_; ++i) {
+    MaglevSafepointEntry entry = GetEntry(i);
+    if (entry.pc() == pc_offset) {
+      return entry;
+    }
   }
 
   // Return a default entry which has no deopt data and no pushed registers.

@@ -1,4 +1,4 @@
-// Flags: --experimental-bench --no-warnings
+// Flags: --no-warnings
 'use strict';
 
 const common = require('../common');
@@ -19,7 +19,6 @@ async function testListenerFailure(callbackError) {
   const listenerError = new Error('diagnostic listener failed');
   const completion = runner.bench('listener failure', {
     samples: 1,
-    warmup: 0,
   }, common.mustCall((b) => {
     b.diagnostic('listener failure');
     if (callbackError !== undefined) throw callbackError;
@@ -41,7 +40,6 @@ async function testAbortDuringDiagnosticDelivery() {
   const controller = new AbortController();
   const completion = runner.bench('abort diagnostics', {
     samples: 1,
-    warmup: 0,
   }, common.mustCall((b) => {
     for (let i = 0; i < 32; i++) b.diagnostic(`diagnostic ${i}`);
     recordSample(b);
@@ -84,7 +82,6 @@ async function testAfterEachFailurePrecedence() {
   }));
   const completion = runner.bench('afterEach precedence', {
     samples: 1,
-    warmup: 0,
   }, common.mustCall((b) => {
     b.diagnostic('before failures');
     throw callbackError;
@@ -115,7 +112,6 @@ async function testAfterEachFailurePrecedence() {
   const expectedError = new Error('benchmark failed');
   const failed = runner.bench('failed diagnostic', {
     samples: 1,
-    warmup: 0,
   }, common.mustCall((b) => {
     b.diagnostic('before failure', {
       detail: { retained: true },

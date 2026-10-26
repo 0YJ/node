@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 #include <memory>
 #include <ostream>
 
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/visibility.h"
 #include "LIEF/Abstract/Section.hpp"
 #include "LIEF/PE/Section.hpp"
@@ -61,11 +60,9 @@ class LIEF_API Section : public LIEF::Section {
   using it_relocations = ref_iterator<relocations_t&, Relocation*>;
 
   /// Iterator that outputs const Relocation&
-  using it_const_relocations =
-      const_ref_iterator<const relocations_t&, const Relocation*>;
+  using it_const_relocations = const_ref_iterator<const relocations_t&, const Relocation*>;
 
-  /// Container for the symbols associated with this section (owned by the Binary
-  /// object)
+  /// Container for the symbols associated with this section (owned by the Binary object)
   using symbols_t = std::vector<Symbol*>;
 
   /// Iterator that outputs Symbol&
@@ -88,7 +85,7 @@ class LIEF_API Section : public LIEF::Section {
   }
 
   /// Content wrapped by this section
-  span<const uint8_t> content() const LIEF_LIFETIMEBOUND override {
+  span<const uint8_t> content() const override {
     return content_;
   }
 
@@ -113,7 +110,7 @@ class LIEF_API Section : public LIEF::Section {
 
   /// Number of relocations.
   ///
-  /// @warning If the number of relocations is greater than 0xFFFF (maximum
+  /// \warning If the number of relocations is greater than 0xFFFF (maximum
   ///          value for 16-bits integer), then the number of relocations is
   ///          stored in the virtual address of the **first** relocation.
   uint16_t numberof_relocations() const {
@@ -154,33 +151,32 @@ class LIEF_API Section : public LIEF::Section {
   }
 
   /// Iterator over the relocations associated with this section
-  it_relocations relocations() LIEF_LIFETIMEBOUND {
+  it_relocations relocations() {
     return relocations_;
   }
 
-  it_const_relocations relocations() const LIEF_LIFETIMEBOUND {
+  it_const_relocations relocations() const {
     return relocations_;
   }
 
   /// Iterator over the symbols associated with this section
-  it_symbols symbols() LIEF_LIFETIMEBOUND {
+  it_symbols symbols() {
     return symbols_;
   }
 
-  it_const_symbols symbols() const LIEF_LIFETIMEBOUND {
+  it_const_symbols symbols() const {
     return symbols_;
   }
 
-  /// Return comdat information (only if the section has the
+  /// Return comdat infomration (only if the section has the
   /// CHARACTERISTICS::LNK_COMDAT characteristic)
   optional<ComdatInfo> comdat_info() const;
 
   /// Whether there is a large number of relocations whose number need
   /// to be stored in the virtual address attribute
   bool has_extended_relocations() const {
-    static constexpr auto MAX_RELOC = /*uint16_t::max*/ 65535;
     return has_characteristic(CHARACTERISTICS::LNK_NRELOC_OVFL) &&
-           numberof_relocations() == MAX_RELOC;
+           numberof_relocations() == std::numeric_limits<uint16_t>::max();
   }
 
   void content(const std::vector<uint8_t>& data) override {
@@ -221,18 +217,6 @@ class LIEF_API Section : public LIEF::Section {
     characteristics_ = characteristics;
   }
 
-  /// Return the COFF string associated with the section's name (or a nullptr)
-  ///
-  /// This coff string is usually present for long section names whose length
-  /// does not fit in the 8 bytes allocated by the COFF format.
-  String* coff_string() {
-    return coff_string_;
-  }
-
-  const String* coff_string() const {
-    return coff_string_;
-  }
-
   std::string to_string() const;
 
   LIEF_API friend std::ostream& operator<<(std::ostream& os, const Section& sec) {
@@ -246,17 +230,15 @@ class LIEF_API Section : public LIEF::Section {
   Section() = default;
 
   std::vector<uint8_t> content_;
-  uint32_t virtual_size_ = 0;
+  uint32_t virtual_size_           = 0;
   uint32_t pointer_to_relocations_ = 0;
   uint32_t pointer_to_linenumbers_ = 0;
-  uint16_t number_of_relocations_ = 0;
-  uint16_t number_of_linenumbers_ = 0;
-  uint32_t characteristics_ = 0;
+  uint16_t number_of_relocations_  = 0;
+  uint16_t number_of_linenumbers_  = 0;
+  uint32_t characteristics_        = 0;
 
   relocations_t relocations_;
   symbols_t symbols_;
-
-  String* coff_string_ = nullptr;
 };
 
 inline const char* to_string(Section::CHARACTERISTICS e) {

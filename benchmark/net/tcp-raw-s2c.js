@@ -23,11 +23,7 @@ function main({ dur, len, type }) {
     TCPConnectWrap,
     constants: TCPConstants,
   } = common.binding('tcp_wrap');
-  const {
-    WriteWrap,
-    kReadBytesOrError,
-    streamBaseState,
-  } = common.binding('stream_wrap');
+  const { WriteWrap } = common.binding('stream_wrap');
   const PORT = common.PORT;
 
   const serverHandle = new TCP(TCPConstants.SERVER);
@@ -120,7 +116,9 @@ function main({ dur, len, type }) {
         if (!buffer)
           fail('read');
 
-        bytes += streamBaseState[kReadBytesOrError];
+        // Don't slice the buffer. The point of this is to isolate, not
+        // simulate real traffic.
+        bytes += buffer.byteLength;
       };
 
       clientHandle.readStart();

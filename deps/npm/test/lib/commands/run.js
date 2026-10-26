@@ -85,12 +85,17 @@ t.test('default env, start, and restart scripts', async t => {
   })
 
   t.test('start', async t => {
-    // run-script@11 removed the implicit `node server.js` behavior, so a
-    // package with a server.js file but no start script now errors.
-    await t.rejects(
-      runScript.exec(['start']),
-      /Missing script: "start"/
-    )
+    await runScript.exec(['start'])
+    t.match(RUN_SCRIPTS(), [
+      {
+        path: npm.localPrefix,
+        args: [],
+        scriptShell: undefined,
+        stdio: 'inherit',
+        pkg: { name: 'x', version: '1.2.3', _id: 'x@1.2.3', scripts: {} },
+        event: 'start',
+      },
+    ])
   })
 
   t.test('env', async t => {

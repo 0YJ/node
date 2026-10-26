@@ -17,10 +17,9 @@ RUNTIME_FUNCTION(Runtime_CreatePrivateSymbol) {
   DirectHandle<Symbol> symbol = isolate->factory()->NewPrivateSymbol();
   if (args.length() == 1) {
     DirectHandle<Object> description = args.at(0);
-    CHECK(IsString(*description) || IsUndefined(*description));
-    if (IsString(*description)) {
+    CHECK(IsString(*description) || IsUndefined(*description, isolate));
+    if (IsString(*description))
       symbol->set_description(Cast<String>(*description));
-    }
   }
   return *symbol;
 }

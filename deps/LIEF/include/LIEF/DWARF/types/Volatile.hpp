@@ -1,4 +1,4 @@
-/* Copyright 2022 - 2026 R. Thomas
+/* Copyright 2022 - 2025 R. Thomas
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,6 @@
 #define LIEF_DWARF_VOLATILE_TYPE_H
 
 #include "LIEF/visibility.h"
-#include "LIEF/compiler_attributes.hpp"
 #include "LIEF/DWARF/Type.hpp"
 
 namespace LIEF {
@@ -28,26 +27,16 @@ namespace types {
 /// This class represents a `DW_TAG_volatile_type`
 class LIEF_API Volatile : public Type {
   public:
-  template<typename... Args,
-           typename = typename std::
-               enable_if<std::is_constructible<Type, Args&&...>::value>::type>
-  Volatile(Args&&... args) :
-    Type(std::forward<Args>(args)...) {}
+  using Type::Type;
 
-  Volatile(const Volatile&) = delete;
-  Volatile& operator=(const Volatile&) = delete;
+  /// This underlying type
+  const Type* underlying_type() const;
 
-  Volatile(Volatile&&) noexcept = default;
-  Volatile& operator=(Volatile&&) noexcept = default;
-
-  /// The underlying type
-  const Type* underlying_type() const LIEF_LIFETIMEBOUND;
-
-  const Type* operator->() const LIEF_LIFETIMEBOUND {
+  const Type* operator->() const {
     return underlying_type();
   }
 
-  const Type& operator*() const LIEF_LIFETIMEBOUND {
+  const Type& operator*() const {
     return *underlying_type();
   }
 

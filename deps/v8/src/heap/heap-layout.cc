@@ -40,7 +40,13 @@ void HeapLayout::CheckYoungGenerationConsistency(const MemoryChunk* chunk) {
 
 // static
 bool HeapLayout::IsSelfForwarded(Tagged<HeapObject> object) {
-  return IsSelfForwarded(object, object->map_word(kRelaxedLoad));
+  return IsSelfForwarded(object, GetPtrComprCageBase(object));
+}
+
+// static
+bool HeapLayout::IsSelfForwarded(Tagged<HeapObject> object,
+                                 PtrComprCageBase cage_base) {
+  return IsSelfForwarded(object, object->map_word(cage_base, kRelaxedLoad));
 }
 
 // static

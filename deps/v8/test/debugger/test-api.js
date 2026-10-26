@@ -383,8 +383,6 @@ class DebugWrapper {
              scopeIndex : () => scope_index,
              frameIndex : () => frame.callFrameId,
              scopeObject : () => this.execStateScopeObject(scope.object),
-             evaluate : (expr, throw_on_side_effect) =>
-                 this.evaluateOnCallFrame(frame, expr, throw_on_side_effect, scope_index),
              setVariableValue :
                 (name, value) => this.setVariableValue(frame, scope_index,
                                                        name, value),
@@ -564,14 +562,13 @@ class DebugWrapper {
            };
   }
 
-  evaluateOnCallFrame(frame, expr, throw_on_side_effect = false, scope_number = undefined) {
+  evaluateOnCallFrame(frame, expr, throw_on_side_effect = false) {
     const frameid = frame.callFrameId;
     const {msgid, msg} = this.createMessage(
         "Debugger.evaluateOnCallFrame",
         { callFrameId : frameid,
           expression : expr,
           throwOnSideEffect : throw_on_side_effect,
-          scopeNumber : scope_number,
         });
     this.sendMessage(msg);
     const reply = this.takeReplyChecked(msgid);

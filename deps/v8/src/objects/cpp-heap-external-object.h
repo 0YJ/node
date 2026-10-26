@@ -6,28 +6,24 @@
 #define V8_OBJECTS_CPP_HEAP_EXTERNAL_OBJECT_H_
 
 #include "src/objects/heap-object.h"
-#include "src/sandbox/cppheap-pointer.h"
 
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
 namespace v8::internal {
 
-V8_OBJECT class CppHeapExternalObject : public HeapObject {
+#include "torque-generated/src/objects/cpp-heap-external-object-tq.inc"
+
+class CppHeapExternalObject
+    : public TorqueGeneratedCppHeapExternalObject<CppHeapExternalObject,
+                                                  HeapObject> {
  public:
   DECL_PRINTER(CppHeapExternalObject)
-  DECL_VERIFIER(CppHeapExternalObject)
 
   class BodyDescriptor;
 
-  static const int kHeaderSize;
-
- public:
-  CppHeapPointerMember cpp_heap_wrappable_;
-} V8_OBJECT_END;
-
-inline constexpr int CppHeapExternalObject::kHeaderSize =
-    sizeof(CppHeapExternalObject);
+  TQ_OBJECT_CONSTRUCTORS(CppHeapExternalObject)
+};
 
 }  // namespace v8::internal
 

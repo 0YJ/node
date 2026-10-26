@@ -12,7 +12,6 @@
 #include "src/execution/arguments-inl.h"
 #include "src/execution/isolate-inl.h"
 #include "src/logging/log.h"
-#include "src/objects/dictionary-inl.h"
 #include "src/objects/hash-table-inl.h"
 #include "src/objects/literal-objects-inl.h"
 #include "src/objects/lookup-inl.h"
@@ -81,7 +80,7 @@ Tagged<Object> ThrowNotSuperConstructor(Isolate* isolate,
     super_name =
         direct_handle(Cast<JSFunction>(constructor)->shared()->Name(), isolate);
   } else if (IsOddball(*constructor)) {
-    DCHECK(IsNull(*constructor));
+    DCHECK(IsNull(*constructor, isolate));
     super_name = isolate->factory()->null_string();
   } else {
     super_name = Object::NoSideEffectsToString(isolate, constructor);
@@ -289,7 +288,7 @@ bool AddDescriptorsByTemplate(
 
   // Count the number of properties that must be in the instance and
   // create the property array to hold the constants.
-  uint32_t count = 0;
+  int count = 0;
   for (InternalIndex i : InternalIndex::Range(nof_descriptors)) {
     PropertyDetails details = descriptors_template->GetDetails(i);
     if (details.location() == PropertyLocation::kDescriptor &&
@@ -303,7 +302,6 @@ bool AddDescriptorsByTemplate(
   // Read values from |descriptors_template| and store possibly post-processed
   // values into "instantiated" |descriptors| array.
   int field_index = 0;
-  int in_object_field_count = map->GetInObjectProperties();
   for (InternalIndex i : InternalIndex::Range(nof_descriptors)) {
     Tagged<Object> value = descriptors_template->GetStrongValue(i);
     if (IsAccessorPair(value)) {
@@ -325,10 +323,8 @@ bool AddDescriptorsByTemplate(
         if (IsSmi(value)) {
           value = GetMethodWithSharedName(isolate, args, value);
         }
-        auto [representation, constness] =
-            Object::OptimalRepresentation(value, details.constness());
-        details = details.CopyWithRepresentation(representation)
-                      .CopyWithConstness(constness);
+        details = details.CopyWithRepresentation(
+            Object::OptimalRepresentation(value, isolate));
       } else {
         DCHECK_EQ(PropertyKind::kAccessor, details.kind());
         if (IsAccessorPair(value)) {
@@ -349,15 +345,10 @@ bool AddDescriptorsByTemplate(
     DCHECK(Object::FitsRepresentation(value, details.representation()));
     if (details.location() == PropertyLocation::kDescriptor &&
         details.kind() == PropertyKind::kData) {
-      bool is_inobject = field_index < in_object_field_count;
-      int field_offset = is_inobject
-                             ? map->GetInObjectPropertyOffset(field_index)
-                             : FixedArray::OffsetOfElementAt(
-                                   field_index - in_object_field_count);
       details =
           PropertyDetails(details.kind(), details.attributes(),
                           PropertyLocation::kField, PropertyConstness::kConst,
-                          details.representation(), field_offset, is_inobject)
+                          details.representation(), field_index)
               .set_pointer(details.pointer());
 
       property_array->set(field_index, value);
@@ -370,7 +361,7 @@ bool AddDescriptorsByTemplate(
 
   UpdateProtectors(isolate, receiver, descriptors_template);
 
-  map->InitializeDescriptors(*descriptors);
+  map->InitializeDescriptors(isolate, *descriptors);
   if (elements_dictionary->NumberOfElements() > 0) {
     if (!SubstituteValues<NumberDictionary>(isolate, elements_dictionary,
                                             args)) {
@@ -378,16 +369,13 @@ bool AddDescriptorsByTemplate(
     }
     map->set_elements_kind(DICTIONARY_ELEMENTS);
   }
-  if (count > 0) {
-    map->SetOutOfObjectUnusedPropertyFields(0);
-  }
 
   // Atomically commit the changes.
   receiver->set_map(isolate, *map, kReleaseStore);
   if (elements_dictionary->NumberOfElements() > 0) {
     receiver->set_elements(*elements_dictionary);
   }
-  if (property_array->length().value() > 0) {
+  if (property_array->length() > 0) {
     receiver->SetProperties(*property_array);
   }
   return true;
@@ -413,7 +401,7 @@ bool AddDescriptorsByTemplate(
     DirectHandle<NumberDictionary> elements_dictionary_template,
     DirectHandle<FixedArray> computed_properties,
     DirectHandle<JSObject> receiver, RuntimeArguments& args) {
-  uint32_t computed_properties_length = computed_properties->ulength().value();
+  int computed_properties_length = computed_properties->length();
 
   // Shallow-copy properties template.
   Handle<Dictionary> properties_dictionary =
@@ -426,8 +414,9 @@ bool AddDescriptorsByTemplate(
 
   // Merge computed properties with properties and elements dictionary
   // templates.
-  for (uint32_t i = 0; i < computed_properties_length; i++) {
-    int flags = Smi::ToInt(computed_properties->get(i));
+  int i = 0;
+  while (i < computed_properties_length) {
+    int flags = Smi::ToInt(computed_properties->get(i++));
 
     ValueKind value_kind = ComputedEntryFlags::ValueKindBits::decode(flags);
     int key_index = ComputedEntryFlags::KeyIndexBits::decode(flags);
@@ -569,7 +558,8 @@ bool InitClassConstructor(Isolate* isolate,
                                     args);
   } else {
     map->set_is_dictionary_map(true);
-    map->InitializeDescriptors(ReadOnlyRoots(isolate).empty_descriptor_array());
+    map->InitializeDescriptors(isolate,
+                               ReadOnlyRoots(isolate).empty_descriptor_array());
     map->set_is_migration_target(false);
     map->set_may_have_interesting_properties(true);
     map->set_construction_counter(Map::kNoSlackTracking);
@@ -598,10 +588,10 @@ MaybeDirectHandle<Object> DefineClass(
   DirectHandle<JSPrototype> prototype_parent;
   DirectHandle<JSPrototype> constructor_parent;
 
-  if (IsTheHole(*super_class)) {
+  if (IsTheHole(*super_class, isolate)) {
     prototype_parent = isolate->initial_object_prototype();
   } else {
-    if (IsNull(*super_class)) {
+    if (IsNull(*super_class, isolate)) {
       prototype_parent = isolate->factory()->null_value();
     } else if (IsConstructor(*super_class)) {
       DCHECK(!IsJSFunction(*super_class) ||

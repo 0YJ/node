@@ -3,7 +3,6 @@ const pkgJson = require('@npmcli/package-json')
 const reifyFinish = require('../utils/reify-finish.js')
 const resolveAllowScripts = require('../utils/resolve-allow-scripts.js')
 const completion = require('../utils/installed-shallow.js')
-const { patchRelaxOpts } = require('../utils/cli-only-flag.js')
 const ArboristWorkspaceCmd = require('../arborist-cmd.js')
 
 class Uninstall extends ArboristWorkspaceCmd {
@@ -48,7 +47,6 @@ class Uninstall extends ArboristWorkspaceCmd {
       rm: args,
       workspaces: this.workspaceNames,
       allowScripts: allowScriptsPolicy,
-      ...patchRelaxOpts(this.npm.config),
     }
     const arb = new Arborist(opts)
     await arb.reify(opts)

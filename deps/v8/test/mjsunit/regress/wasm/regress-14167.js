@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Flags: --no-liftoff
+
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 let builder = new WasmModuleBuilder();
@@ -33,7 +35,7 @@ builder.addType(makeSig([kWasmF32], [kWasmAnyRef]));
 // 6
 builder.addType(makeSig([], []));
 // 7
-builder.addArray(kWasmAnyRef);
+builder.addArray(kWasmAnyRef, true);
 // 8
 builder.addStruct([
   makeField(kWasmF32, true),
@@ -48,7 +50,7 @@ builder.addStruct([
   makeField(wasmRefNullType(2), false)
 ]);
 // 10
-builder.addArray(kWasmF64, {mutable: false});
+builder.addArray(kWasmF64, false);
 // 11
 builder.addType(makeSig([], [wasmRefNullType(11)]), 2, false);
 // 12
@@ -92,9 +94,9 @@ builder.addStruct([
 // 19
 builder.addStruct([makeField(wasmRefType(0), true)]);
 // 20
-builder.addArray(kWasmI32);
+builder.addArray(kWasmI32, true);
 // 21
-builder.addArray(kWasmI64, {mutable: false});
+builder.addArray(kWasmI64, false);
 builder.endRecGroup();
 
 builder.addDeclarativeElementSegment([1, 2]);

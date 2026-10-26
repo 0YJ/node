@@ -23,40 +23,41 @@ class Code;
 // profiling. Perhaps methods should be specialized instead of this wrapper
 // class?
 class AbstractCode : public HeapObject {
-  V8_IT_NO_AUTO_CHECKER;
-
  public:
   int SourcePosition(Isolate* isolate, int offset);
   int SourceStatementPosition(Isolate* isolate, int offset);
 
-  inline Address InstructionStart();
-  inline Address InstructionEnd();
-  inline int InstructionSize();
+  inline Address InstructionStart(PtrComprCageBase cage_base);
+  inline Address InstructionEnd(PtrComprCageBase cage_base);
+  inline int InstructionSize(PtrComprCageBase cage_base);
 
   // Return the source position table for interpreter code.
   inline Tagged<TrustedByteArray> SourcePositionTable(
       Isolate* isolate, Tagged<SharedFunctionInfo> sfi);
 
+  void DropStackFrameCache(PtrComprCageBase cage_base);
 
   // Returns the size of instructions and the metadata.
-  inline int SizeIncludingMetadata();
+  inline int SizeIncludingMetadata(PtrComprCageBase cage_base);
 
   // Returns true if pc is inside this object's instructions.
   inline bool contains(Isolate* isolate, Address pc);
 
   // Returns the kind of the code.
-  inline CodeKind kind();
+  inline CodeKind kind(PtrComprCageBase cage_base);
 
-  inline Builtin builtin_id();
+  inline Builtin builtin_id(PtrComprCageBase cage_base);
 
-  inline bool has_instruction_stream();
+  inline bool has_instruction_stream(PtrComprCageBase cage_base);
 
-  bool is_context_specialized();
-  BytecodeOffset osr_offset();
+  bool is_context_specialized(PtrComprCageBase cage_base);
+  BytecodeOffset osr_offset(PtrComprCageBase cage_base);
 
   inline Tagged<Code> GetCode();
   inline Tagged<BytecodeArray> GetBytecodeArray();
-  inline Tagged<Union<Code, BytecodeArray>> ToUnionType();
+
+ private:
+  OBJECT_CONSTRUCTORS(AbstractCode, HeapObject);
 };
 
 // Currently we must use full-pointer comparisons (instead of
@@ -67,7 +68,7 @@ class AbstractCode : public HeapObject {
 static_assert(!kAllCodeObjectsLiveInTrustedSpace);
 constexpr bool operator==(const Tagged<AbstractCode> lhs,
                           const Tagged<AbstractCode> rhs) {
-  return lhs.ptr() == rhs.ptr();
+  return lhs->ptr() == rhs->ptr();
 }
 
 }  // namespace internal

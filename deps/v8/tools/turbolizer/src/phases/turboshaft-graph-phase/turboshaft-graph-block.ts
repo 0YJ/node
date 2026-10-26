@@ -20,17 +20,15 @@ export class TurboshaftGraphBlock extends Node<TurboshaftGraphEdge<TurboshaftGra
   collapsedLabelBox: { width: number, height: number };
   width: number;
   height: number;
-  exception: boolean;
 
   constructor(id: number, type: TurboshaftGraphBlockType, deferred: boolean,
-              predecessors: Array<string>, exception: boolean = false) {
+              predecessors: Array<string>) {
     super(id, `${type} ${id}${deferred ? " (deferred)" : ""}`);
     this.type = type;
     this.deferred = deferred;
     this.predecessors = predecessors ?? new Array<string>();
     this.nodes = new Array<TurboshaftGraphOperation>();
     this.visible = true;
-    this.exception = exception;
   }
 
   public override getHeight(showCustomData: boolean, compactView: boolean): number {

@@ -5,8 +5,6 @@
 #ifndef INCLUDE_V8_PRIMITIVE_H_
 #define INCLUDE_V8_PRIMITIVE_H_
 
-#include <string_view>
-
 #include "v8-data.h"          // NOLINT(build/include_directory)
 #include "v8-internal.h"      // NOLINT(build/include_directory)
 #include "v8-local-handle.h"  // NOLINT(build/include_directory)
@@ -125,12 +123,8 @@ enum class NewStringType {
  */
 class V8_EXPORT String : public Name {
  public:
-#ifndef V8_LOWER_LIMITS_MODE
   static constexpr int kMaxLength =
       internal::kApiSystemPointerSize == 4 ? (1 << 28) - 16 : (1 << 29) - 24;
-#else
-  static constexpr int kMaxLength = 1 << 20;
-#endif  // V8_LOWER_LIMITS_MODE
 
   enum Encoding {
     UNKNOWN_ENCODING = 0x1,
@@ -144,11 +138,9 @@ class V8_EXPORT String : public Name {
 
   /**
    * Returns the number of bytes needed for the Utf8 encoding of this string.
+   * TODO(http://crbug.com/373485796): rename back to Utf8Length().
    */
-  size_t Utf8Length(Isolate* isolate) const;
-  // TODO(http://crbug.com/373485796): deprecate and remove.
-  V8_DEPRECATE_SOON("Use Utf8Length(isolate) instead.")
-  size_t Utf8LengthV2(Isolate* isolate) const { return Utf8Length(isolate); }
+  size_t Utf8LengthV2(Isolate* isolate) const;
 
   /**
    * Returns whether this string is known to contain only one byte data,
@@ -190,23 +182,13 @@ class V8_EXPORT String : public Name {
    * \param length The number of characters to copy from the string.
    * \param buffer The buffer into which the string will be copied.
    * \param flags Various flags that influence the behavior of this operation.
+   * TODO(http://crbug.com/373485796): rename back to Write() and
+   * WriteOneByte().
    */
-  void Write(Isolate* isolate, uint32_t offset, uint32_t length,
-             uint16_t* buffer, int flags = WriteFlags::kNone) const;
-  void WriteOneByte(Isolate* isolate, uint32_t offset, uint32_t length,
-                    uint8_t* buffer, int flags = WriteFlags::kNone) const;
-  // TODO(http://crbug.com/373485796): deprecate and remove.
-  V8_DEPRECATE_SOON("Use Write(..) instead.")
   void WriteV2(Isolate* isolate, uint32_t offset, uint32_t length,
-               uint16_t* buffer, int flags = WriteFlags::kNone) const {
-    Write(isolate, offset, length, buffer, flags);
-  }
-  // TODO(http://crbug.com/373485796): deprecate and remove.
-  V8_DEPRECATE_SOON("Use WriteOneByte(..) instead.")
+               uint16_t* buffer, int flags = WriteFlags::kNone) const;
   void WriteOneByteV2(Isolate* isolate, uint32_t offset, uint32_t length,
-                      uint8_t* buffer, int flags = WriteFlags::kNone) const {
-    WriteOneByte(isolate, offset, length, buffer, flags);
-  }
+                      uint8_t* buffer, int flags = WriteFlags::kNone) const;
 
   /**
    * Encode the contents of the string as Utf8 into an external buffer.
@@ -217,7 +199,7 @@ class V8_EXPORT String : public Name {
    * the end of the buffer. If null termination is requested, the output buffer
    * will always be null terminated even if not all characters fit. In that
    * case, the capacity must be at least one. The required size of the output
-   * buffer can be determined using Utf8Length().
+   * buffer can be determined using Utf8LengthV2().
    *
    * \param buffer The buffer into which the string will be written.
    * \param capacity The number of bytes available in the output buffer.
@@ -226,18 +208,11 @@ class V8_EXPORT String : public Name {
    * the buffer.
    * \return The number of bytes copied to the buffer including the null
    * terminator (if written).
+   * TODO(http://crbug.com/373485796): rename back to WriteUtf8().
    */
-  size_t WriteUtf8(Isolate* isolate, char* buffer, size_t capacity,
-                   int flags = WriteFlags::kNone,
-                   size_t* processed_characters_return = nullptr) const;
-  // TODO(http://crbug.com/373485796): deprecate and remove.
-  V8_DEPRECATE_SOON("Use WriteUtf8(..) instead.")
   size_t WriteUtf8V2(Isolate* isolate, char* buffer, size_t capacity,
                      int flags = WriteFlags::kNone,
-                     size_t* processed_characters_return = nullptr) const {
-    return WriteUtf8(isolate, buffer, capacity, flags,
-                     processed_characters_return);
-  }
+                     size_t* processed_characters_return = nullptr) const;
 
   /**
    * A zero length string.
@@ -264,11 +239,6 @@ class V8_EXPORT String : public Name {
    * details on internalized strings.
    */
   Local<String> InternalizeString(Isolate* isolate);
-
-  /**
-   * Returns true if the string is already in the string table of the isolate.
-   */
-  bool IsInStringTable(Isolate* isolate) const;
 
   class V8_EXPORT ExternalStringResourceBase {
    public:
@@ -476,15 +446,13 @@ class V8_EXPORT String : public Name {
    * Get the ExternalStringResource for an external string.  Returns
    * NULL if IsExternal() doesn't return true.
    */
-  // TODO(pthier): Change return type to const ExternalStringResource*.
   V8_INLINE ExternalStringResource* GetExternalStringResource() const;
 
   /**
    * Get the ExternalOneByteStringResource for an external one-byte string.
    * Returns NULL if IsExternalOneByte() doesn't return true.
    */
-  V8_INLINE const ExternalOneByteStringResource*
-  GetExternalOneByteStringResource() const;
+  const ExternalOneByteStringResource* GetExternalOneByteStringResource() const;
 
   V8_INLINE static String* Cast(v8::Data* data) {
 #ifdef V8_ENABLE_CHECKS
@@ -631,7 +599,6 @@ class V8_EXPORT String : public Name {
     char* operator*() { return str_; }
     const char* operator*() const { return str_; }
     size_t length() const { return length_; }
-    std::string_view as_view() const { return std::string_view(str_, length_); }
 
     // Disallow copying and assigning.
     Utf8Value(const Utf8Value&) = delete;
@@ -652,11 +619,9 @@ class V8_EXPORT String : public Name {
    * WARNING: This will unconditionally copy the contents of the JavaScript
    * string, and should be avoided in situations where performance is a concern.
    */
-  class V8_DEPRECATED(
-      "Prefer using String::ValueView if you can, or string->Write to a "
-      "buffer if you cannot.") V8_EXPORT Value {
+  class V8_EXPORT Value {
    public:
-    V8_DEPRECATED(
+    V8_DEPRECATE_SOON(
         "Prefer using String::ValueView if you can, or string->Write to a "
         "buffer if you cannot.")
     Value(Isolate* isolate, Local<v8::Value> obj);
@@ -724,11 +689,10 @@ class V8_EXPORT String : public Name {
   };
 
  private:
-  void VerifyExternalStringResourceBase(const ExternalStringResourceBase* v,
+  void VerifyExternalStringResourceBase(ExternalStringResourceBase* v,
                                         Encoding encoding) const;
+  void VerifyExternalStringResource(ExternalStringResource* val) const;
   ExternalStringResource* GetExternalStringResourceSlow() const;
-  const ExternalOneByteStringResource* GetExternalOneByteStringResourceSlow()
-      const;
   ExternalStringResourceBase* GetExternalStringResourceBaseSlow(
       String::Encoding* encoding_out) const;
 
@@ -917,7 +881,7 @@ class V8_EXPORT Uint32 : public Integer {
 };
 
 /**
- * A JavaScript BigInt value (https://tc39.es/proposal-bigint)
+ * A JavaScript BigInt value (https://tc39.github.io/proposal-bigint)
  */
 class V8_EXPORT BigInt : public Numeric {
  public:
@@ -999,27 +963,7 @@ String::ExternalStringResource* String::GetExternalStringResource() const {
     result = GetExternalStringResourceSlow();
   }
 #ifdef V8_ENABLE_CHECKS
-  VerifyExternalStringResourceBase(result, Encoding::TWO_BYTE_ENCODING);
-#endif
-  return result;
-}
-
-const String::ExternalOneByteStringResource*
-String::GetExternalOneByteStringResource() const {
-  using A = internal::Address;
-  using I = internal::Internals;
-  A obj = internal::ValueHelper::ValueAsAddress(this);
-  const ExternalOneByteStringResource* result;
-  if (I::IsExternalOneByteString(I::GetInstanceType(obj))) {
-    Isolate* isolate = I::GetCurrentIsolateForSandbox();
-    A value = I::ReadExternalPointerField<internal::kExternalStringResourceTag>(
-        isolate, obj, I::kStringResourceOffset);
-    result = reinterpret_cast<String::ExternalOneByteStringResource*>(value);
-  } else {
-    result = GetExternalOneByteStringResourceSlow();
-  }
-#ifdef V8_ENABLE_CHECKS
-  VerifyExternalStringResourceBase(result, Encoding::ONE_BYTE_ENCODING);
+  VerifyExternalStringResource(result);
 #endif
   return result;
 }
@@ -1048,8 +992,25 @@ String::ExternalStringResourceBase* String::GetExternalStringResourceBase(
 
 String::ExternalStringResourceBase* String::GetExternalStringResourceBase(
     String::Encoding* encoding_out) const {
-  Isolate* isolate = internal::Internals::GetCurrentIsolateForSandbox();
-  return GetExternalStringResourceBase(isolate, encoding_out);
+  using A = internal::Address;
+  using I = internal::Internals;
+  A obj = internal::ValueHelper::ValueAsAddress(this);
+  int type = I::GetInstanceType(obj) & I::kStringRepresentationAndEncodingMask;
+  *encoding_out = static_cast<Encoding>(type & I::kStringEncodingMask);
+  ExternalStringResourceBase* resource;
+  if (type == I::kExternalOneByteRepresentationTag ||
+      type == I::kExternalTwoByteRepresentationTag) {
+    Isolate* isolate = I::GetCurrentIsolateForSandbox();
+    A value = I::ReadExternalPointerField<internal::kExternalStringResourceTag>(
+        isolate, obj, I::kStringResourceOffset);
+    resource = reinterpret_cast<ExternalStringResourceBase*>(value);
+  } else {
+    resource = GetExternalStringResourceBaseSlow(encoding_out);
+  }
+#ifdef V8_ENABLE_CHECKS
+  VerifyExternalStringResourceBase(resource, *encoding_out);
+#endif
+  return resource;
 }
 
 // --- Statics ---

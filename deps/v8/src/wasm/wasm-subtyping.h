@@ -49,9 +49,9 @@ V8_NOINLINE V8_EXPORT_PRIVATE bool EquivalentTypes(ValueType type1,
 // For heap types, the following subtyping rules hold:
 // - The abstract heap types form the following type hierarchies:
 //
-//                   any               func         extern      waitqueue
-//               /        \             |             |             |
-//             eq          \          nofunc       noextern    nowaitqueue
+//                   any               func         extern
+//               /        \             |             |
+//             eq          \          nofunc       noextern
 //          /   |   \       \
 //       i31  array  struct  string
 //          \___|______|_____/

@@ -28,9 +28,9 @@ assertEquals(20, constTypedArray[10]);
 
 foo(13, 14);
 
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 assertEquals(14, constTypedArray[13]);
 
 // Detaching the buffer deopts.
 %ArrayBufferDetach(ab);
-assertNotMaglevved(foo);
+assertFalse(isMaglevved(foo));

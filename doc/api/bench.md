@@ -1,9 +1,9 @@
 # Benchmark runner
 
-<!--introduced_in=v26.9.0-->
+<!--introduced_in=REPLACEME-->
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 > Stability: 1.0 - Early Development
@@ -12,8 +12,7 @@ added: v26.9.0
 
 The `node:bench` module supports defining and running JavaScript benchmarks in
 the current process, and running one benchmark file in a fresh child process.
-The module is only available when Node.js is started with the
-`--experimental-bench` flag and can only be imported with the `node:` scheme:
+To access it:
 
 ```mjs
 import { bench, suite } from 'node:bench';
@@ -22,6 +21,8 @@ import { bench, suite } from 'node:bench';
 ```cjs
 const { bench, suite } = require('node:bench');
 ```
+
+This module is only available under the `node:` scheme.
 
 ## Example benchmark
 
@@ -56,16 +57,14 @@ suite('URL', () => {
 Run the benchmark from the command line:
 
 ```console
-node --experimental-bench --bench benchmark.mjs
+node --bench benchmark.mjs
 ```
 
 Benchmarks are executed serially in declaration order. Declared benchmarks are
 scheduled automatically. Call `run()` during the same turn as the declarations
 to consume the event stream or configure filtering.
-If a benchmark run started automatically or through the module-level `run()`
-fails, the process exit code is set to `1` unless `process.exitCode` has
-already been set. Runners created with [`createRunner()`][] leave the exit code
-to their caller.
+If an automatically scheduled run fails and `run()` was not called, the process
+exit code is set to `1`.
 
 ## Measurement model
 
@@ -75,12 +74,6 @@ fresh {BenchContext}. The function must either call `context.start()` and
 once to provide an externally measured sample. Setup before `start()` and
 cleanup after `end()` are outside the measured region. Promise-returning
 functions are awaited.
-
-By default, ten unreported warmup invocations run before the measured samples
-so that early samples are less likely to be taken before the measured code has
-been optimized. A fixed warmup count does not guarantee a stable optimization
-state; inspect raw `samples` and increase `warmup` when early samples are
-consistently slower. Set `warmup` to `0` to measure from the first invocation.
 
 By default, an event loop turn occurs between sample invocations. An embedded
 runner can disable this using `yieldBetweenSamples`. The runner executes
@@ -190,8 +183,8 @@ declarations and a second call to `run()` is an error.
 The `--bench` flag runs one or more explicit benchmark files or glob patterns:
 
 ```console
-node --experimental-bench --bench benchmark.mjs
-node --experimental-bench --bench --bench-reporter=json 'benchmarks/**/*.js'
+node --bench benchmark.mjs
+node --bench --bench-reporter=json 'benchmarks/**/*.js'
 ```
 
 Files are sorted and executed serially. The default
@@ -294,7 +287,7 @@ run().compose(names).pipe(process.stdout);
 ## `createRunner([options])`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `options` {Object}
@@ -312,13 +305,12 @@ runner and obtain its {BenchmarksStream}.
 
 Each runner can be started once. Its `run()` function accepts the same options
 as the module-level [`run()`][]. `run({ yieldBetweenSamples })` overrides the
-value passed to `createRunner()`. Unlike the module-level runner, a failed
-benchmark in an explicit runner does not change the process exit code.
+value passed to `createRunner()`.
 
 ## `bench([name][, options], fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `name` {string} The benchmark name. **Default:** The `name` property of `fn`,
@@ -345,7 +337,7 @@ added: v26.9.0
   * `timeout` {number} The number of milliseconds after which the benchmark
     fails. **Default:** `Infinity`.
   * `warmup` {number} The number of unreported callback invocations before
-    measured samples. Must be a 32-bit unsigned integer. **Default:** `10`.
+    measured samples. Must be a 32-bit unsigned integer. **Default:** `0`.
 * `fn` {Function|AsyncFunction} The benchmark function. It receives a
   {BenchContext}.
 * Returns: {Promise} Fulfilled with the benchmark result after a top-level
@@ -388,7 +380,7 @@ the samples.
 ### `bench.skip([name][, options], fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 Shorthand for `bench(name, { ...options, skip: true }, fn)`.
@@ -396,7 +388,7 @@ Shorthand for `bench(name, { ...options, skip: true }, fn)`.
 ### `bench.only([name][, options], fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 Shorthand for `bench(name, { ...options, only: true }, fn)`.
@@ -404,7 +396,7 @@ Shorthand for `bench(name, { ...options, only: true }, fn)`.
 ## `suite([name][, options], fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `name` {string} The suite name. **Default:** The `name` property of `fn`, or
@@ -430,7 +422,7 @@ functions are awaited before benchmark execution begins.
 ## `describe([name][, options], fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 Alias for `suite()`.
@@ -438,7 +430,7 @@ Alias for `suite()`.
 ## `before(fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `fn` {Function|AsyncFunction} The hook function.
@@ -448,7 +440,7 @@ Registers a hook that runs once before the benchmarks in the current suite.
 ## `after(fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `fn` {Function|AsyncFunction} The hook function.
@@ -458,7 +450,7 @@ Registers a hook that runs once after the benchmarks in the current suite.
 ## `beforeEach(fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `fn` {Function|AsyncFunction} The hook function. It receives an object with
@@ -471,7 +463,7 @@ the benchmark function before `context.start()` or `context.record()`.
 ## `afterEach(fn)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `fn` {Function|AsyncFunction} The hook function. It receives an object with
@@ -484,7 +476,7 @@ in the benchmark function after `context.end()` or `context.record()`.
 ## `run([options])`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `options` {Object}
@@ -507,9 +499,6 @@ execution begins. Calling `run()` is optional when the returned stream is not
 needed. An explicit runner created by `createRunner()` does not run
 automatically, so its `run()` function may be called later.
 
-If any benchmark fails, the process exit code is set to `1` once the run
-finishes, unless `process.exitCode` has already been set.
-
 ```mjs
 import { bench, run } from 'node:bench';
 
@@ -529,7 +518,7 @@ for await (const { type, data } of run()) {
 ## `runFile(path[, options])`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `path` {string|Buffer|URL} The path of one benchmark module.
@@ -583,7 +572,7 @@ instance is created for every warmup and measured sample.
 ### `context.index`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * {number}
@@ -594,7 +583,7 @@ measured samples have separate index sequences.
 ### `context.name`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * {string}
@@ -604,7 +593,7 @@ The benchmark name.
 ### `context.params`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * {Object}
@@ -614,7 +603,7 @@ The benchmark's canonicalized parameter metadata.
 ### `context.phase`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * {string}
@@ -625,7 +614,7 @@ and `'measurement'` for a measured invocation.
 ### `context.signal`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * {AbortSignal}
@@ -636,7 +625,7 @@ finishes.
 ### `context.start()`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 Starts the measured region using `process.hrtime.bigint()`. Calling `start()`
@@ -645,7 +634,7 @@ more than once is an error.
 ### `context.end(operations[, options])`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `operations` {number} The number of completed operations. Must be a positive
@@ -666,7 +655,7 @@ region.
 ### `context.record(sample)`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `sample` {Object}
@@ -688,7 +677,7 @@ message transport from the duration. `record()` is mutually exclusive with
 ### `context.diagnostic(message[, options])`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 * `message` {any} A structured-cloneable diagnostic value. With CLI process
@@ -716,7 +705,7 @@ arguments or an uncloneable message or detail violate the sample contract.
 ### `context.done()`
 
 <!-- YAML
-added: v26.9.0
+added: REPLACEME
 -->
 
 Requests successful benchmark completion after the current measured sample.
@@ -855,7 +844,6 @@ A completed benchmark result contains:
   * `skewness` {number} The skewness of the scaled rate histogram.
 
 [`context.record()`]: #contextrecordsample
-[`createRunner()`]: #createrunneroptions
 [`run()`]: #runoptions
 [benchmark result]: #benchmark-result
 [command-line options documentation]: cli.md#--bench

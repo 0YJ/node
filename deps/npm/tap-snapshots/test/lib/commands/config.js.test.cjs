@@ -10,16 +10,16 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "cache": "{CACHE}",
   "color": {COLOR},
   "json": true,
-  "tag": "from-project",
-  "init-author-name": "from-user",
-  "init-license": "from-global",
+  "projectloaded": "yes",
+  "userloaded": "yes",
+  "globalloaded": "yes",
   "access": null,
   "all": false,
   "allow-same-version": false,
   "allow-directory": "all",
   "allow-file": "all",
-  "allow-git": "none",
-  "allow-remote": "none",
+  "allow-git": "all",
+  "allow-remote": "all",
   "allow-scripts": [
     ""
   ],
@@ -58,7 +58,6 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "expect-result-count": null,
   "expect-results": null,
   "expires": null,
-  "extension-file": null,
   "fetch-retries": 2,
   "fetch-retry-factor": 10,
   "fetch-retry-maxtimeout": 60000,
@@ -72,19 +71,19 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "git-tag-version": true,
   "global": false,
   "globalconfig": "{CWD}/global/etc/npmrc",
-  "global-ignore-file": "{CWD}/global/etc/npmignore",
   "global-style": false,
   "heading": "npm",
   "https-proxy": null,
   "if-present": false,
-  "ignore-extension": false,
   "ignore-scripts": false,
   "include": [],
   "include-staged": false,
   "include-workspace-root": false,
   "include-attestations": false,
   "init-author-email": "",
+  "init-author-name": "",
   "init-author-url": "",
+  "init-license": "ISC",
   "init-module": "{CWD}/home/.npm-init.js",
   "init-type": "commonjs",
   "init-version": "1.0.0",
@@ -92,7 +91,7 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "init.author.email": "",
   "init.author.name": "",
   "init.author.url": "",
-  "init.license": "",
+  "init.license": "ISC",
   "init.module": "{CWD}/home/.npm-init.js",
   "init.version": "1.0.0",
   "install-links": false,
@@ -132,12 +131,6 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "package-lock-only": false,
   "pack-destination": ".",
   "packages": [],
-  "patches-dir": "patches",
-  "allow-unused-patches": false,
-  "ignore-patch-failures": false,
-  "edit-dir": null,
-  "ignore-existing": false,
-  "keep-edit-dir": false,
   "parseable": false,
   "allow-scripts-pending": false,
   "allow-scripts-pin": true,
@@ -177,15 +170,15 @@ exports[`test/lib/commands/config.js TAP config list --json > output matches sna
   "searchopts": "",
   "searchstaleness": 900,
   "shell": "{SHELL}",
+  "shrinkwrap": true,
   "sign-git-commit": false,
   "sign-git-tag": false,
   "strict-peer-deps": false,
   "strict-allow-scripts": false,
-  "strict-npmrc": false,
   "strict-ssl": true,
+  "tag": "latest",
   "tag-version-prefix": "v",
   "timing": false,
-  "to": null,
   "umask": 0,
   "unicode": false,
   "update-notifier": true,
@@ -212,13 +205,12 @@ access = null
 all = false
 allow-directory = "all"
 allow-file = "all"
-allow-git = "none"
-allow-remote = "none"
+allow-git = "all"
+allow-remote = "all"
 allow-same-version = false
 allow-scripts = [""]
 allow-scripts-pending = false
 allow-scripts-pin = true
-allow-unused-patches = false
 also = null
 audit = true
 audit-level = null
@@ -251,13 +243,11 @@ diff-src-prefix = "a/"
 diff-text = false
 diff-unified = 3
 dry-run = false
-edit-dir = null
 editor = "{EDITOR}"
 engine-strict = false
 expect-result-count = null
 expect-results = null
 expires = null
-extension-file = null
 fetch-retries = 2
 fetch-retry-factor = 10
 fetch-retry-maxtimeout = 60000
@@ -270,24 +260,20 @@ fund = true
 git = "git"
 git-tag-version = true
 global = false
-global-ignore-file = "{CWD}/global/etc/npmignore"
 global-style = false
 globalconfig = "{CWD}/global/etc/npmrc"
 heading = "npm"
 https-proxy = null
 if-present = false
-ignore-existing = false
-ignore-extension = false
-ignore-patch-failures = false
 ignore-scripts = false
 include = []
 include-attestations = false
 include-staged = false
 include-workspace-root = false
 init-author-email = ""
-; init-author-name = "" ; overridden by user
+init-author-name = ""
 init-author-url = ""
-; init-license = "" ; overridden by global
+init-license = "ISC"
 init-module = "{CWD}/home/.npm-init.js"
 init-private = false
 init-type = "commonjs"
@@ -295,13 +281,12 @@ init-version = "1.0.0"
 init.author.email = ""
 init.author.name = ""
 init.author.url = ""
-init.license = ""
+init.license = "ISC"
 init.module = "{CWD}/home/.npm-init.js"
 init.version = "1.0.0"
 install-links = false
 install-strategy = "hoisted"
 json = false
-keep-edit-dir = false
 key = null
 legacy-bundling = false
 legacy-peer-deps = false
@@ -341,7 +326,6 @@ packages-all = false
 packages-and-scopes-permission = null
 parseable = false
 password = (protected)
-patches-dir = "patches"
 prefer-dedupe = false
 prefer-offline = false
 prefer-online = false
@@ -374,16 +358,15 @@ searchlimit = 20
 searchopts = ""
 searchstaleness = 900
 shell = "{SHELL}"
+shrinkwrap = true
 sign-git-commit = false
 sign-git-tag = false
 strict-allow-scripts = false
-strict-npmrc = false
 strict-peer-deps = false
 strict-ssl = true
-; tag = "latest" ; overridden by project
+tag = "latest"
 tag-version-prefix = "v"
 timing = false
-to = null
 token-description = null
 umask = 0
 unicode = false
@@ -402,15 +385,15 @@ yes = null
 
 ; "global" config from {CWD}/global/etc/npmrc
 
-init-license = "from-global"
+globalloaded = "yes"
 
 ; "user" config from {CWD}/home/.npmrc
 
-init-author-name = "from-user"
+userloaded = "yes"
 
 ; "project" config from {CWD}/prefix/.npmrc
 
-tag = "from-project"
+projectloaded = "yes"
 
 ; "cli" config from command line options
 
@@ -422,17 +405,19 @@ long = true
 exports[`test/lib/commands/config.js TAP config list > output matches snapshot 1`] = `
 ; "global" config from {CWD}/global/etc/npmrc
 
-init-license = "from-global"
+globalloaded = "yes"
 
 ; "user" config from {CWD}/home/.npmrc
 
 _auth = (protected)
 //nerfdart:_auth = (protected)
-init-author-name = "from-user"
+//nerfdart:auth = (protected)
+auth = (protected)
+userloaded = "yes"
 
 ; "project" config from {CWD}/prefix/.npmrc
 
-tag = "from-project"
+projectloaded = "yes"
 
 ; "cli" config from command line options
 

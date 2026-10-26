@@ -32,7 +32,6 @@ const { status, stderr } = spawnSync(
   process.execPath,
   [
     '--permission',
-    '--allow-env=ALLOWED_DIR,ALLOWED_FILE,DENIED_FILE',
     `--allow-fs-read=${allowedDir}`,
     fixtures.path('permission', 'has-reference-types.js'),
   ],

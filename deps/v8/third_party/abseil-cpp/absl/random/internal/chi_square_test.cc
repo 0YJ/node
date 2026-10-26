@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "absl/algorithm/container.h"
 #include "absl/base/macros.h"
 
 using absl::random_internal::ChiSquare;
@@ -161,7 +160,7 @@ TEST(ChiSquareTest, CalcChiSquare) {
   for (const auto& spec : specs) {
     SCOPED_TRACE(spec.line);
     double chi_square = 0;
-    for (size_t i = 0; i < spec.expected.size(); ++i) {
+    for (int i = 0; i < spec.expected.size(); ++i) {
       const double diff = spec.actual[i] - spec.expected[i];
       chi_square += (diff * diff) / spec.expected[i];
     }
@@ -177,8 +176,8 @@ TEST(ChiSquareTest, CalcChiSquareInt64) {
   // $ python -c "import scipy.stats
   // > print scipy.stats.chisquare([910293487, 910292491, 910216780])[0]"
   // 4.25410123524
-  double sum = absl::c_accumulate(data, double{0});
-  size_t n = absl::c_distance(data);
+  double sum = std::accumulate(std::begin(data), std::end(data), double{0});
+  size_t n = std::distance(std::begin(data), std::end(data));
   double a = ChiSquareWithExpected(std::begin(data), std::end(data), sum / n);
   EXPECT_NEAR(4.254101, a, 1e-6);
 
@@ -295,7 +294,7 @@ TEST(ChiSquareTest, TableData) {
       /*100*/ {118.498, 124.342, 129.561, 135.807, 149.449} /**/};
 
   //    0.90      0.95     0.975      0.99     0.999
-  for (size_t i = 0; i < std::size(data); i++) {
+  for (int i = 0; i < ABSL_ARRAYSIZE(data); i++) {
     const double E = 0.0001;
     EXPECT_NEAR(ChiSquarePValue(data[i][0], i + 1), 0.10, E)
         << i << " " << data[i][0];
@@ -344,8 +343,8 @@ TEST(ChiSquareTest, DiceRolls) {
   // The dof value of 4, @95% = 9.488 (see above test)
   // The dof value of 5, @95% = 11.070
   const int rolls[6] = {22, 11, 17, 14, 20, 18};
-  double sum = absl::c_accumulate(rolls, double{0});
-  size_t n = absl::c_distance(rolls);
+  double sum = std::accumulate(std::begin(rolls), std::end(rolls), double{0});
+  size_t n = std::distance(std::begin(rolls), std::end(rolls));
 
   double a = ChiSquareWithExpected(std::begin(rolls), std::end(rolls), sum / n);
   EXPECT_NEAR(a, 4.70588, 1e-5);

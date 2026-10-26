@@ -5,7 +5,6 @@ if (!common.hasCrypto)
 
 const assert = require('assert');
 const fixtures = require('../common/fixtures');
-const { untrustedLeafErrorCode } = require('../common/tls');
 const https = require('https');
 const tls = require('tls');
 const { once } = require('events');
@@ -105,7 +104,7 @@ const server = https.createServer({
         ca: [load('ca1-cert.pem')],
       }),
       {
-        code: untrustedLeafErrorCode,
+        code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
       },
     );
 
@@ -117,7 +116,7 @@ const server = https.createServer({
         ca: [load('ca1-cert.pem')],
       }),
       {
-        code: untrustedLeafErrorCode,
+        code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
       },
     );
   } finally {

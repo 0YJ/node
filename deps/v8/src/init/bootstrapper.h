@@ -9,6 +9,7 @@
 #include "include/v8-local-handle.h"
 #include "include/v8-snapshot.h"
 #include "src/heap/factory.h"
+#include "src/objects/fixed-array.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/visitors.h"
 #include "src/snapshot/serializer-deserializer.h"
@@ -97,11 +98,6 @@ class Bootstrapper final {
                          v8::ExtensionConfiguration* extensions);
 
   SourceCodeCache* extensions_cache() { return &extensions_cache_; }
-
-  // Triggers initialization of a lazily initialized part of the context,
-  // e.g. the Temporal object.
-  void InitializeLazyPartOfContext(DirectHandle<NativeContext> native_context,
-                                   NativeContext::Field index);
 
  private:
   // Log newly created Map objects if no snapshot was used.

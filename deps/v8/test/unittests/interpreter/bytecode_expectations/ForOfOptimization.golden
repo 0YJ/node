@@ -12,7 +12,7 @@ snippet: "
 "
 frame size: 13
 parameter count: 1
-bytecode array length: 110
+bytecode array length: 107
 bytecodes: [
   /*   48 S> */ B(CreateArrayLiteral), U8(0:ARRAY_BOILERPLATE_DESCRIPTION_TYPE), FBV(0), Flag8(0x25),
                 B(Star4),
@@ -27,17 +27,13 @@ bytecodes: [
                 B(Mov), R(context), R(9),
                 B(LdaTrue),
                 B(Star5),
-  /*   43 s> */ B(ForOfNext), R(3), R(2), FBV(7),
-                B(Star4),
-                B(LdaTheHole),
-                B(TestReferenceEqual), R(4),
-                B(JumpIfTrue), U8(16),
-                B(LdaFalse),
-  /*   43 S> */ B(Star5),
-                B(Mov), R(4), R(1),
+  /*   43 s> */ B(ForOfNext), R(3), R(2), R(4), FBV(7),
+                B(Ldar), R(5),
+                B(JumpIfToBooleanTrue), U8(14),
+  /*   43 S> */ B(Mov), R(4), R(1),
   /*   43 S> */ B(Mov), R(1), R(0),
                 B(Ldar), R(0),
-  /*   34 E> */ B(JumpLoop), U8(22), I8(0), FBV(15),
+  /*   34 E> */ B(JumpLoop), U8(19), I8(0), FBV(13),
                 B(LdaSmi), I8(-1),
                 B(Star7),
                 B(Star6),
@@ -51,10 +47,10 @@ bytecodes: [
                 B(Ldar), R(5),
                 B(JumpIfToBooleanTrue), U8(35),
                 B(Mov), R(context), R(10),
-                B(GetNamedProperty), R(3), U8(2:"return"), FBV(17),
+                B(GetNamedProperty), R(3), U8(2:"return"), FBV(14),
                 B(JumpIfUndefinedOrNull), U8(26),
                 B(Star11),
-                B(CallProperty0), R(11), R(3), FBV(19),
+                B(CallProperty0), R(11), R(3), FBV(16),
                 B(JumpIfJSReceiver), U8(19),
                 B(Star12),
                 B(CallRuntime), U16(Runtime::kThrowIteratorResultNotAnObject), R(12), RegCount8(1),
@@ -81,8 +77,8 @@ constant pool: [
   INTERNALIZED_ONE_BYTE_STRING_TYPE ["return"],
 ]
 handlers: [
-  [22, 48, 54],
-  [67, 86, 88],
+  [22, 45, 51],
+  [64, 83, 85],
 ]
 
 ---
@@ -91,7 +87,7 @@ snippet: "
 "
 frame size: 13
 parameter count: 1
-bytecode array length: 120
+bytecode array length: 117
 bytecodes: [
   /*   58 S> */ B(CreateArrayLiteral), U8(0:ARRAY_BOILERPLATE_DESCRIPTION_TYPE), FBV(0), Flag8(0x25),
                 B(Star3),
@@ -110,17 +106,13 @@ bytecodes: [
                 B(Mov), R(context), R(9),
                 B(LdaTrue),
                 B(Star5),
-  /*   43 s> */ B(ForOfNext), R(3), R(2), FBV(11),
-                B(Star4),
-                B(LdaTheHole),
-                B(TestReferenceEqual), R(4),
-                B(JumpIfTrue), U8(16),
-                B(LdaFalse),
-  /*   43 S> */ B(Star5),
-                B(Mov), R(4), R(1),
+  /*   43 s> */ B(ForOfNext), R(3), R(2), R(4), FBV(11),
+                B(Ldar), R(5),
+                B(JumpIfToBooleanTrue), U8(14),
+  /*   43 S> */ B(Mov), R(4), R(1),
   /*   43 S> */ B(Mov), R(1), R(0),
                 B(Ldar), R(0),
-  /*   34 E> */ B(JumpLoop), U8(22), I8(0), FBV(19),
+  /*   34 E> */ B(JumpLoop), U8(19), I8(0), FBV(17),
                 B(LdaSmi), I8(-1),
                 B(Star7),
                 B(Star6),
@@ -134,10 +126,10 @@ bytecodes: [
                 B(Ldar), R(5),
                 B(JumpIfToBooleanTrue), U8(35),
                 B(Mov), R(context), R(10),
-                B(GetNamedProperty), R(3), U8(3:"return"), FBV(21),
+                B(GetNamedProperty), R(3), U8(3:"return"), FBV(18),
                 B(JumpIfUndefinedOrNull), U8(26),
                 B(Star11),
-                B(CallProperty0), R(11), R(3), FBV(23),
+                B(CallProperty0), R(11), R(3), FBV(20),
                 B(JumpIfJSReceiver), U8(19),
                 B(Star12),
                 B(CallRuntime), U16(Runtime::kThrowIteratorResultNotAnObject), R(12), RegCount8(1),
@@ -165,8 +157,8 @@ constant pool: [
   INTERNALIZED_ONE_BYTE_STRING_TYPE ["return"],
 ]
 handlers: [
-  [32, 58, 64],
-  [77, 96, 98],
+  [32, 55, 61],
+  [74, 93, 95],
 ]
 
 ---
@@ -175,7 +167,7 @@ snippet: "
 "
 frame size: 13
 parameter count: 1
-bytecode array length: 120
+bytecode array length: 117
 bytecodes: [
   /*   58 S> */ B(CreateArrayLiteral), U8(0:ARRAY_BOILERPLATE_DESCRIPTION_TYPE), FBV(0), Flag8(0x25),
                 B(Star3),
@@ -194,17 +186,13 @@ bytecodes: [
                 B(Mov), R(context), R(9),
                 B(LdaTrue),
                 B(Star5),
-  /*   43 s> */ B(ForOfNext), R(3), R(2), FBV(11),
-                B(Star4),
-                B(LdaTheHole),
-                B(TestReferenceEqual), R(4),
-                B(JumpIfTrue), U8(16),
-                B(LdaFalse),
-  /*   43 S> */ B(Star5),
-                B(Mov), R(4), R(1),
+  /*   43 s> */ B(ForOfNext), R(3), R(2), R(4), FBV(11),
+                B(Ldar), R(5),
+                B(JumpIfToBooleanTrue), U8(14),
+  /*   43 S> */ B(Mov), R(4), R(1),
   /*   43 S> */ B(Mov), R(1), R(0),
                 B(Ldar), R(0),
-  /*   34 E> */ B(JumpLoop), U8(22), I8(0), FBV(19),
+  /*   34 E> */ B(JumpLoop), U8(19), I8(0), FBV(17),
                 B(LdaSmi), I8(-1),
                 B(Star7),
                 B(Star6),
@@ -218,10 +206,10 @@ bytecodes: [
                 B(Ldar), R(5),
                 B(JumpIfToBooleanTrue), U8(35),
                 B(Mov), R(context), R(10),
-                B(GetNamedProperty), R(3), U8(3:"return"), FBV(21),
+                B(GetNamedProperty), R(3), U8(3:"return"), FBV(18),
                 B(JumpIfUndefinedOrNull), U8(26),
                 B(Star11),
-                B(CallProperty0), R(11), R(3), FBV(23),
+                B(CallProperty0), R(11), R(3), FBV(20),
                 B(JumpIfJSReceiver), U8(19),
                 B(Star12),
                 B(CallRuntime), U16(Runtime::kThrowIteratorResultNotAnObject), R(12), RegCount8(1),
@@ -249,7 +237,7 @@ constant pool: [
   INTERNALIZED_ONE_BYTE_STRING_TYPE ["return"],
 ]
 handlers: [
-  [32, 58, 64],
-  [77, 96, 98],
+  [32, 55, 61],
+  [74, 93, 95],
 ]
 

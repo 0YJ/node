@@ -141,6 +141,7 @@ void ErrorThrower::Reset() {
 ErrorThrower::~ErrorThrower() {
   if (!error() || isolate_->has_exception()) return;
 
+  HandleScope handle_scope{isolate_};
   isolate_->Throw(*Reify());
 }
 

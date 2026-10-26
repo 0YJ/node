@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -236,7 +236,7 @@ static int put_quic_value(unsigned char *data, size_t value, size_t len)
     if (ossl_quic_vlint_encode_len(value) > len)
         return 0;
 
-    ossl_quic_vlint_encode_n(data, value, (int)len);
+    ossl_quic_vlint_encode_n(data, value, len);
     return 1;
 }
 #endif
@@ -366,12 +366,6 @@ int WPACKET_finish(WPACKET *pkt)
 
 int WPACKET_start_sub_packet_len__(WPACKET *pkt, size_t lenbytes)
 {
-    return WPACKET_start_sub_packet_at_offset_len__(pkt, lenbytes, 0);
-}
-
-int WPACKET_start_sub_packet_at_offset_len__(WPACKET *pkt, size_t lenbytes,
-    size_t offset)
-{
     WPACKET_SUB *sub;
     unsigned char *lenchars;
 
@@ -388,7 +382,7 @@ int WPACKET_start_sub_packet_at_offset_len__(WPACKET *pkt, size_t lenbytes,
 
     sub->parent = pkt->subs;
     pkt->subs = sub;
-    sub->pwritten = pkt->written + lenbytes + offset;
+    sub->pwritten = pkt->written + lenbytes;
     sub->lenbytes = lenbytes;
 
     if (lenbytes == 0) {
@@ -398,8 +392,7 @@ int WPACKET_start_sub_packet_at_offset_len__(WPACKET *pkt, size_t lenbytes,
 
     sub->packet_len = pkt->written;
 
-    if (!WPACKET_allocate_bytes(pkt, lenbytes, &lenchars)
-        || (offset > 0 && !WPACKET_allocate_bytes(pkt, offset, &lenchars)))
+    if (!WPACKET_allocate_bytes(pkt, lenbytes, &lenchars))
         return 0;
 
     return 1;

@@ -14,9 +14,14 @@ assertEquals(3.41, load_holey_fixed_double(holey_double_arr, 1));
 %OptimizeFunctionOnNextCall(load_holey_fixed_double);
 assertEquals(3.41, load_holey_fixed_double(holey_double_arr, 1));
 assertOptimized(load_holey_fixed_double);
-// Loading a hole returns undefined without deoptimizing: the load is unchecked
-// and the hole is tagged to undefined on the way out.
+// Loading a hole should trigger a deopt
 assertEquals(undefined, load_holey_fixed_double(holey_double_arr, 2));
-assertOptimized(load_holey_fixed_double);
+assertUnoptimized(load_holey_fixed_double);
+
+// Reoptimizing, holes should now be handled
+%OptimizeMaglevOnNextCall(load_holey_fixed_double);
 assertEquals(3.41, load_holey_fixed_double(holey_double_arr, 1));
+%OptimizeFunctionOnNextCall(load_holey_fixed_double);
+assertEquals(3.41, load_holey_fixed_double(holey_double_arr, 1));
+assertEquals(undefined, load_holey_fixed_double(holey_double_arr, 2));
 assertOptimized(load_holey_fixed_double);

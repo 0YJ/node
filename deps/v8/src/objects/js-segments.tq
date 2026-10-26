@@ -4,15 +4,13 @@
 
 #include 'src/objects/js-segments.h'
 
-@cppScope('JSSegments')
 bitfield struct JSSegmentsFlags extends uint31 {
   granularity: JSSegmenterGranularity: 2 bit;
 }
 
-@cppObjectLayoutDefinition
 extern class JSSegments extends JSObject {
-  icu_iterator_with_text:
-      CppGCManagedBase;  // CppGCManaged<IcuBreakIteratorWithText>
+  icu_break_iterator: Foreign;  // Managed<icu::BreakIterator>
   raw_string: String;
+  unicode_string: Foreign;  // Managed<icu::UnicodeString>
   flags: SmiTagged<JSSegmentsFlags>;
 }

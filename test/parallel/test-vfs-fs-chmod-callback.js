@@ -1,4 +1,4 @@
-// Flags: --disable-warning=ExperimentalWarning
+// Flags: --experimental-vfs
 'use strict';
 
 // fs.chmod, fs.chown, fs.lchown, fs.utimes, and fs.lutimes callbacks dispatch

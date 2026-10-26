@@ -4,15 +4,10 @@
 
 #include <memory>
 
-#if defined(_WIN32)
-#include <windows.h>
-#endif
-
 #include "include/cppgc/platform.h"
 #include "include/libplatform/libplatform.h"
 #include "include/v8-initialization.h"
 #include "src/base/compiler-specific.h"
-#include "src/base/logging.h"
 #include "src/base/page-allocator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -49,11 +44,6 @@ class CppGCEnvironment final : public ::testing::Environment {
 
 
 int main(int argc, char** argv) {
-#if defined(_WIN32)
-  // Preload these DLLs before symbolization can reenter ASAN's allocator.
-  ::LoadLibraryW(L"dbghelp.dll");
-  ::LoadLibraryW(L"msdia140.dll");
-#endif
   // Don't catch SEH exceptions and continue as the following tests might hang
   // in an broken environment on windows.
   GTEST_FLAG_SET(catch_exceptions, false);
@@ -70,7 +60,7 @@ int main(int argc, char** argv) {
 
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   v8::V8::InitializeExternalStartupData(argv[0]);
-  CHECK(v8::V8::InitializeICUDefaultLocation(argv[0]));
+  v8::V8::InitializeICUDefaultLocation(argv[0]);
 
 #ifdef V8_ENABLE_FUZZTEST
   absl::ParseCommandLine(argc, argv);

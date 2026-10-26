@@ -1,6 +1,5 @@
 const reifyFinish = require('../utils/reify-finish.js')
 const resolveAllowScripts = require('../utils/resolve-allow-scripts.js')
-const { patchRelaxOpts } = require('../utils/cli-only-flag.js')
 const ArboristWorkspaceCmd = require('../arborist-cmd.js')
 
 // dedupe duplicated packages, or find them in the tree
@@ -48,7 +47,6 @@ class Dedupe extends ArboristWorkspaceCmd {
       save: false,
       workspaces: this.workspaceNames,
       allowScripts: allowScriptsPolicy,
-      ...patchRelaxOpts(this.npm.config),
     }
     const arb = new Arborist(opts)
     await arb.dedupe(opts)

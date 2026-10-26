@@ -167,9 +167,6 @@ impl<U> EyepatchHackVector<U> {
     }
 
     fn truncate(&mut self, max: usize) {
-        // We must take care not to materialize an `&mut` here, otherwise we will
-        // have overlapping references
-        let buf_ptr: *mut [U] = self.buf.as_ptr();
         // SAFETY:
         // - The elements in buf are `ULE`, so they don't need to be dropped even if we own them.
         // - self.buf is a valid, nonnull slice pointer, since it comes from a NonNull and the struct
@@ -178,8 +175,7 @@ impl<U> EyepatchHackVector<U> {
         //   smaller, from the same pointer, so it will be valid as well, and similarly non-null.
         self.buf = unsafe {
             NonNull::new_unchecked(core::ptr::slice_from_raw_parts_mut(
-                // Remove the DST
-                buf_ptr.cast::<U>(),
+                self.buf.as_mut().as_mut_ptr(),
                 core::cmp::min(max, self.buf.as_ref().len()),
             ))
         };
@@ -245,21 +241,12 @@ impl<T> Eq for ZeroVec<'_, T> where T: AsULE + Eq {}
 
 impl<'a, 'b, T> PartialEq<ZeroVec<'b, T>> for ZeroVec<'a, T>
 where
-    T: AsULE,
-{
-    #[inline]
-    fn eq(&self, other: &ZeroVec<'b, T>) -> bool {
-        self.as_slice().eq(other)
-    }
-}
-
-impl<T> PartialEq<[T]> for ZeroVec<'_, T>
-where
     T: AsULE + PartialEq,
 {
     #[inline]
-    fn eq(&self, other: &[T]) -> bool {
-        self.as_slice().eq(other)
+    fn eq(&self, other: &ZeroVec<'b, T>) -> bool {
+        // Note: T implements PartialEq but not T::ULE
+        self.iter().eq(other.iter())
     }
 }
 
@@ -269,7 +256,7 @@ where
 {
     #[inline]
     fn eq(&self, other: &&[T]) -> bool {
-        self.as_slice().eq(other)
+        self.iter().eq(other.iter().copied())
     }
 }
 
@@ -279,7 +266,7 @@ where
 {
     #[inline]
     fn eq(&self, other: &[T; N]) -> bool {
-        self.as_slice().eq(other)
+        self.iter().eq(other.iter().copied())
     }
 }
 
@@ -292,19 +279,13 @@ impl<'a, T: AsULE> Default for ZeroVec<'a, T> {
 
 impl<'a, T: AsULE + PartialOrd> PartialOrd for ZeroVec<'a, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.as_slice().partial_cmp(other)
+        self.iter().partial_cmp(other.iter())
     }
 }
 
 impl<'a, T: AsULE + Ord> Ord for ZeroVec<'a, T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.as_slice().cmp(other)
-    }
-}
-
-impl<'a, T: AsULE> core::hash::Hash for ZeroVec<'a, T> {
-    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        self.as_slice().hash(state);
+        self.iter().cmp(other.iter())
     }
 }
 

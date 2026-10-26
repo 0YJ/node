@@ -428,8 +428,7 @@ static char *strip_spaces(char *name)
 
 int ossl_v3_name_cmp(const char *name, const char *cmp)
 {
-    size_t len;
-    int ret;
+    int len, ret;
     char c;
 
     len = strlen(cmp);
@@ -446,7 +445,7 @@ static int sk_strcmp(const char *const *a, const char *const *b)
     return strcmp(*a, *b);
 }
 
-STACK_OF(OPENSSL_STRING) *X509_get1_email(const X509 *x)
+STACK_OF(OPENSSL_STRING) *X509_get1_email(X509 *x)
 {
     GENERAL_NAMES *gens;
     STACK_OF(OPENSSL_STRING) *ret;
@@ -457,7 +456,7 @@ STACK_OF(OPENSSL_STRING) *X509_get1_email(const X509 *x)
     return ret;
 }
 
-STACK_OF(OPENSSL_STRING) *X509_get1_ocsp(const X509 *x)
+STACK_OF(OPENSSL_STRING) *X509_get1_ocsp(X509 *x)
 {
     AUTHORITY_INFO_ACCESS *info;
     STACK_OF(OPENSSL_STRING) *ret = NULL;
@@ -479,7 +478,7 @@ STACK_OF(OPENSSL_STRING) *X509_get1_ocsp(const X509 *x)
     return ret;
 }
 
-STACK_OF(OPENSSL_STRING) *X509_REQ_get1_email(const X509_REQ *x)
+STACK_OF(OPENSSL_STRING) *X509_REQ_get1_email(X509_REQ *x)
 {
     GENERAL_NAMES *gens;
     STACK_OF(X509_EXTENSION) *exts;
@@ -497,7 +496,7 @@ static STACK_OF(OPENSSL_STRING) *get_email(const X509_NAME *name,
     GENERAL_NAMES *gens)
 {
     STACK_OF(OPENSSL_STRING) *ret = NULL;
-    const X509_NAME_ENTRY *ne;
+    X509_NAME_ENTRY *ne;
     const ASN1_IA5STRING *email;
     GENERAL_NAME *gen;
     int i = -1;
@@ -866,14 +865,15 @@ static int do_check_string(const ASN1_STRING *a, int cmp_type, equal_fn equal,
     return rv;
 }
 
-static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
-    unsigned int flags, int check_type, int othername_nid, char **peername)
+static int do_x509_check(X509 *x, const char *chk, size_t chklen,
+    unsigned int flags, int check_type, char **peername)
 {
     GENERAL_NAMES *gens = NULL;
     const X509_NAME *name = NULL;
     int i;
     int cnid = NID_undef;
     int alt_type;
+    int san_present = 0;
     int rv = 0;
     equal_fn equal;
 
@@ -912,8 +912,6 @@ static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
             default:
                 continue;
             case GEN_OTHERNAME:
-                if (check_type != GEN_OTHERNAME)
-                    continue;
                 switch (OBJ_obj2nid(gen->d.otherName->type_id)) {
                 default:
                     continue;
@@ -933,10 +931,17 @@ static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
                      *   SmtpUTF8Mailbox is encoded as UTF8String.
                      *
                      * If it is not a UTF8String then that is unexpected, and
-                     * we ignore the invalid SAN, so it is not considered a
-                     * candidate for equality.
+                     * we ignore the invalid SAN (neither set san_present nor
+                     * consider it a candidate for equality).  This does mean
+                     * that the subject CN may be considered, as would be the
+                     * case when the malformed SmtpUtf8Mailbox SAN is instead
+                     * simply absent.
+                     *
+                     * When CN-ID matching is not desirable, applications can
+                     * choose to turn it off, doing so is at this time a best
+                     * practice.
                      */
-                    if (othername_nid != NID_id_on_SmtpUTF8Mailbox
+                    if (check_type != GEN_EMAIL
                         || gen->d.otherName->value->type != V_ASN1_UTF8STRING)
                         continue;
                     alt_type = 0;
@@ -960,6 +965,7 @@ static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
                 cstr = gen->d.iPAddress;
                 break;
             }
+            san_present = 1;
             /* Positive on success, negative on error! */
             if ((rv = do_check_string(cstr, alt_type, equal, flags,
                      chk, chklen, peername))
@@ -969,17 +975,12 @@ static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
         GENERAL_NAMES_free(gens);
         if (rv != 0)
             return rv;
+        if (san_present && !(flags & X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT))
+            return 0;
     }
 
-    /*
-     * The subject DN is not consulted by default: the subject commonName or
-     * emailAddress is matched only when the caller explicitly opts in with
-     * X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT, and never when
-     * X509_CHECK_FLAG_NEVER_CHECK_SUBJECT is set.
-     */
-    if (cnid == NID_undef
-        || (flags & X509_CHECK_FLAG_NEVER_CHECK_SUBJECT) != 0
-        || (flags & X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT) == 0)
+    /* We're done if CN-ID is not pertinent */
+    if (cnid == NID_undef || (flags & X509_CHECK_FLAG_NEVER_CHECK_SUBJECT))
         return 0;
 
     i = -1;
@@ -997,7 +998,7 @@ static int do_x509_check(const X509 *x, const char *chk, size_t chklen,
     return 0;
 }
 
-int ossl_x509_check_host(const X509 *x, const char *chk, size_t chklen,
+int X509_check_host(X509 *x, const char *chk, size_t chklen,
     unsigned int flags, char **peername)
 {
     if (chk == NULL)
@@ -1013,41 +1014,10 @@ int ossl_x509_check_host(const X509 *x, const char *chk, size_t chklen,
         return -2;
     if (chklen > 1 && chk[chklen - 1] == '\0')
         --chklen;
-    return do_x509_check(x, chk, chklen, flags, GEN_DNS, 0, peername);
+    return do_x509_check(x, chk, chklen, flags, GEN_DNS, peername);
 }
 
-#if !defined(OPENSSL_NO_DEPRECATED_4_1)
-int X509_check_host(const X509 *x, const char *chk, size_t chklen,
-    unsigned int flags, char **peername)
-{
-    return ossl_x509_check_host(x, chk, chklen, flags, peername);
-}
-#endif /* !defined(OPENSSL_NO_DEPRECATED_4_1) */
-
-int ossl_x509_check_rfc822(X509 *x, const char *chk, size_t chklen,
-    unsigned int flags)
-{
-    return do_x509_check(x, chk, chklen, flags, GEN_EMAIL, 0, NULL) == 1;
-}
-
-int ossl_x509_check_smtputf8(X509 *x, const char *chk, size_t chklen,
-    unsigned int flags)
-{
-    return do_x509_check(x, chk, chklen, flags, GEN_OTHERNAME,
-               NID_id_on_SmtpUTF8Mailbox, NULL)
-        == 1;
-}
-
-int ossl_x509_check_ip(const X509 *x, const unsigned char *chk, size_t chklen,
-    unsigned int flags)
-{
-    if (chk == NULL)
-        return -2;
-    return do_x509_check(x, (char *)chk, chklen, flags, GEN_IPADD, 0, NULL);
-}
-
-#if !defined(OPENSSL_NO_DEPRECATED_4_1)
-int X509_check_email(const X509 *x, const char *chk, size_t chklen,
+int X509_check_email(X509 *x, const char *chk, size_t chklen,
     unsigned int flags)
 {
     if (chk == NULL)
@@ -1063,23 +1033,18 @@ int X509_check_email(const X509 *x, const char *chk, size_t chklen,
         return -2;
     if (chklen > 1 && chk[chklen - 1] == '\0')
         --chklen;
-    /*
-     * As this is public API, historically it has supported checking
-     * whatever is supplied against both RFC822 and SMTPUTF8.
-     */
-    if (do_x509_check(x, chk, chklen, flags, GEN_EMAIL, 0, NULL) == 1)
-        return 1;
-    return do_x509_check(x, chk, chklen, flags, GEN_OTHERNAME,
-        NID_id_on_SmtpUTF8Mailbox, NULL);
+    return do_x509_check(x, chk, chklen, flags, GEN_EMAIL, NULL);
 }
 
-int X509_check_ip(const X509 *x, const unsigned char *chk, size_t chklen,
+int X509_check_ip(X509 *x, const unsigned char *chk, size_t chklen,
     unsigned int flags)
 {
-    return ossl_x509_check_ip(x, chk, chklen, flags);
+    if (chk == NULL)
+        return -2;
+    return do_x509_check(x, (char *)chk, chklen, flags, GEN_IPADD, NULL);
 }
 
-int X509_check_ip_asc(const X509 *x, const char *ipasc, unsigned int flags)
+int X509_check_ip_asc(X509 *x, const char *ipasc, unsigned int flags)
 {
     unsigned char ipout[16];
     size_t iplen;
@@ -1089,11 +1054,10 @@ int X509_check_ip_asc(const X509 *x, const char *ipasc, unsigned int flags)
     iplen = (size_t)ossl_a2i_ipadd(ipout, ipasc);
     if (iplen == 0)
         return -2;
-    return do_x509_check(x, (char *)ipout, iplen, flags, GEN_IPADD, 0, NULL);
+    return do_x509_check(x, (char *)ipout, iplen, flags, GEN_IPADD, NULL);
 }
-#endif /* !defined(OPENSSL_NO_DEPRECATED_4_1) */
 
-char *ossl_ipaddr_to_asc(const unsigned char *p, int len)
+char *ossl_ipaddr_to_asc(unsigned char *p, int len)
 {
     /*
      * 40 is enough space for the longest IPv6 address + nul terminator byte
@@ -1104,20 +1068,20 @@ char *ossl_ipaddr_to_asc(const unsigned char *p, int len)
 
     switch (len) {
     case 4: /* IPv4 */
-        snprintf(buf, sizeof(buf), "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
+        BIO_snprintf(buf, sizeof(buf), "%d.%d.%d.%d", p[0], p[1], p[2], p[3]);
         break;
     case 16: /* IPv6 */
         for (out = buf, i = 8, remain = sizeof(buf);
-            i-- > 0 && bytes >= 0 && remain > 0;
+            i-- > 0 && bytes >= 0;
             remain -= bytes, out += bytes) {
             const char *template = (i > 0 ? "%X:" : "%X");
 
-            bytes = snprintf(out, remain, template, p[0] << 8 | p[1]);
+            bytes = BIO_snprintf(out, remain, template, p[0] << 8 | p[1]);
             p += 2;
         }
         break;
     default:
-        snprintf(buf, sizeof(buf), "<invalid length=%d>", len);
+        BIO_snprintf(buf, sizeof(buf), "<invalid length=%d>", len);
         break;
     }
     return OPENSSL_strdup(buf);

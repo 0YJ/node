@@ -148,30 +148,17 @@ async function testPullLocking() {
 
   const fh = await open(filePath, 'r');
   try {
-    // The handle is locked once the first iterable starts being consumed.
+    // First pull locks the handle
     const readable = fh.pull();
-    const other = fh.pull();
-    const iter = readable[Symbol.asyncIterator]();
-    const first = await iter.next();
-    assert.strictEqual(first.done, false);
 
-    // Consuming a second iterable while locked should fail, and so should
-    // creating new consumers.
-    await assert.rejects(
-      other[Symbol.asyncIterator]().next(),
-      { code: 'ERR_INVALID_STATE' },
-    );
+    // Second pull while locked should throw
     assert.throws(
       () => fh.pull(),
       { code: 'ERR_INVALID_STATE' },
     );
-    assert.throws(
-      () => fh.writer(),
-      { code: 'ERR_INVALID_STATE' },
-    );
 
-    // Finish consuming the first stream to unlock
-    while (!(await iter.next()).done);
+    // Consume the first stream to unlock
+    await text(readable);
 
     // Now it should be usable again
     const readable2 = fh.pull();
@@ -211,7 +198,7 @@ async function testPullAbortSignal() {
   const ac = new AbortController();
   const fh = await open(filePath, 'r');
   try {
-    ac.abort(null);
+    ac.abort();
     const readable = fh.pull({ signal: ac.signal });
 
     await assert.rejects(
@@ -221,7 +208,7 @@ async function testPullAbortSignal() {
           assert.fail('Should not reach here');
         }
       },
-      (err) => err === null,
+      (err) => err.name === 'AbortError',
     );
   } finally {
     await fh.close();
@@ -430,36 +417,6 @@ async function testPullSyncArgumentValidation() {
   }
 }
 
-// =============================================================================
-// An iterable that is never consumed must not lock the handle
-// =============================================================================
-
-async function testPullUnconsumedDoesNotLock() {
-  const filePath = path.join(tmpDir, 'pull-unconsumed.txt');
-  fs.writeFileSync(filePath, 'unconsumed');
-
-  const fh = await open(filePath, 'r');
-  try {
-    fh.pull();
-    fh.pull((chunks) => chunks);
-    assert.strictEqual(await text(fh.pull()), 'unconsumed');
-    const w = fh.writer();
-    assert.strictEqual(w.endSync(), 0);
-  } finally {
-    await fh.close();
-  }
-}
-
-async function testPullAfterCloseRejectsOnIteration() {
-  const filePath = path.join(tmpDir, 'pull-closed-before-iter.txt');
-  fs.writeFileSync(filePath, 'data');
-
-  const fh = await open(filePath, 'r');
-  const readable = fh.pull();
-  await fh.close();
-  await assert.rejects(text(readable), { code: 'ERR_INVALID_STATE' });
-}
-
 Promise.all([
   testBasicPull(),
   testPullBinary(),
@@ -480,6 +437,4 @@ Promise.all([
   testPullChunkSize(),
   testPullChunkSizeSmall(),
   testPullSyncArgumentValidation(),
-  testPullUnconsumedDoesNotLock(),
-  testPullAfterCloseRejectsOnIteration(),
 ]).then(common.mustCall());

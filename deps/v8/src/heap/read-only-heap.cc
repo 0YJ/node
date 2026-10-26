@@ -14,15 +14,10 @@
 #include "src/heap/mutable-page.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/init/isolate-group.h"
-#if V8_ENABLE_WEBASSEMBLY
-#include "src/trap-handler/trap-handler.h"
-#include "src/wasm/wasm-objects-inl.h"
-#endif  // V8_ENABLE_WEBASSEMBLY
 #include "src/objects/heap-object-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/smi.h"
 #include "src/sandbox/js-dispatch-table-inl.h"
-#include "src/sandbox/trusted-pointer-table.h"
 #include "src/snapshot/read-only-deserializer.h"
 #include "src/utils/allocation.h"
 
@@ -30,11 +25,10 @@ namespace v8 {
 namespace internal {
 
 ReadOnlyHeap::~ReadOnlyHeap() {
-#if V8_ENABLE_WEBASSEMBLY && V8_STATIC_ROOTS_BOOL
-  if (wasm_null_ != kNullAddress) {
-    trap_handler::UnregisterCoveredMemory(wasm_null_, WasmNull::kSize);
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY && V8_STATIC_ROOTS_BOOL
+#ifdef V8_ENABLE_SANDBOX
+  IsolateGroup::current()->code_pointer_table()->TearDownSpace(
+      &code_pointer_space_);
+#endif
 }
 
 // static
@@ -61,10 +55,6 @@ void ReadOnlyHeap::SetUp(Isolate* isolate,
       isolate->external_pointer_table().SetUpFromReadOnlyArtifacts(
           isolate->heap()->read_only_external_pointer_space(), artifacts);
 #endif  // V8_COMPRESS_POINTERS
-#ifdef V8_ENABLE_SANDBOX
-      isolate->trusted_pointer_table().SetUpFromReadOnlyArtifacts(
-          isolate->heap()->read_only_trusted_pointer_space(), artifacts);
-#endif  // V8_ENABLE_SANDBOX
       artifacts->read_only_heap()->InitializeIsolateRoots(isolate);
     }
     artifacts->VerifyChecksum(read_only_snapshot_data, read_only_heap_created);
@@ -162,15 +152,6 @@ void ReadOnlyHeap::InitializeFromIsolateRoots(Isolate* isolate) {
 void ReadOnlyHeap::InitFromIsolate(Isolate* isolate) {
   DCHECK(roots_init_complete_);
   read_only_space_->ShrinkPages();
-
-#if V8_ENABLE_WEBASSEMBLY && V8_STATIC_ROOTS_BOOL
-  if (trap_handler::IsTrapHandlerEnabled()) {
-    CHECK_EQ(wasm_null_, kNullAddress);
-    wasm_null_ = isolate->factory()->wasm_null()->address();
-    CHECK(trap_handler::RegisterCoveredMemory(wasm_null_, WasmNull::kSize));
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY && V8_STATIC_ROOTS_BOOL
-
   ReadOnlyArtifacts* artifacts =
       isolate->isolate_group()->read_only_artifacts();
   read_only_space()->DetachPagesAndAddToArtifacts(artifacts);
@@ -185,7 +166,10 @@ void ReadOnlyHeap::InitFromIsolate(Isolate* isolate) {
 
 ReadOnlyHeap::ReadOnlyHeap(ReadOnlySpace* ro_space)
     : read_only_space_(ro_space) {
-
+#ifdef V8_ENABLE_SANDBOX
+  IsolateGroup::current()->code_pointer_table()->InitializeSpace(
+      &code_pointer_space_);
+#endif  // V8_ENABLE_SANDBOX
 }
 
 // static
@@ -266,21 +250,15 @@ ReadOnlyPageObjectIterator::ReadOnlyPageObjectIterator(
 }
 
 Tagged<HeapObject> ReadOnlyPageObjectIterator::Next() {
-  if (page_ == nullptr) return {};
+  if (page_ == nullptr) return HeapObject();
 
   Address end = page_->GetAreaStart() + page_->area_size();
   for (;;) {
     DCHECK_LE(current_addr_, end);
-    if (current_addr_ == end) return {};
+    if (current_addr_ == end) return HeapObject();
 
     Tagged<HeapObject> object = HeapObject::FromAddress(current_addr_);
-#if V8_ENABLE_WEBASSEMBLY
-    if (IsWasmNull(object)) {
-      current_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(WasmNull::kSize);
-      return object;
-    }
-#endif  // V8_ENABLE_WEBASSEMBLY
-    const uint32_t object_size = object->SafeSize().value();
+    const int object_size = object->Size();
     current_addr_ += ALIGN_TO_ALLOCATION_ALIGNMENT(object_size);
 
     if (skip_free_space_or_filler_ == SkipFreeSpaceOrFiller::kYes &&

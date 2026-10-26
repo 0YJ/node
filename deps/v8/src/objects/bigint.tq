@@ -6,11 +6,14 @@
 // in global namespace
 @cppObjectLayoutDefinition
 extern class BigIntBase extends PrimitiveHeapObject
-    generates 'BigInt';
+    generates 'TNode<BigInt>';
 
 type BigInt extends BigIntBase;
 
-type MutableBigInt extends BigIntBase;
+@cppObjectLayoutDefinition
+@hasSameInstanceTypeAsParent
+@doNotGenerateCast
+extern class MutableBigInt extends BigIntBase generates 'TNode<BigInt>';
 
 Convert<BigInt, MutableBigInt>(i: MutableBigInt): BigInt {
   dcheck(bigint::IsCanonicalized(i));

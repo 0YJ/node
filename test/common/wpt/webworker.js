@@ -4,7 +4,6 @@
 // Refs: https://web-platform-tests.org/writing-tests/testharness.html
 
 const { pathToFileURL } = require('url');
-const honorAllowedRejections = require('./rejections');
 const {
   runInThisContext,
   constants: { USE_MAIN_CONTEXT_DEFAULT_LOADER },
@@ -89,7 +88,6 @@ globalThis.onmessage = ({ data }) => {
     const result = realImportScripts.apply(this, mapped);
     if (mapped.includes(testharnessPath)) {
       applySkips();
-      honorAllowedRejections();
     }
     return result;
   };
@@ -125,21 +123,11 @@ globalThis.onmessage = ({ data }) => {
     for (const script of data.scripts) {
       globalThis.importScripts(pathToFileURL(script).href);
     }
-  }
-
-  if (data.modifiedScript) {
-    runInThisContext(data.modifiedScript.code, {
-      filename: data.modifiedScript.filename,
-      importModuleDynamically: USE_MAIN_CONTEXT_DEFAULT_LOADER,
-    });
-  } else {
-    // Keep unmodified tests on the native script loading path.
     globalThis.importScripts(pathToFileURL(data.path).href);
-  }
-
-  if (data.isAnyTest) {
-    // *.worker.js tests import testharness.js and call done() themselves.
     // eslint-disable-next-line no-undef
     done();
+  } else {
+    // *.worker.js tests import testharness.js and call done() themselves.
+    globalThis.importScripts(pathToFileURL(data.path).href);
   }
 };

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -15,6 +15,9 @@
 
 #include <string.h>
 #include <openssl/ec.h>
+#ifndef FIPS_MODULE
+#include <openssl/engine.h>
+#endif
 #include <openssl/err.h>
 #include "ec_local.h"
 
@@ -63,13 +66,19 @@ int EC_KEY_set_method(EC_KEY *key, const EC_KEY_METHOD *meth)
     if (finish != NULL)
         finish(key);
 
+#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
+    ENGINE_finish(key->engine);
+    key->engine = NULL;
+#endif
+
     key->meth = meth;
     if (meth->init != NULL)
         return meth->init(key);
     return 1;
 }
 
-EC_KEY *ossl_ec_key_new_method_int(OSSL_LIB_CTX *libctx, const char *propq)
+EC_KEY *ossl_ec_key_new_method_int(OSSL_LIB_CTX *libctx, const char *propq,
+    ENGINE *engine)
 {
     EC_KEY *ret = OPENSSL_zalloc(sizeof(*ret));
 
@@ -89,7 +98,26 @@ EC_KEY *ossl_ec_key_new_method_int(OSSL_LIB_CTX *libctx, const char *propq)
     }
 
     ret->meth = EC_KEY_get_default_method();
+#if !defined(OPENSSL_NO_ENGINE) && !defined(FIPS_MODULE)
+    if (engine != NULL) {
+        if (!ENGINE_init(engine)) {
+            ERR_raise(ERR_LIB_EC, ERR_R_ENGINE_LIB);
+            goto err;
+        }
+        ret->engine = engine;
+    } else
+        ret->engine = ENGINE_get_default_EC();
+    if (ret->engine != NULL) {
+        ret->meth = ENGINE_get_EC(ret->engine);
+        if (ret->meth == NULL) {
+            ERR_raise(ERR_LIB_EC, ERR_R_ENGINE_LIB);
+            goto err;
+        }
+    }
+#endif
+
     ret->version = 1;
+    ret->conv_form = POINT_CONVERSION_UNCOMPRESSED;
 
 /* No ex_data inside the FIPS provider */
 #ifndef FIPS_MODULE
@@ -111,11 +139,9 @@ err:
 }
 
 #ifndef FIPS_MODULE
-EC_KEY *EC_KEY_new_method(ossl_unused ENGINE *engine)
+EC_KEY *EC_KEY_new_method(ENGINE *engine)
 {
-    if (engine != NULL)
-        return NULL;
-    return ossl_ec_key_new_method_int(NULL, NULL);
+    return ossl_ec_key_new_method_int(NULL, NULL, engine);
 }
 #endif
 
@@ -144,7 +170,7 @@ int ECDH_compute_key(void *out, size_t outlen, const EC_POINT *pub_key,
         memcpy(out, sec, outlen);
     }
     OPENSSL_clear_free(sec, seclen);
-    return (int)outlen;
+    return outlen;
 }
 
 EC_KEY_METHOD *EC_KEY_METHOD_new(const EC_KEY_METHOD *meth)

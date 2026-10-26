@@ -7,9 +7,10 @@
 #error("This header can only be used when inspector is enabled")
 #endif
 
-#include <string_view>
+#include <optional>
 #include <unordered_set>
 #include "inspector_agent.h"
+#include "simdjson.h"
 
 namespace node {
 // Forward declaration to break recursive dependency chain with src/env.h.
@@ -58,11 +59,11 @@ class V8ProfilerConnection {
   virtual std::string GetDirectory() const = 0;
   // Return the filename the profile should be written as.
   virtual std::string GetFilename() const = 0;
-  // Return the field of `message.result` that holds the profile object,
-  // or nullptr if `message.result` is itself the profile object.
-  virtual const char* profile_field() const { return "profile"; }
-  // Write the profile, given as raw JSON.
-  virtual void WriteProfile(std::string_view profile);
+  // Return the profile object parsed from `message.result`,
+  // which will be then written as a JSON.
+  virtual std::optional<std::string_view> GetProfile(
+      simdjson::ondemand::object* result);
+  virtual void WriteProfile(simdjson::ondemand::object* result);
 
   bool HasProfileId(uint64_t id) const { return profile_ids_.contains(id); }
 
@@ -75,6 +76,7 @@ class V8ProfilerConnection {
   std::unordered_set<uint64_t> profile_ids_;
 
  protected:
+  simdjson::ondemand::parser json_parser_;
   Environment* env_ = nullptr;
 };
 
@@ -90,8 +92,9 @@ class V8CoverageConnection : public V8ProfilerConnection {
 
   std::string GetDirectory() const override;
   std::string GetFilename() const override;
-  const char* profile_field() const override { return nullptr; }
-  void WriteProfile(std::string_view profile) override;
+  std::optional<std::string_view> GetProfile(
+      simdjson::ondemand::object* result) override;
+  void WriteProfile(simdjson::ondemand::object* result) override;
   void WriteSourceMapCache();
   void TakeCoverage();
   void StopCoverage();

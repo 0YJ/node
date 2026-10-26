@@ -28,27 +28,23 @@ V8_INLINE void MaybePrint(const std::string& short_name,
 
 }  // namespace
 
-ObjectOrNonMaterializedObject DumplingUnoptimizedJSFrame::function() {
+Tagged<JSFunction> DumplingUnoptimizedJSFrame::function() {
   return frame_->function();
 }
 
-ObjectOrNonMaterializedObject DumplingFrameDescriptionFrame::function() {
-  int offset_from_fp = StandardFrameConstants::kFunctionOffset;
-  return GetValueFromDescription(offset_from_fp);
+Tagged<JSFunction> DumplingFrameDescriptionFrame::function() {
+  return Cast<JSFunction>(function_slot_object());
 }
 
-ObjectOrNonMaterializedObject
-DumplingFrameDescriptionFrame::GetValueFromDescription(int offset_from_fp) {
+Tagged<Object> DumplingFrameDescriptionFrame::GetValueFromDescription(
+    int offset_from_fp) {
   intptr_t fp_to_sp_delta = frame_->GetFp() - frame_->GetTop();
   unsigned offset_from_sp =
       static_cast<unsigned>(offset_from_fp + fp_to_sp_delta);
   Address raw_value = frame_->GetFrameSlot(offset_from_sp);
 
-  auto it = non_materialized_objects_.find(offset_from_sp);
-  if (it != non_materialized_objects_.end()) {
-    return it->second;
-  }
-
+  // TODO(mdanylo): it's not really optimized out, but as we
+  // not materialize values only temporarily, it will do.
   if (raw_value == 0xdeadbeef) {
     return ReadOnlyRoots(isolate_).optimized_out();
   }
@@ -65,8 +61,8 @@ void DumplingManager::PrintDumpedFrame(DumplingJSFrame* frame,
 
   // accumulator is located directly after the registers in the stack frame
   int accumulator_reg_idx = bytecode_array->register_count();
-  ObjectOrNonMaterializedObject accumulator =
-      frame->GetRegisterValue(accumulator_reg_idx);
+  Tagged<Object> accumulator_t = frame->GetRegisterValue(accumulator_reg_idx);
+  Handle<Object> accumulator(accumulator_t, isolate);
 
   DoPrint(frame, function, bytecode_offset, frame_dump_type, bytecode_array,
           accumulator);
@@ -76,7 +72,7 @@ void DumplingManager::DoPrint(DumplingJSFrame* frame,
                               Tagged<JSFunction> function, int bytecode_offset,
                               DumpFrameType frame_dump_type,
                               Handle<BytecodeArray> bytecode_array,
-                              ObjectOrNonMaterializedObject accumulator) {
+                              Handle<Object> accumulator) {
   DCHECK(IsDumpingEnabled());
 
   switch (frame_dump_type) {
@@ -113,7 +109,7 @@ void DumplingManager::DoPrint(DumplingJSFrame* frame,
   MaybePrint("f:", DumpFunctionId(function_id), *dumpling_stream_);
 
   std::stringstream check_acc;
-  DifferentialFuzzingPrint(accumulator, check_acc);
+  DifferentialFuzzingPrint(*accumulator, check_acc);
   MaybePrint("x:", DumpAcc(check_acc.str()), *dumpling_stream_);
 
   int param_count = bytecode_array->parameter_count() - 1;
@@ -123,7 +119,7 @@ void DumplingManager::DoPrint(DumplingJSFrame* frame,
 
   for (int i = 0; i < param_count; i++) {
     std::stringstream check_arg;
-    ObjectOrNonMaterializedObject arg_object = frame->GetParameter(i);
+    Tagged<Object> arg_object = frame->GetParameter(i);
     DifferentialFuzzingPrint(arg_object, check_arg);
     std::string label = "a" + std::to_string(i) + ":";
     MaybePrint(label, DumpArg(i, check_arg.str()), *dumpling_stream_);
@@ -131,7 +127,7 @@ void DumplingManager::DoPrint(DumplingJSFrame* frame,
 
   for (int i = 0; i < register_count; i++) {
     std::stringstream check_reg;
-    ObjectOrNonMaterializedObject reg_object = frame->GetRegisterValue(i);
+    Tagged<Object> reg_object = frame->GetRegisterValue(i);
     DifferentialFuzzingPrint(reg_object, check_reg);
     std::string label = "r" + std::to_string(i) + ":";
     MaybePrint(label, DumpReg(i, check_reg.str()), *dumpling_stream_);
@@ -264,11 +260,10 @@ void DumplingManager::LoadDumpPositionsFromFile() {
 }
 
 void DumplingManager::ResetLastFrame() {
-  dumpling_last_frame_ = {
-      -1, "invalid_acc",
-      -1, std::vector<std::string>(64, "Dumpling not initialized"),
-      -1, std::vector<std::string>(128, "Dumpling not initialized"),
-      -1};
+  dumpling_last_frame_ = {-1, "invalid_acc",
+                          -1, std::vector<std::string>(64),
+                          -1, std::vector<std::string>(128),
+                          -1};
 }
 
 void DumplingManager::FinishCurrentREPRLCycle() { dumpling_stream_.reset(); }

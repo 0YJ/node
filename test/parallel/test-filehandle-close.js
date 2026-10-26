@@ -1,18 +1,14 @@
-// Flags: --expose-internals
 'use strict';
 const common = require('../common');
 const assert = require('assert');
-const { internalBinding } = require('internal/test/binding');
-const { FileHandle } = require('internal/fs/promises');
-const { FileHandle: NativeFileHandle } = internalBinding('fs');
+const fs = require('fs');
 
-// Test that closing a FileHandle with an invalid fd fails with EBADF.
-// Use a high invalid fd so background I/O cannot reuse it before close runs.
+// Test that using FileHandle.close to close an already-closed fd fails
+// with EBADF.
 
 (async function() {
-  const fh = common.runWithInvalidFD(
-    (fd) => new FileHandle(new NativeFileHandle(fd)),
-  );
+  const fh = await fs.promises.open(__filename);
+  fs.closeSync(fh.fd);
 
   await assert.rejects(() => fh.close(), {
     code: 'EBADF',

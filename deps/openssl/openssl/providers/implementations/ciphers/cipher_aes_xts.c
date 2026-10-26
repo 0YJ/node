@@ -1,6 +1,6 @@
 
 /*
- * Copyright 2019-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019-2023 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -19,7 +19,6 @@
 #include "cipher_aes_xts.h"
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
-#include "providers/implementations/ciphers/cipher_aes_xts.inc"
 
 #define AES_XTS_FLAGS PROV_CIPHER_FLAG_CUSTOM_IV
 #define AES_XTS_IV_BITS 128
@@ -63,6 +62,10 @@ static int aes_xts_check_keys_differ(const unsigned char *key, size_t bytes,
     return 1;
 }
 
+#ifdef AES_XTS_S390X
+#include "cipher_aes_xts_s390x.inc"
+#endif
+
 /*-
  * Provider dispatch functions
  */
@@ -92,13 +95,6 @@ static int aes_xts_init(void *vctx, const unsigned char *key, size_t keylen,
         if (!ctx->hw->init(ctx, key, keylen))
             return 0;
     }
-#ifdef AES_XTS_S390X
-    else if (xctx->plat.s390x.fc && ctx->iv_set) {
-        /* special handle iv-only update */
-        if (!ctx->hw->init(ctx, NULL, 0))
-            return 0;
-    }
-#endif
     return aes_xts_set_ctx_params(ctx, params);
 }
 
@@ -106,6 +102,10 @@ static int aes_xts_einit(void *vctx, const unsigned char *key, size_t keylen,
     const unsigned char *iv, size_t ivlen,
     const OSSL_PARAM params[])
 {
+#ifdef AES_XTS_S390X
+    if (s390x_aes_xts_einit(vctx, key, keylen, iv, ivlen, params) == 1)
+        return 1;
+#endif
     return aes_xts_init(vctx, key, keylen, iv, ivlen, params, 1);
 }
 
@@ -113,6 +113,10 @@ static int aes_xts_dinit(void *vctx, const unsigned char *key, size_t keylen,
     const unsigned char *iv, size_t ivlen,
     const OSSL_PARAM params[])
 {
+#ifdef AES_XTS_S390X
+    if (s390x_aes_xts_dinit(vctx, key, keylen, iv, ivlen, params) == 1)
+        return 1;
+#endif
     return aes_xts_init(vctx, key, keylen, iv, ivlen, params, 0);
 }
 
@@ -121,7 +125,9 @@ static void *aes_xts_newctx(void *provctx, unsigned int mode, uint64_t flags,
 {
     PROV_AES_XTS_CTX *ctx;
 
-    CIPHER_PROV_CHECK(provctx, AES_128_XTS);
+    if (!ossl_prov_is_running())
+        return NULL;
+
     ctx = OPENSSL_zalloc(sizeof(*ctx));
     if (ctx != NULL) {
         ossl_cipher_generic_initkey(&ctx->base, kbits, blkbits, ivbits, mode,
@@ -147,6 +153,11 @@ static void *aes_xts_dupctx(void *vctx)
     if (!ossl_prov_is_running())
         return NULL;
 
+#ifdef AES_XTS_S390X
+    if (in->plat.s390x.fc)
+        return s390x_aes_xts_dupctx(vctx);
+#endif
+
     if (in->xts.key1 != NULL) {
         if (in->xts.key1 != &in->ks1)
             return NULL;
@@ -167,23 +178,19 @@ static int aes_xts_cipher(void *vctx, unsigned char *out, size_t *outl,
 {
     PROV_AES_XTS_CTX *ctx = (PROV_AES_XTS_CTX *)vctx;
 
-    if (!ossl_prov_is_running()
-        || inl < AES_BLOCK_SIZE
-        || in == NULL
-        || out == NULL)
-        return 0;
-
 #ifdef AES_XTS_S390X
-    if (ctx->plat.s390x.fc) {
-        if (!ctx->plat.s390x.iv_set || !ctx->plat.s390x.key_set)
-            return 0;
-    } else
+    if (ctx->plat.s390x.fc)
+        return s390x_aes_xts_cipher(vctx, out, outl, outsize, in, inl);
 #endif
-    {
-        if (ctx->xts.key1 == NULL || ctx->xts.key2 == NULL
-            || !ctx->base.iv_set)
-            return 0;
-    }
+
+    if (!ossl_prov_is_running()
+        || ctx->xts.key1 == NULL
+        || ctx->xts.key2 == NULL
+        || !ctx->base.iv_set
+        || out == NULL
+        || in == NULL
+        || inl < AES_BLOCK_SIZE)
+        return 0;
 
     /*
      * Impose a limit of 2^20 blocks per data unit as specified by
@@ -195,11 +202,6 @@ static int aes_xts_cipher(void *vctx, unsigned char *out, size_t *outl,
         ERR_raise(ERR_LIB_PROV, PROV_R_XTS_DATA_UNIT_IS_TOO_LARGE);
         return 0;
     }
-
-#ifdef AES_XTS_S390X
-    if (ctx->plat.s390x.fc)
-        return s390x_aes_xts_cipher_stream(ctx, out, outl, in, inl);
-#endif
 
     if (ctx->stream != NULL)
         (*ctx->stream)(in, out, inl, ctx->xts.key1, ctx->xts.key2, ctx->base.iv);
@@ -239,24 +241,30 @@ static int aes_xts_stream_final(void *vctx, unsigned char *out, size_t *outl,
     return 1;
 }
 
+static const OSSL_PARAM aes_xts_known_settable_ctx_params[] = {
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_KEYLEN, NULL),
+    OSSL_PARAM_END
+};
+
 static const OSSL_PARAM *aes_xts_settable_ctx_params(ossl_unused void *cctx,
     ossl_unused void *provctx)
 {
-    return aes_xts_set_ctx_params_list;
+    return aes_xts_known_settable_ctx_params;
 }
 
 static int aes_xts_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_CIPHER_CTX *ctx = (PROV_CIPHER_CTX *)vctx;
-    struct aes_xts_set_ctx_params_st p;
+    const OSSL_PARAM *p;
 
-    if (ctx == NULL || !aes_xts_set_ctx_params_decoder(params, &p))
-        return 0;
+    if (ossl_param_is_empty(params))
+        return 1;
 
-    if (p.keylen != NULL) {
+    p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_KEYLEN);
+    if (p != NULL) {
         size_t keylen;
 
-        if (!OSSL_PARAM_get_size_t(p.keylen, &keylen)) {
+        if (!OSSL_PARAM_get_size_t(p, &keylen)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }

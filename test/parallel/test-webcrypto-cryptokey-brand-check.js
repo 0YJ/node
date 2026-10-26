@@ -1,10 +1,13 @@
 'use strict';
 
-// CryptoKey prototype getters and methods can be invoked with an
-// arbitrary `this`. They must brand-check their receiver and throw
-// cleanly (ERR_INVALID_THIS) rather than crashing the process or
-// returning garbage. This test exercises invalid receiver shapes,
-// including subverting `instanceof` via `Symbol.hasInstance`.
+// The four CryptoKey prototype getters (`type`, `extractable`,
+// `algorithm`, `usages`) are user-configurable per Web IDL, so they
+// can be invoked with an arbitrary `this`. The native callbacks that
+// implement them must brand-check their receiver and throw cleanly
+// (ERR_INVALID_THIS) rather than crashing the process or returning
+// garbage. This test exercises four progressively more hostile
+// receiver shapes, including subverting `instanceof` via
+// `Symbol.hasInstance`, to make sure the C++ brand check holds.
 //
 // It also verifies that `util.types.isCryptoKey()` cannot be fooled
 // by prototype spoofing.
@@ -14,7 +17,7 @@ if (!common.hasCrypto)
   common.skip('missing crypto');
 
 const assert = require('node:assert');
-const { inspect, types: { isCryptoKey } } = require('node:util');
+const { types: { isCryptoKey } } = require('node:util');
 const { subtle } = globalThis.crypto;
 
 (async () => {
@@ -26,74 +29,64 @@ const { subtle } = globalThis.crypto;
 
   const CryptoKey = key.constructor;
 
-  // Capture the underlying prototype members once, so that subsequent
+  // Capture the underlying prototype getters once, so that subsequent
   // tampering with `CryptoKey.prototype` cannot affect what we call.
-  const descriptors = Object.getOwnPropertyDescriptors(CryptoKey.prototype);
+  const getters = {
+    type: Object.getOwnPropertyDescriptor(CryptoKey.prototype, 'type').get,
+    extractable:
+      Object.getOwnPropertyDescriptor(CryptoKey.prototype, 'extractable').get,
+    algorithm:
+      Object.getOwnPropertyDescriptor(CryptoKey.prototype, 'algorithm').get,
+    usages:
+      Object.getOwnPropertyDescriptor(CryptoKey.prototype, 'usages').get,
+  };
 
   // Sanity: each getter works on a real CryptoKey.
-  for (const name of Reflect.ownKeys(descriptors)) {
-    const { get } = descriptors[name];
-    if (get !== undefined)
-      Reflect.apply(get, key, []);
-  }
+  Object.entries(getters).forEach(([name, getter]) => {
+    assert.notStrictEqual(getter.call(key), undefined, `baseline ${name}`);
+  });
   assert.strictEqual(isCryptoKey(key), true);
   assert.strictEqual(Object.hasOwn(CryptoKey, 'getSlots'), false);
-  const keyPrototype = Object.getPrototypeOf(key);
-  assert.strictEqual(Object.hasOwn(keyPrototype, 'getSlots'), false);
-  assert.strictEqual('getSlots' in keyPrototype, false);
-  assert.strictEqual(keyPrototype.constructor, CryptoKey);
-  assert.strictEqual(keyPrototype, CryptoKey.prototype);
+  const internalProto = Object.getPrototypeOf(key);
+  assert.strictEqual(Object.hasOwn(internalProto, 'getSlots'), false);
+  assert.strictEqual('getSlots' in internalProto, false);
+  assert.strictEqual(internalProto.constructor, CryptoKey);
+  assert.strictEqual(Object.getPrototypeOf(internalProto), CryptoKey.prototype);
 
   const invalidThis = { code: 'ERR_INVALID_THIS', name: 'TypeError' };
-  const invalidArgType = { code: 'ERR_INVALID_ARG_TYPE', name: 'TypeError' };
-
-  async function assertInvalidReceiver(receiver) {
-    for (const name of Reflect.ownKeys(descriptors)) {
-      if (name === 'constructor') continue;
-      const descriptor = descriptors[name];
-      const args = name === inspect.custom ? [0, {}] : [];
-      for (const kind of ['get', 'set', 'value']) {
-        const member = descriptor[kind];
-        if (typeof member !== 'function') continue;
-        await assert.rejects(
-          async () => Reflect.apply(member, receiver, args),
-          invalidThis,
-          `CryptoKey.${String(name)} (${kind})`,
-        );
-      }
-    }
-  }
 
   // Plain object receiver.
-  await assertInvalidReceiver({});
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call({}), invalidThis);
+  });
 
   // Null-prototype object receiver.
-  await assertInvalidReceiver({ __proto__: null });
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call({ __proto__: null }), invalidThis);
+  });
 
   // Primitive receiver.
-  await assertInvalidReceiver(1);
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call(1), invalidThis);
+  });
 
   // Null.
-  await assertInvalidReceiver(null);
+  Object.entries(getters).forEach(([, getter]) => {
+    // eslint-disable-next-line no-useless-call
+    assert.throws(() => getter.call(null), invalidThis);
+  });
 
   // Undefined.
-  await assertInvalidReceiver(undefined);
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call(), invalidThis);
+  });
 
   // Function
-  await assertInvalidReceiver(function() {});
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call(function() {}), invalidThis);
+  });
 
-  const revoked = Proxy.revocable(key, {});
-  revoked.revoke();
-  for (const receiver of [
-    { __proto__: CryptoKey.prototype },
-    { __proto__: key },
-    new Proxy(key, {}),
-    revoked.proxy,
-  ]) {
-    await assertInvalidReceiver(receiver);
-  }
-
-  // Prototype spoofing with CryptoKey.prototype must not pass
+  // Prototype spoofing with InternalCryptoKey.prototype must not pass
   // util.types.isCryptoKey().
   const spoofed = {};
   Object.setPrototypeOf(spoofed, Object.getPrototypeOf(key));
@@ -101,10 +94,10 @@ const { subtle } = globalThis.crypto;
   assert.strictEqual(isCryptoKey(spoofed), false);
   await assert.rejects(
     subtle.sign('HMAC', spoofed, Buffer.from('payload')),
-    invalidArgType);
+    invalidThis);
   await assert.rejects(
     subtle.exportKey('jwk', spoofed),
-    invalidArgType);
+    invalidThis);
 
   // Subvert `instanceof CryptoKey` via Symbol.hasInstance, then
   // invoke the native getters on a forged object. The C++ tag
@@ -117,7 +110,9 @@ const { subtle } = globalThis.crypto;
   const fake = { foo: 'bar' };
   assert.strictEqual(fake instanceof CryptoKey, true);
   assert.strictEqual(isCryptoKey(fake), false);
-  await assertInvalidReceiver(fake);
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call(fake), invalidThis);
+  });
 
   // Subverted `instanceof` plus a real BaseObject of a different
   // kind (a Buffer) as the receiver. Without the C++ tag check
@@ -125,11 +120,13 @@ const { subtle } = globalThis.crypto;
   const buf = Buffer.alloc(16);
   assert.strictEqual(buf instanceof CryptoKey, true);
   assert.strictEqual(isCryptoKey(buf), false);
-  await assertInvalidReceiver(buf);
+  Object.entries(getters).forEach(([, getter]) => {
+    assert.throws(() => getter.call(buf), invalidThis);
+  });
 
   // The real CryptoKey continues to work after all of the above.
-  assert.strictEqual(descriptors.type.get.call(key), 'secret');
-  assert.strictEqual(descriptors.extractable.get.call(key), true);
-  assert.strictEqual(descriptors.algorithm.get.call(key).name, 'HMAC');
-  assert.deepStrictEqual(descriptors.usages.get.call(key), ['sign']);
+  assert.strictEqual(getters.type.call(key), 'secret');
+  assert.strictEqual(getters.extractable.call(key), true);
+  assert.strictEqual(getters.algorithm.call(key).name, 'HMAC');
+  assert.deepStrictEqual(getters.usages.call(key), ['sign']);
 })().then(common.mustCall());

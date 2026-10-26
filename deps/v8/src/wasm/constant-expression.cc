@@ -4,16 +4,16 @@
 
 #include "src/wasm/constant-expression.h"
 
-#include "src/base/logging.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory-inl.h"
 #include "src/heap/factory.h"
+#include "src/objects/oddball.h"
 #include "src/roots/roots.h"
 #include "src/wasm/constant-expression-interface.h"
 #include "src/wasm/function-body-decoder-impl.h"
 #include "src/wasm/wasm-code-manager.h"
 #include "src/wasm/wasm-module.h"
-#include "src/wasm/wasm-objects-inl.h"
+#include "src/wasm/wasm-objects.h"
 #include "src/wasm/wasm-opcodes-inl.h"
 
 namespace v8 {
@@ -29,7 +29,8 @@ WireBytesRef ConstantExpression::wire_bytes_ref() const {
 ValueOrError EvaluateConstantExpression(
     Zone* zone, ConstantExpression expr, ValueType expected,
     const WasmModule* module, Isolate* isolate,
-    DirectHandle<WasmTrustedInstanceData> trusted_instance_data) {
+    DirectHandle<WasmTrustedInstanceData> trusted_instance_data,
+    DirectHandle<WasmTrustedInstanceData> shared_trusted_instance_data) {
   switch (expr.kind()) {
     case ConstantExpression::Kind::kEmpty:
       UNREACHABLE();
@@ -42,9 +43,14 @@ ValueOrError EvaluateConstantExpression(
                        module->canonical_type(ValueType::RefNull(expr.type())));
     case ConstantExpression::Kind::kRefFunc: {
       uint32_t index = expr.index();
+      bool function_is_shared =
+          module->type(module->functions[index].sig_index).is_shared;
       DirectHandle<WasmFuncRef> value =
           WasmTrustedInstanceData::GetOrCreateFuncRef(
-              isolate, trusted_instance_data, index);
+              isolate,
+              function_is_shared ? shared_trusted_instance_data
+                                 : trusted_instance_data,
+              index);
       return WasmValue(value, module->canonical_type(expected));
     }
     case ConstantExpression::Kind::kWireBytesRef: {
@@ -57,7 +63,11 @@ ValueOrError EvaluateConstantExpression(
       const uint8_t* end = module_bytes.begin() + ref.end_offset();
 
       auto sig = FixedSizeSignature<ValueType>::Returns(expected);
-      FunctionBody body(&sig, ref.offset(), start, end);
+      // We have already validated the expression, so we might as well
+      // revalidate it as non-shared, which is strictly more permissive.
+      // TODO(14616): Rethink this.
+      constexpr bool kIsShared = false;
+      FunctionBody body(&sig, ref.offset(), start, end, kIsShared);
       WasmDetectedFeatures detected;
       ValueOrError result;
       {
@@ -70,7 +80,8 @@ ValueOrError EvaluateConstantExpression(
         WasmFullDecoder<Decoder::FullValidationTag, ConstantExpressionInterface,
                         kConstantExpression>
             decoder(zone, module, WasmEnabledFeatures::All(), &detected, body,
-                    module, isolate, trusted_instance_data);
+                    module, isolate, trusted_instance_data,
+                    shared_trusted_instance_data);
 
         decoder.DecodeFunctionBody();
 
@@ -84,7 +95,6 @@ ValueOrError EvaluateConstantExpression(
       return result;
     }
   }
-  UNREACHABLE();
 }
 
 }  // namespace wasm

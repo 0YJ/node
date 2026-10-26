@@ -17,8 +17,7 @@ try {
   buf = Buffer.allocUnsafe(kStringMaxLength);
 } catch (e) {
   // If the exception is not due to memory confinement then rethrow it.
-  if (e.code !== 'ERR_MEMORY_ALLOCATION_FAILED' &&
-      e.message !== 'Array buffer allocation failed') throw (e);
+  if (e.message !== 'Array buffer allocation failed') throw (e);
   common.skip(skipMessage);
 }
 

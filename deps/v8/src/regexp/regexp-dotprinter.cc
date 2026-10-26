@@ -12,7 +12,6 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
 // -------------------------------------------------------------------
 // Dot/dotty output
@@ -20,10 +19,10 @@ namespace regexp {
 class DotPrinterImpl : public NodeVisitor {
  public:
   explicit DotPrinterImpl(std::ostream& os) : os_(os) {}
-  void PrintNode(const char* label, Node* node);
-  void Visit(Node* node);
-  void PrintAttributes(Node* from);
-  void PrintOnFailure(Node* from, Node* to);
+  void PrintNode(const char* label, RegExpNode* node);
+  void Visit(RegExpNode* node);
+  void PrintAttributes(RegExpNode* from);
+  void PrintOnFailure(RegExpNode* from, RegExpNode* to);
 #define DECLARE_VISIT(Type) virtual void Visit##Type(Type##Node* that);
   FOR_EACH_NODE_TYPE(DECLARE_VISIT)
 #undef DECLARE_VISIT
@@ -31,7 +30,7 @@ class DotPrinterImpl : public NodeVisitor {
   std::ostream& os_;
 };
 
-void DotPrinterImpl::PrintNode(const char* label, Node* node) {
+void DotPrinterImpl::PrintNode(const char* label, RegExpNode* node) {
   os_ << "digraph G {\n  graph [label=\"";
   for (int i = 0; label[i]; i++) {
     switch (label[i]) {
@@ -55,13 +54,13 @@ void DotPrinterImpl::PrintNode(const char* label, Node* node) {
   os_ << "}" << std::endl;
 }
 
-void DotPrinterImpl::Visit(Node* node) {
+void DotPrinterImpl::Visit(RegExpNode* node) {
   if (node->info()->visited) return;
   node->info()->visited = true;
   node->Accept(this);
 }
 
-void DotPrinterImpl::PrintOnFailure(Node* from, Node* on_failure) {
+void DotPrinterImpl::PrintOnFailure(RegExpNode* from, RegExpNode* on_failure) {
   os_ << "  n" << from << " -> n" << on_failure << " [style=dotted];\n";
   Visit(on_failure);
 }
@@ -96,7 +95,7 @@ class AttributePrinter {
   bool first_;
 };
 
-void DotPrinterImpl::PrintAttributes(Node* that) {
+void DotPrinterImpl::PrintAttributes(RegExpNode* that) {
   os_ << "  a" << that << " [shape=Mrecord, color=grey, fontcolor=grey, "
       << "margin=0.1, fontsize=10, label=\"{";
   AttributePrinter printer(os_);
@@ -150,7 +149,7 @@ void DotPrinterImpl::VisitText(TextNode* that) {
         break;
       }
       case TextElement::CLASS_RANGES: {
-        ClassRanges* node = elm.class_ranges();
+        RegExpClassRanges* node = elm.class_ranges();
         os_ << "[";
         if (node->is_negated()) os_ << "^";
         for (int j = 0; j < node->ranges(zone)->length(); j++) {
@@ -212,7 +211,7 @@ void DotPrinterImpl::VisitAssertion(AssertionNode* that) {
   }
   os_ << "];\n";
   PrintAttributes(that);
-  Node* successor = that->on_success();
+  RegExpNode* successor = that->on_success();
   os_ << "  n" << that << " -> n" << successor << ";\n";
   Visit(successor);
 }
@@ -257,6 +256,10 @@ void DotPrinterImpl::VisitAction(ActionNode* that) {
           << that->register_to() << "\", shape=septagon";
       break;
     }
+    case ActionNode::MODIFY_FLAGS: {
+      os_ << "label=\"flags $" << that->flags() << "\", shape=septagon";
+      break;
+    }
     case ActionNode::EATS_AT_LEAST: {
       os_ << "label=\"eats at least $" << that->stored_eats_at_least()
           << "\", shape=septagon";
@@ -265,26 +268,17 @@ void DotPrinterImpl::VisitAction(ActionNode* that) {
   }
   os_ << "];\n";
   PrintAttributes(that);
-  Node* successor = that->on_success();
+  RegExpNode* successor = that->on_success();
   os_ << "  n" << that << " -> n" << successor << ";\n";
   Visit(successor);
 }
 
-void DotPrinterImpl::VisitUnanchoredAdvance(UnanchoredAdvanceNode* that) {
-  os_ << "  n" << that << " [label=\"unanchored advance\", shape=septagon];\n";
-  PrintAttributes(that);
-  Node* successor = that->on_success();
-  os_ << "  n" << that << " -> n" << successor << ";\n";
-  Visit(successor);
-}
-
-void DotPrinter::DotPrint(const char* label, Node* node) {
+void DotPrinter::DotPrint(const char* label, RegExpNode* node) {
   StdoutStream os;
   DotPrinterImpl printer(os);
   printer.PrintNode(label, node);
 }
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

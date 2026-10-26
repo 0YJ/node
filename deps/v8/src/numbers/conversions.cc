@@ -8,21 +8,19 @@
 #include <stdarg.h>
 
 #include <cmath>
-#include <limits>
 #include <optional>
 
-#include "include/v8config.h"
 #include "src/base/fpu.h"
 #include "src/base/numbers/dtoa.h"
 #include "src/base/numbers/strtod.h"
-#include "src/bigint/bigint-inl.h"
+#include "src/base/small-vector.h"
+#include "src/bigint/bigint.h"
 #include "src/common/assert-scope.h"
 #include "src/handles/handles.h"
 #include "src/heap/factory.h"
 #include "src/objects/bigint.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/string-inl.h"
-#include "src/sandbox/sandbox-malloc.h"
 #include "src/strings/char-predicates-inl.h"
 #include "src/utils/allocation.h"
 #include "third_party/dragonbox/src/include/dragonbox/dragonbox.h"
@@ -428,14 +426,12 @@ double InternalStringToIntDouble(const Char* start, const Char* end,
       number >>= overflow_bits_count;
       exponent = overflow_bits_count;
 
-      // Cap exponent to avoid int overflow on huge digit runs
-      constexpr int kMaxExponent = std::numeric_limits<double>::max_exponent;
       bool zero_tail = true;
       while (true) {
         ++current;
         if (current == end || !isDigit(*current, radix)) break;
         zero_tail = zero_tail && *current == '0';
-        if (exponent <= kMaxExponent) exponent += radix_log_2;
+        exponent += radix_log_2;
       }
 
       if (!allow_trailing_junk && AdvanceToNonspace(&current, end)) {
@@ -488,7 +484,7 @@ enum class Sign { kNegative, kPositive, kNone };
 }  // namespace
 
 // ES6 18.2.5 parseInt(string, radix) (with NumberParseIntHelper subclass);
-// and BigInt parsing cases from https://tc39.es/proposal-bigint/
+// and BigInt parsing cases from https://tc39.github.io/proposal-bigint/
 // (with StringToBigIntHelper subclass).
 class StringToIntHelper {
  public:
@@ -538,7 +534,7 @@ class StringToIntHelper {
   }
 
   base::Vector<const uint8_t> GetOneByteVector(
-      const DisallowGarbageCollection& no_gc V8_LIFETIME_BOUND) {
+      const DisallowGarbageCollection& no_gc) {
     if (raw_one_byte_subject_ != nullptr) {
       return base::Vector<const uint8_t>(raw_one_byte_subject_, length_);
     }
@@ -546,7 +542,7 @@ class StringToIntHelper {
   }
 
   base::Vector<const base::uc16> GetTwoByteVector(
-      const DisallowGarbageCollection& no_gc V8_LIFETIME_BOUND) {
+      const DisallowGarbageCollection& no_gc) {
     if (raw_two_byte_subject_ != nullptr) {
       return base::Vector<const base::uc16>(raw_two_byte_subject_, length_);
     }
@@ -1006,8 +1002,6 @@ class StringToBigIntHelper : public StringToIntHelper {
   StringToBigIntHelper(IsolateT* isolate, DirectHandle<String> string)
       : StringToIntHelper(string),
         isolate_(isolate),
-        accumulator_(BigInt::kMaxLength,
-                     isolate->bigint_processor()->platform()),
         behavior_(Behavior::kStringToBigInt) {
     set_allow_binary_and_octal_prefixes();
     set_disallow_trailing_junk();
@@ -1018,8 +1012,6 @@ class StringToBigIntHelper : public StringToIntHelper {
   StringToBigIntHelper(IsolateT* isolate, const uint8_t* string, size_t length)
       : StringToIntHelper(string, length),
         isolate_(isolate),
-        accumulator_(BigInt::kMaxLength,
-                     isolate->bigint_processor()->platform()),
         behavior_(Behavior::kLiteral) {
     set_allow_binary_and_octal_prefixes();
   }
@@ -1060,38 +1052,23 @@ class StringToBigIntHelper : public StringToIntHelper {
 
   // Used for converting BigInt literals. The scanner has already checked
   // that the literal is valid and not too big, so this always succeeds.
-  std::pair<SandboxChars, uint32_t> DecimalString(
-      bigint::Processor* processor) {
+  std::unique_ptr<char[]> DecimalString(bigint::Processor* processor) {
     DCHECK_EQ(behavior_, Behavior::kLiteral);
     ParseInt();
     if (state() == State::kZero) {
       // Input may have been "0x0" or similar.
-      SandboxChars out(SandboxAllocArray<uint8_t>(1));
-      *out.get() = '0';
-      return {std::move(out), 1};
+      return std::unique_ptr<char[]>(new char[2]{'0', '\0'});
     }
     DCHECK_EQ(state(), State::kDone);
     uint32_t num_digits = accumulator_.ResultLength();
-    constexpr uint32_t kStackStorageSize =
-        bigint::FromStringAccumulator::kStackParts;
-    bigint::digit_t stack_storage[kStackStorageSize];
-    std::unique_ptr<bigint::digit_t[], bigint::Platform::Deleter>
-        sandbox_storage(nullptr,
-                        bigint::Platform::Deleter(processor->platform()));
-    bigint::digit_t* digit_storage;
-    if (num_digits <= kStackStorageSize) {
-      digit_storage = stack_storage;
-    } else {
-      sandbox_storage.reset(processor->platform()->Allocate(num_digits));
-      digit_storage = sandbox_storage.get();
-    }
-    bigint::RWDigits digits(digit_storage, num_digits);
+    base::SmallVector<bigint::digit_t, 8> digit_storage(num_digits);
+    bigint::RWDigits digits(digit_storage.data(), num_digits);
     processor->FromString(digits, &accumulator_);
     uint32_t num_chars = bigint::ToStringResultLength(digits, 10, false);
-    SandboxChars out(SandboxAllocArray<uint8_t>(num_chars));
-    char* chars = reinterpret_cast<char*>(out.get());
-    processor->ToString(chars, &num_chars, digits, 10, false);
-    return {std::move(out), num_chars};
+    std::unique_ptr<char[]> out(new char[num_chars + 1]);
+    processor->ToString(out.get(), &num_chars, digits, 10, false);
+    out[num_chars] = '\0';
+    return out;
   }
   IsolateT* isolate() { return isolate_; }
 
@@ -1121,7 +1098,7 @@ class StringToBigIntHelper : public StringToIntHelper {
   }
 
   IsolateT* isolate_;
-  bigint::FromStringAccumulator accumulator_;
+  bigint::FromStringAccumulator accumulator_{BigInt::kMaxLength};
   Behavior behavior_;
 };
 
@@ -1144,9 +1121,9 @@ template EXPORT_TEMPLATE_DEFINE(V8_EXPORT_PRIVATE)
     MaybeHandle<BigInt> BigIntLiteral(LocalIsolate* isolate,
                                       const char* string);
 
-std::pair<SandboxChars, uint32_t> BigIntLiteralToDecimal(
+std::unique_ptr<char[]> BigIntLiteralToDecimal(
     LocalIsolate* isolate, base::Vector<const uint8_t> literal) {
-  StringToBigIntHelper<LocalIsolate> helper(isolate, literal.begin(),
+  StringToBigIntHelper<LocalIsolate> helper(nullptr, literal.begin(),
                                             literal.size());
   return helper.DecimalString(isolate->bigint_processor());
 }
@@ -1162,8 +1139,7 @@ std::string_view DoubleToStringView(double v, base::Vector<char> buffer) {
     default: {
       if (IsInt32Double(v)) {
         // This will trigger if v is -0 and -0.0 is stringified to "0".
-        // (see ES section 7.1.12.1
-        // https://tc39.es/ecma262/#sec-tostring-applied-to-the-number-type)
+        // (see ES section 7.1.12.1 #sec-tostring-applied-to-the-number-type)
         return IntToStringView(FastD2I(v), buffer);
       }
       SimpleStringBuilder builder(buffer.begin(), buffer.size());

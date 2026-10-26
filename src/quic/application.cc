@@ -1,3 +1,5 @@
+#include "util.h"
+#if HAVE_OPENSSL && HAVE_QUIC
 #include "guard.h"
 #ifndef OPENSSL_NO_QUIC
 #include <async_wrap-inl.h>
@@ -14,7 +16,6 @@
 #include "http3.h"
 #include "packet.h"
 #include "session.h"
-#include "util.h"
 
 namespace node {
 
@@ -116,7 +117,7 @@ Maybe<Session::Application_Options> Session::Application_Options::From(
 
   // Ensure the advertised max_field_section_size in SETTINGS is at least
   // as large as max_header_length. Otherwise the peer would be told to
-  // restrict headers to a smaller size than what the HTTP/3 stream accepts.
+  // restrict headers to a smaller size than what CanAddHeader accepts.
   if (options.max_field_section_size < options.max_header_length) {
     options.max_field_section_size = options.max_header_length;
   }
@@ -156,7 +157,7 @@ MaybeLocal<Object> Session::Application_Options::ToObject(
   static_assert(std::size(values) == std::size(names));
 
   auto obj = tmpl->NewInstance(env->context(), values);
-  if (obj->SetPrototype(env->context(), Null(env->isolate())).IsNothing()) {
+  if (obj->SetPrototypeV2(env->context(), Null(env->isolate())).IsNothing()) {
     return {};
   }
   return obj;
@@ -206,11 +207,9 @@ Session::Application::ExtractSessionTicketAppData(
              : SessionTicket::AppData::Status::TICKET_USE;
 }
 
-void Session::Application::ReceiveStreamClose(stream_id id,
-                                              Stream* stream,
+void Session::Application::ReceiveStreamClose(Stream* stream,
                                               QuicError&& error) {
-  // Stream may be nullptr if our side is already gone
-  if (stream == nullptr) return;
+  DCHECK_NOT_NULL(stream);
   stream->Destroy(std::move(error));
 }
 
@@ -339,6 +338,11 @@ class DefaultApplication final : public Session::Application {
   }
 
   int GetStreamData(Session::StreamData* stream_data) override {
+    // Reset the state of stream_data before proceeding...
+    stream_data->id = -1;
+    stream_data->count = 0;
+    stream_data->fin = false;
+    stream_data->stream.reset();
     Debug(&session(), "Default application getting stream data");
     DCHECK_NOT_NULL(stream_data);
     // If the queue is empty, there aren't any streams with data yet
@@ -459,3 +463,4 @@ std::unique_ptr<Session::Application> CreateDefaultApplication(
 }  // namespace node
 
 #endif  // OPENSSL_NO_QUIC
+#endif  // HAVE_OPENSSL && HAVE_QUIC

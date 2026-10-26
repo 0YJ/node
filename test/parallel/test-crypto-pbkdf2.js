@@ -6,8 +6,8 @@ if (!common.hasCrypto)
 const assert = require('assert');
 const crypto = require('crypto');
 const {
+  hasOpenSSL,
   hasFIPS,
-  isBoringSSL,
 } = require('../common/crypto');
 
 const fips4 = hasFIPS(4);
@@ -16,16 +16,14 @@ const validSalt = fips4 ? '0123456789abcdef' : 'salt';
 const validIterations = fips4 ? 1000 : 8;
 const validKeyLength = fips4 ? 16 : 8;
 
-function runPBKDF2(password, salt, iterations, keylen, hash, testAsync = true) {
+function runPBKDF2(password, salt, iterations, keylen, hash) {
   const syncResult =
     crypto.pbkdf2Sync(password, salt, iterations, keylen, hash);
 
-  if (testAsync) {
-    crypto.pbkdf2(password, salt, iterations, keylen, hash,
-                  common.mustSucceed((asyncResult) => {
-                    assert.deepStrictEqual(asyncResult, syncResult);
-                  }));
-  }
+  crypto.pbkdf2(password, salt, iterations, keylen, hash,
+                common.mustSucceed((asyncResult) => {
+                  assert.deepStrictEqual(asyncResult, syncResult);
+                }));
 
   return syncResult;
 }
@@ -49,22 +47,20 @@ function assertPBKDF2Fails(password, salt, iterations, keylen, hash) {
   );
 }
 
-function testPBKDF2(password, salt, iterations, keylen, expected, encoding,
-                    testAsync = false) {
-  const actual = runPBKDF2(password, salt, iterations, keylen, 'sha256', testAsync);
+function testPBKDF2(password, salt, iterations, keylen, expected, encoding) {
+  const actual = runPBKDF2(password, salt, iterations, keylen, 'sha256');
   assert.strictEqual(actual.toString(encoding || 'latin1'), expected);
 }
 
 //
-// Test PBKDF2 with RFC 6070 test vectors (except #4). Run one known answer
-// through the callback API; the rest only need synchronous derivation.
+// Test PBKDF2 with RFC 6070 test vectors (except #4)
 //
 
 if (fips4) {
   testPBKDF2(validPassword, validSalt, validIterations, 32,
              '8514638175a45bc45eb1f22f04ff7d27' +
              'f4f8be480498c455ff4b494ce8d1e7d2',
-             'hex', true);
+             'hex');
 
   for (const args of [
     ['short', validSalt, validIterations],
@@ -86,7 +82,7 @@ if (fips4) {
 
   testPBKDF2('password', 'salt', 4096, 20,
              '\xc5\xe4\x78\xd5\x92\x88\xc8\x41\xaa\x53\x0d\xb6' +
-             '\x84\x5c\x4c\x8d\x96\x28\x93\xa0', 'latin1', true);
+             '\x84\x5c\x4c\x8d\x96\x28\x93\xa0');
 
   testPBKDF2('passwordPASSWORDpassword',
              'saltSALTsaltSALTsaltSALTsaltSALTsalt',
@@ -335,7 +331,7 @@ assert.throws(
   }
 );
 
-if (isBoringSSL) {
+if (!hasOpenSSL(3)) {
   const kNotPBKDF2Supported = ['shake128', 'shake256'];
   crypto.getHashes()
     .filter((hash) => !kNotPBKDF2Supported.includes(hash))

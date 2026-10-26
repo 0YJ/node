@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2024 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -15,7 +15,6 @@
 
 #include <stdio.h>
 #include <openssl/opensslconf.h>
-#include <openssl/byteorder.h>
 /*-
  * IMPLEMENTATION NOTES.
  *
@@ -26,7 +25,7 @@
  *   on [aligned] data in host byte order, and one operating on data in input
  *   stream byte order;
  * - share common byte-order neutral collector and padding function
- *   implementations, crypto/md32_common.inc;
+ *   implementations, crypto/md32_common.h;
  *
  * Neither of the above applies to this SHA-512 implementation. Reasons
  * [in reverse order] are:
@@ -60,7 +59,7 @@
 #include "internal/cryptlib.h"
 #include "crypto/sha.h"
 
-#if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) || defined(_M_AMD64) || defined(_M_X64) || defined(__s390__) || defined(__s390x__) || defined(__aarch64__) || defined(__e2k__) || defined(SHA512_ASM)
+#if defined(__i386) || defined(__i386__) || defined(_M_IX86) || defined(__x86_64) || defined(_M_AMD64) || defined(_M_X64) || defined(__s390__) || defined(__s390x__) || defined(__aarch64__) || defined(SHA512_ASM)
 #define SHA512_BLOCK_CAN_MANAGE_UNALIGNED_DATA
 #endif
 
@@ -71,8 +70,6 @@
 #else
 #define U64(C) C##ULL
 #endif
-
-int SHA512_Update_thunk(void *cp, const unsigned char *data, size_t len);
 
 int sha512_224_init(SHA512_CTX *c)
 {
@@ -155,11 +152,7 @@ void sha512_block_data_order_c(SHA512_CTX *ctx, const void *in, size_t num);
 #endif
     void sha512_block_data_order(SHA512_CTX *ctx, const void *in, size_t num);
 
-#define OUTPUT_RESULT(md, len)      \
-    for (n = 0; n < (len / 8); n++) \
-    md = OPENSSL_store_u64_be(md, (uint64_t)c->h[n])
-
-int SHA512_Final(unsigned char *out, SHA512_CTX *c)
+int SHA512_Final(unsigned char *md, SHA512_CTX *c)
 {
     unsigned char *p = (unsigned char *)c->u.p;
     size_t n = c->num;
@@ -177,33 +170,44 @@ int SHA512_Final(unsigned char *out, SHA512_CTX *c)
     c->u.d[SHA_LBLOCK - 2] = c->Nh;
     c->u.d[SHA_LBLOCK - 1] = c->Nl;
 #else
-    uint8_t *cu = p + sizeof(c->u) - 16;
-
-    cu = OPENSSL_store_u64_be(cu, (uint64_t)c->Nh);
-    cu = OPENSSL_store_u64_be(cu, (uint64_t)c->Nl);
+    p[sizeof(c->u) - 1] = (unsigned char)(c->Nl);
+    p[sizeof(c->u) - 2] = (unsigned char)(c->Nl >> 8);
+    p[sizeof(c->u) - 3] = (unsigned char)(c->Nl >> 16);
+    p[sizeof(c->u) - 4] = (unsigned char)(c->Nl >> 24);
+    p[sizeof(c->u) - 5] = (unsigned char)(c->Nl >> 32);
+    p[sizeof(c->u) - 6] = (unsigned char)(c->Nl >> 40);
+    p[sizeof(c->u) - 7] = (unsigned char)(c->Nl >> 48);
+    p[sizeof(c->u) - 8] = (unsigned char)(c->Nl >> 56);
+    p[sizeof(c->u) - 9] = (unsigned char)(c->Nh);
+    p[sizeof(c->u) - 10] = (unsigned char)(c->Nh >> 8);
+    p[sizeof(c->u) - 11] = (unsigned char)(c->Nh >> 16);
+    p[sizeof(c->u) - 12] = (unsigned char)(c->Nh >> 24);
+    p[sizeof(c->u) - 13] = (unsigned char)(c->Nh >> 32);
+    p[sizeof(c->u) - 14] = (unsigned char)(c->Nh >> 40);
+    p[sizeof(c->u) - 15] = (unsigned char)(c->Nh >> 48);
+    p[sizeof(c->u) - 16] = (unsigned char)(c->Nh >> 56);
 #endif
 
     sha512_block_data_order(c, p, 1);
 
-    if (out == NULL)
+    if (md == 0)
         return 0;
 
-    /* Let compiler decide if it's appropriate to unroll... */
     switch (c->md_len) {
-    case SHA256_192_DIGEST_LENGTH:
-        OUTPUT_RESULT(out, SHA256_192_DIGEST_LENGTH);
-        break;
-    case SHA256_DIGEST_LENGTH:
-        OUTPUT_RESULT(out, SHA256_DIGEST_LENGTH);
-        break;
-    case SHA384_DIGEST_LENGTH:
-        OUTPUT_RESULT(out, SHA384_DIGEST_LENGTH);
-        break;
-    case SHA512_DIGEST_LENGTH:
-        OUTPUT_RESULT(out, SHA512_DIGEST_LENGTH);
-        break;
-    case SHA224_DIGEST_LENGTH: {
-        OUTPUT_RESULT(out, SHA224_DIGEST_LENGTH);
+    /* Let compiler decide if it's appropriate to unroll... */
+    case SHA224_DIGEST_LENGTH:
+        for (n = 0; n < SHA224_DIGEST_LENGTH / 8; n++) {
+            SHA_LONG64 t = c->h[n];
+
+            *(md++) = (unsigned char)(t >> 56);
+            *(md++) = (unsigned char)(t >> 48);
+            *(md++) = (unsigned char)(t >> 40);
+            *(md++) = (unsigned char)(t >> 32);
+            *(md++) = (unsigned char)(t >> 24);
+            *(md++) = (unsigned char)(t >> 16);
+            *(md++) = (unsigned char)(t >> 8);
+            *(md++) = (unsigned char)(t);
+        }
         /*
          * For 224 bits, there are four bytes left over that have to be
          * processed separately.
@@ -211,13 +215,54 @@ int SHA512_Final(unsigned char *out, SHA512_CTX *c)
         {
             SHA_LONG64 t = c->h[SHA224_DIGEST_LENGTH / 8];
 
-            *(out++) = (unsigned char)(t >> 56);
-            *(out++) = (unsigned char)(t >> 48);
-            *(out++) = (unsigned char)(t >> 40);
-            *(out++) = (unsigned char)(t >> 32);
+            *(md++) = (unsigned char)(t >> 56);
+            *(md++) = (unsigned char)(t >> 48);
+            *(md++) = (unsigned char)(t >> 40);
+            *(md++) = (unsigned char)(t >> 32);
         }
         break;
-    }
+    case SHA256_DIGEST_LENGTH:
+        for (n = 0; n < SHA256_DIGEST_LENGTH / 8; n++) {
+            SHA_LONG64 t = c->h[n];
+
+            *(md++) = (unsigned char)(t >> 56);
+            *(md++) = (unsigned char)(t >> 48);
+            *(md++) = (unsigned char)(t >> 40);
+            *(md++) = (unsigned char)(t >> 32);
+            *(md++) = (unsigned char)(t >> 24);
+            *(md++) = (unsigned char)(t >> 16);
+            *(md++) = (unsigned char)(t >> 8);
+            *(md++) = (unsigned char)(t);
+        }
+        break;
+    case SHA384_DIGEST_LENGTH:
+        for (n = 0; n < SHA384_DIGEST_LENGTH / 8; n++) {
+            SHA_LONG64 t = c->h[n];
+
+            *(md++) = (unsigned char)(t >> 56);
+            *(md++) = (unsigned char)(t >> 48);
+            *(md++) = (unsigned char)(t >> 40);
+            *(md++) = (unsigned char)(t >> 32);
+            *(md++) = (unsigned char)(t >> 24);
+            *(md++) = (unsigned char)(t >> 16);
+            *(md++) = (unsigned char)(t >> 8);
+            *(md++) = (unsigned char)(t);
+        }
+        break;
+    case SHA512_DIGEST_LENGTH:
+        for (n = 0; n < SHA512_DIGEST_LENGTH / 8; n++) {
+            SHA_LONG64 t = c->h[n];
+
+            *(md++) = (unsigned char)(t >> 56);
+            *(md++) = (unsigned char)(t >> 48);
+            *(md++) = (unsigned char)(t >> 40);
+            *(md++) = (unsigned char)(t >> 32);
+            *(md++) = (unsigned char)(t >> 24);
+            *(md++) = (unsigned char)(t >> 16);
+            *(md++) = (unsigned char)(t >> 8);
+            *(md++) = (unsigned char)(t);
+        }
+        break;
     /* ... as well as make sure md_len is not abused. */
     default:
         return 0;
@@ -231,11 +276,11 @@ int SHA384_Final(unsigned char *md, SHA512_CTX *c)
     return SHA512_Final(md, c);
 }
 
-int SHA512_Update_thunk(void *cp, const unsigned char *data, size_t len)
+int SHA512_Update(SHA512_CTX *c, const void *_data, size_t len)
 {
-    SHA512_CTX *c = (SHA512_CTX *)cp;
     SHA_LONG64 l;
     unsigned char *p = c->u.p;
+    const unsigned char *data = (const unsigned char *)_data;
 
     if (len == 0)
         return 1;
@@ -279,14 +324,9 @@ int SHA512_Update_thunk(void *cp, const unsigned char *data, size_t len)
     return 1;
 }
 
-int SHA512_Update(SHA512_CTX *c, const void *_data, size_t len)
-{
-    return SHA512_Update_thunk((void *)c, (const unsigned char *)_data, len);
-}
-
 int SHA384_Update(SHA512_CTX *c, const void *data, size_t len)
 {
-    return SHA512_Update_thunk((void *)c, (const unsigned char *)data, len);
+    return SHA512_Update(c, data, len);
 }
 
 void SHA512_Transform(SHA512_CTX *c, const unsigned char *data)
@@ -343,7 +383,7 @@ static const SHA_LONG64 K512[80] = {
 };
 
 #ifndef PEDANTIC
-#if defined(__GNUC__) && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_NO_INLINE_ASM)
+#if defined(__GNUC__) && __GNUC__ >= 2 && !defined(OPENSSL_NO_ASM) && !defined(OPENSSL_NO_INLINE_ASM)
 #if defined(__x86_64) || defined(__x86_64__)
 #define ROTR(a, n) ({ SHA_LONG64 ret;             \
                                 asm ("rorq %1,%0"       \
@@ -405,11 +445,6 @@ static const SHA_LONG64 K512[80] = {
                         asm ("rev8 %0, %1"  \
                         : "=r"(ret)         \
                         : "r"(x)); ret; })
-#elif defined(__e2k__)
-#include <x86gprintrin.h>
-#define PULL64(x) __builtin_bswap64(x)
-#define ROTR(x, s) ((s) > 48 ? __rolq((x), 64 - (s)) \
-                             : __rorq((x), (s)))
 #endif
 #if defined(__riscv_zknh) && __riscv_xlen == 32
 #define Sigma0(x) ({ SHA_LONG64 ret; unsigned int *r = (unsigned int *)(&(ret));    \
@@ -492,9 +527,6 @@ static const SHA_LONG64 K512[80] = {
                         asm (".insn r4 0x33, 1, 0x3, %0, %2, %1, %3"\
                         : "=r"(ret)                                 \
                         : "r"(x^z), "r"(y), "r"(x)); ret; })
-#elif defined(__e2k__) && __iset__ >= 5
-#define sigma0(x) (__builtin_e2k_plog(0x96, ROTR((x), 1), ROTR((x), 8), ((x) >> 7)))
-#define sigma1(x) (__builtin_e2k_plog(0x96, ROTR((x), 19), ROTR((x), 61), ((x) >> 6)))
 #endif
 #elif defined(_MSC_VER)
 #if defined(_WIN64) /* applies to both IA-64 and AMD64 */

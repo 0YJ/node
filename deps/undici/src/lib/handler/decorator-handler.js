@@ -62,11 +62,5 @@ module.exports = class DecoratorHandler {
   /**
    * @deprecated
    */
-  onBodySent (...args) {
-    return this.#handler.onBodySent?.(...args)
-  }
-
-  onRequestSent (...args) {
-    return this.#handler.onRequestSent?.(...args)
-  }
+  onBodySent () {}
 }

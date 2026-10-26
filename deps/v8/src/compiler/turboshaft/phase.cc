@@ -100,8 +100,7 @@ void PrintTurboshaftGraphForTurbolizer(std::ofstream& stream,
       stream, "Use Count (saturated)", graph,
       [](std::ostream& stream, const turboshaft::Graph& graph,
          turboshaft::OpIndex index) -> bool {
-        stream << static_cast<int>(
-            graph.Get(index).saturated_use_count.GetMaybeSaturated());
+        stream << static_cast<int>(graph.Get(index).saturated_use_count.Get());
         return true;
       });
 #ifdef DEBUG

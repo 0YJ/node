@@ -3,7 +3,7 @@
 const diagnosticsChannel = require('node:diagnostics_channel')
 const util = require('../core/util')
 const DeduplicationHandler = require('../handler/deduplication-handler')
-const { getInterceptorOrigin, normalizeHeaders, makeCacheKey, makeDeduplicationKey } = require('../util/cache.js')
+const { normalizeHeaders, makeCacheKey, makeDeduplicationKey } = require('../util/cache.js')
 
 const pendingRequestsChannel = diagnosticsChannel.channel('undici:request:pending-requests')
 
@@ -57,10 +57,9 @@ module.exports = (opts = {}) => {
    */
   const pendingRequests = new Map()
 
-  return (dispatch, interceptorOrigin) => {
+  return dispatch => {
     return (opts, handler) => {
-      const requestOrigin = getInterceptorOrigin(opts, interceptorOrigin)
-      if (!requestOrigin || opts.upgrade || methods.includes(opts.method) === false) {
+      if (opts.upgrade || methods.includes(opts.method) === false) {
         return dispatch(opts, handler)
       }
 
@@ -78,7 +77,7 @@ module.exports = (opts = {}) => {
         }
       }
 
-      const cacheKey = makeCacheKey(opts, requestOrigin)
+      const cacheKey = makeCacheKey(opts)
       const dedupeKey = makeDeduplicationKey(cacheKey, excludeHeaderNamesSet)
 
       // Check if there's already a pending request for this key

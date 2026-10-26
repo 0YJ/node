@@ -12,9 +12,7 @@ export abstract class Phase {
   }
 
   public isGraph(): boolean {
-    return this.type == PhaseType.Graph ||
-      this.type == PhaseType.TurboshaftGraph ||
-      this.type == PhaseType.MaglevGraph;
+    return this.type == PhaseType.Graph || this.type == PhaseType.TurboshaftGraph;
   }
 
   public isDynamic(): boolean {
@@ -25,7 +23,6 @@ export abstract class Phase {
 export enum PhaseType {
   Graph = "graph",
   TurboshaftGraph = "turboshaft_graph",
-  MaglevGraph = "maglev_graph",
   TurboshaftCustomData = "turboshaft_custom_data",
   Disassembly = "disassembly",
   Instructions = "instructions",

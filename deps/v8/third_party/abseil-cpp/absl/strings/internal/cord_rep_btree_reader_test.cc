@@ -14,8 +14,6 @@
 
 #include "absl/strings/internal/cord_rep_btree_reader.h"
 
-#include <algorithm>
-#include <cstddef>
 #include <iostream>
 #include <random>
 #include <string>

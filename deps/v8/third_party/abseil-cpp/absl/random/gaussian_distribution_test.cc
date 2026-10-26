@@ -17,12 +17,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <ios>
 #include <iterator>
-#include <limits>
 #include <random>
-#include <sstream>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -54,9 +51,9 @@ class GaussianDistributionInterfaceTest : public ::testing::Test {};
 // https://bugs.llvm.org/show_bug.cgi?id=49132. Don't bother running these tests
 // with double doubles until compiler support is better.
 using RealTypes =
-    std::conditional_t<absl::numeric_internal::IsDoubleDouble(),
-                       ::testing::Types<float, double>,
-                       ::testing::Types<float, double, long double>>;
+    std::conditional<absl::numeric_internal::IsDoubleDouble(),
+                     ::testing::Types<float, double>,
+                     ::testing::Types<float, double, long double>>::type;
 TYPED_TEST_SUITE(GaussianDistributionInterfaceTest, RealTypes);
 
 TYPED_TEST(GaussianDistributionInterfaceTest, SerializeTest) {
@@ -118,7 +115,7 @@ TYPED_TEST(GaussianDistributionInterfaceTest, SerializeTest) {
           EXPECT_GE(sample, before.min()) << before;
           EXPECT_LE(sample, before.max()) << before;
         }
-        if (!std::is_same_v<TypeParam, long double>) {
+        if (!std::is_same<TypeParam, long double>::value) {
           LOG(INFO) << "Range{" << mean << ", " << stddev << "}: " << sample_min
                     << ", " << sample_max;
         }

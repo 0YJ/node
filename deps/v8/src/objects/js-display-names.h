@@ -12,7 +12,6 @@
 #include <set>
 #include <string>
 
-#include "src/base/bit-field.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
 #include "src/objects/managed.h"
@@ -26,7 +25,10 @@ namespace internal {
 
 class DisplayNamesInternal;
 
-V8_OBJECT class JSDisplayNames : public JSObject {
+#include "torque-generated/src/objects/js-display-names-tq.inc"
+
+class JSDisplayNames
+    : public TorqueGeneratedJSDisplayNames<JSDisplayNames, JSObject> {
  public:
   // Creates display names object with properties derived from input
   // locales and options.
@@ -51,7 +53,7 @@ V8_OBJECT class JSDisplayNames : public JSObject {
 
   // Style: identifying the display names style used.
   //
-  // https://tc39.es/ecma402/#sec-properties-of-intl-displaynames-instances
+  // ecma402/#sec-properties-of-intl-displaynames-instances
   enum class Style {
     kLong,   // Everything spelled out.
     kShort,  // Abbreviations used when possible.
@@ -62,7 +64,7 @@ V8_OBJECT class JSDisplayNames : public JSObject {
 
   // Type: identifying the fallback of the display names.
   //
-  // https://tc39.es/ecma402/#sec-properties-of-intl-displaynames-instances
+  // ecma402/#sec-properties-of-intl-displaynames-instances
   enum class Fallback {
     kCode,
     kNone,
@@ -78,10 +80,7 @@ V8_OBJECT class JSDisplayNames : public JSObject {
   inline LanguageDisplay language_display() const;
 
   // Bit positions in |flags|.
-  using StyleBits = base::BitField<JSDisplayNames::Style, 0, 2, uint32_t>;
-  using FallbackBit = StyleBits::Next<JSDisplayNames::Fallback, 1>;
-  using LanguageDisplayBit =
-      FallbackBit::Next<JSDisplayNames::LanguageDisplay, 1>;
+  DEFINE_TORQUE_GENERATED_JS_DISPLAY_NAMES_FLAGS()
 
   static_assert(StyleBits::is_valid(Style::kLong));
   static_assert(StyleBits::is_valid(Style::kShort));
@@ -91,24 +90,12 @@ V8_OBJECT class JSDisplayNames : public JSObject {
   static_assert(LanguageDisplayBit::is_valid(LanguageDisplay::kDialect));
   static_assert(LanguageDisplayBit::is_valid(LanguageDisplay::kStandard));
 
-  inline Tagged<CppGCManaged<DisplayNamesInternal>> internal() const;
-  inline void set_internal(Tagged<CppGCManaged<DisplayNamesInternal>> value,
-                           WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline int flags() const;
-  inline void set_flags(int value);
+  DECL_ACCESSORS(internal, Tagged<Managed<DisplayNamesInternal>>)
 
   DECL_PRINTER(JSDisplayNames)
-  DECL_VERIFIER(JSDisplayNames)
 
-  static const int kHeaderSize;
-
- public:
-  TaggedMember<CppGCManaged<DisplayNamesInternal>> internal_;
-  TaggedMember<Smi> flags_;
-} V8_OBJECT_END;
-
-inline constexpr int JSDisplayNames::kHeaderSize = sizeof(JSDisplayNames);
+  TQ_OBJECT_CONSTRUCTORS(JSDisplayNames)
+};
 
 }  // namespace internal
 }  // namespace v8

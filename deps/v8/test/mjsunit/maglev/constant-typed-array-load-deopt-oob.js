@@ -29,8 +29,8 @@ assertEquals(10, foo(10));
 assertEquals(3, foo(3));
 assertEquals(10, foo(10));
 
-assertMaglevved(foo);
+assertTrue(isMaglevved(foo));
 
 // Going out of bounds deopts.
 assertEquals(undefined, foo(1000));
-assertNotMaglevved(foo);
+assertFalse(isMaglevved(foo));

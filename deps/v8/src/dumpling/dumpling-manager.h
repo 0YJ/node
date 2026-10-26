@@ -8,7 +8,6 @@
 #include <ostream>
 
 #include "src/deoptimizer/deoptimizer.h"
-#include "src/dumpling/object-dumping.h"
 #include "src/execution/frames.h"
 #include "src/interpreter/bytecodes.h"
 
@@ -26,9 +25,9 @@ typedef enum DumpFrameType {
 // constructor hacking in the deoptimizer. Therefore we choose to wrap.
 class DumplingJSFrame {
  public:
-  virtual ObjectOrNonMaterializedObject GetRegisterValue(int reg_idx) = 0;
-  virtual ObjectOrNonMaterializedObject GetParameter(int param_idx) = 0;
-  virtual ObjectOrNonMaterializedObject function() = 0;
+  virtual Tagged<Object> GetRegisterValue(int reg_idx) = 0;
+  virtual Tagged<Object> GetParameter(int param_idx) = 0;
+  virtual Tagged<JSFunction> function() = 0;
 };
 
 class DumplingUnoptimizedJSFrame : public DumplingJSFrame {
@@ -36,13 +35,13 @@ class DumplingUnoptimizedJSFrame : public DumplingJSFrame {
   explicit DumplingUnoptimizedJSFrame(UnoptimizedJSFrame* frame)
       : frame_(frame) {}
 
-  ObjectOrNonMaterializedObject GetRegisterValue(int reg_idx) override {
+  Tagged<Object> GetRegisterValue(int reg_idx) override {
     return frame_->ReadInterpreterRegister(reg_idx);
   }
-  ObjectOrNonMaterializedObject GetParameter(int param_idx) override {
+  Tagged<Object> GetParameter(int param_idx) override {
     return frame_->GetParameter(param_idx);
   }
-  ObjectOrNonMaterializedObject function() override;
+  Tagged<JSFunction> function() override;
 
  private:
   UnoptimizedJSFrame* frame_;
@@ -50,33 +49,34 @@ class DumplingUnoptimizedJSFrame : public DumplingJSFrame {
 
 class DumplingFrameDescriptionFrame : public DumplingJSFrame {
  public:
-  DumplingFrameDescriptionFrame(
-      FrameDescription* frame,
-      absl::flat_hash_map<Address, TranslatedValue*>&& non_materialized_objects,
-      Isolate* isolate)
-      : frame_(frame),
-        non_materialized_objects_(std::move(non_materialized_objects)),
-        isolate_(isolate) {}
+  explicit DumplingFrameDescriptionFrame(FrameDescription* frame,
+                                         Isolate* isolate)
+      : frame_(frame), isolate_(isolate) {}
 
-  ObjectOrNonMaterializedObject GetRegisterValue(int reg_idx) override {
+  Tagged<Object> GetRegisterValue(int reg_idx) override {
     int offset_from_fp = UnoptimizedFrameConstants::kExpressionsOffset -
                          (reg_idx * kSystemPointerSize);
 
     return GetValueFromDescription(offset_from_fp);
   }
 
-  ObjectOrNonMaterializedObject GetParameter(int param_idx) override {
+  Tagged<Object> GetParameter(int param_idx) override {
     int offset_from_fp = CommonFrameConstants::kCallerSPOffset +
                          ((param_idx + 1) * kSystemPointerSize);
+
     return GetValueFromDescription(offset_from_fp);
   }
-  ObjectOrNonMaterializedObject function() override;
+  Tagged<JSFunction> function() override;
 
  private:
-  ObjectOrNonMaterializedObject GetValueFromDescription(int offset_from_fp);
+  Tagged<Object> GetValueFromDescription(int offset_from_fp);
+
+  Tagged<Object> function_slot_object() {
+    int offset_from_fp = StandardFrameConstants::kFunctionOffset;
+    return GetValueFromDescription(offset_from_fp);
+  }
 
   FrameDescription* frame_;
-  absl::flat_hash_map<Address, TranslatedValue*> non_materialized_objects_;
   Isolate* isolate_;
 };
 
@@ -96,7 +96,7 @@ class DumplingManager {
   void DoPrint(DumplingJSFrame* frame, Tagged<JSFunction> function,
                int bytecode_offset, DumpFrameType frame_dump_type,
                Handle<BytecodeArray> bytecode_array,
-               ObjectOrNonMaterializedObject accumulator);
+               Handle<Object> accumulator);
 
   // Need to make sure that dumps were flushed to the dump file.
   void FinishCurrentREPRLCycle();

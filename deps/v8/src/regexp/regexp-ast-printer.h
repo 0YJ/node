@@ -11,45 +11,46 @@
 
 namespace v8 {
 namespace internal {
-namespace regexp {
 
-class Diagnostics;
+class RegExpDiagnostics;
 
 template <typename T>
-class NodePrinter;
+class RegExpNodePrinter;
 
 template <>
-class V8_EXPORT_PRIVATE NodePrinter<Tree> : public NodePrinterBase<Tree>,
-                                            public Visitor {
+class V8_EXPORT_PRIVATE RegExpNodePrinter<RegExpTree>
+    : public RegExpNodePrinterBase<RegExpTree>, public RegExpVisitor {
  public:
-  NodePrinter(std::ostream& os, GraphLabeller<Tree>* labeller, Zone* zone)
-      : NodePrinterBase(os, labeller, zone, 't') {}
-  NodePrinter(const PrinterBase& other, GraphLabeller<Tree>* labeller)
-      : NodePrinterBase(other, labeller, 't') {}
+  RegExpNodePrinter(std::ostream& os, RegExpGraphLabeller<RegExpTree>* labeller,
+                    Zone* zone)
+      : RegExpNodePrinterBase(os, labeller, zone, 't') {}
+  RegExpNodePrinter(const RegExpPrinterBase& other,
+                    RegExpGraphLabeller<RegExpTree>* labeller)
+      : RegExpNodePrinterBase(other, labeller, 't') {}
 
   void VisitCharacterRange(CharacterRange that);
-#define DECLARE_VISIT(Name) void* Visit##Name(Name*, void* data) override;
+#define DECLARE_VISIT(Name) \
+  void* Visit##Name(RegExp##Name*, void* data) override;
   FOR_EACH_REG_EXP_TREE_TYPE(DECLARE_VISIT)
 #undef DECLARE_VISIT
-  void Print(Tree* tree);
+  void Print(RegExpTree* tree);
 };
 
-using AstNodePrinter = NodePrinter<Tree>;
+using RegExpAstNodePrinter = RegExpNodePrinter<RegExpTree>;
 
-class TraceTreeScope {
+class TraceRegExpTreeScope {
  public:
-  explicit TraceTreeScope(Diagnostics* diagnostics);
-  ~TraceTreeScope();
-  void PrintTree(Tree* tree);
+  explicit TraceRegExpTreeScope(RegExpDiagnostics* diagnostics);
+  ~TraceRegExpTreeScope();
+  void PrintTree(RegExpTree* tree);
   std::ostream& os();
 
  private:
-  TraceTreeScope* const parent_;
+  TraceRegExpTreeScope* const parent_;
   const int depth_;
-  Diagnostics* diagnostics_;
+  RegExpDiagnostics* diagnostics_;
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 #endif  // V8_ENABLE_REGEXP_DIAGNOSTICS

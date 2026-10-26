@@ -54,8 +54,7 @@ assertEarlyError('/[\\q{foo|]/v');
 assertEarlyError('/[^\\q{foo}]/v');
 assertEarlyError('/[^\\q{}]/v');  // Empty string counts as string.
 assertEarlyError('/[^[\\q{foo}]]/v');
-assertEarlyError('/[^\\p{Basic_Emoji}]/v');
-assertEarlyError('/[^[\\p{Basic_Emoji}]]/v');
+assertEarlyError('/[^[\\p{Basic_Emoji}]/v');
 assertEarlyError('/[^\\q{foo}&&\\q{bar}]/v');
 assertEarlyError('/[^\\q{foo}--\\q{bar}]/v');
 // Exceptions when negating the class is allowed:

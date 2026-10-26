@@ -15,11 +15,9 @@ const runner = path.join(fixtureDir, 'runner.mjs');
 describe('test runner flag propagation', () => {
   describe('via command line', () => {
     const flagPropagationTests = [
-      ['--config-file=node.config.json', '', '', '--config-file',
-       'should not propagate --config-file to child tests'],
-      ['--experimental-config-file=node.config.json', '', '', '--config-file',
+      ['--experimental-config-file=node.config.json', '', '', '--experimental-config-file',
        'should not propagate --experimental-config-file to child tests'],
-      ['--experimental-default-config-file', '', '', '--config-file',
+      ['--experimental-default-config-file', '', '', '--experimental-config-file',
        'should not propagate --experimental-default-config-file to child tests'],
       ['--env-file', '.env', '.env'],
       ['--env-file-if-exists', '.env', '.env'],
@@ -110,7 +108,7 @@ describe('test runner flag propagation', () => {
           '--test-reporter=tap',
           '--no-warnings',
           '--expose-internals',
-          `--config-file=${configFile}`,
+          `--experimental-config-file=${configFile}`,
           runner,
           `--flag=${flagName}`,
           `--expected=${expectedValue}`,

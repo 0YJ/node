@@ -15,23 +15,21 @@ namespace internal {
 
 class TrustedByteArray;
 
-namespace regexp {
-
-class BytecodeIterator {
+class RegExpBytecodeIterator {
  public:
-  explicit BytecodeIterator(DirectHandle<TrustedByteArray> bytecode);
-  BytecodeIterator(DirectHandle<TrustedByteArray> bytecode, uint32_t offset);
-  ~BytecodeIterator();
+  explicit RegExpBytecodeIterator(DirectHandle<TrustedByteArray> bytecode);
+  RegExpBytecodeIterator(DirectHandle<TrustedByteArray> bytecode, int offset);
+  ~RegExpBytecodeIterator();
 
   inline bool done() const;
   inline void advance();
-  inline Bytecode current_bytecode() const;
+  inline RegExpBytecode current_bytecode() const;
   inline uint8_t current_size() const;
-  inline uint32_t current_offset() const;
+  inline int current_offset() const;
   inline uint8_t* current_address() const;
   inline void reset();
 
-  // Calls |fun| templatized by Bytecode for each bytecode in the
+  // Calls |fun| templatized by RegExpBytecode for each bytecode in the
   // Bytecode Array.
   template <typename Func>
   inline void ForEachBytecode(Func&& fun);
@@ -47,7 +45,6 @@ class BytecodeIterator {
   uint8_t* cursor_;
 };
 
-}  // namespace regexp
 }  // namespace internal
 }  // namespace v8
 

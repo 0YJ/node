@@ -19,7 +19,6 @@
 #include <utility>
 
 #include "absl/base/config.h"
-#include "absl/crc/internal/crc_cord_state.h"
 #include "absl/strings/internal/cord_internal.h"
 
 namespace absl {

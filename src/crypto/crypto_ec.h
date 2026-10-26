@@ -13,8 +13,6 @@
 #include "node_internals.h"
 #include "v8.h"
 
-#include <string>
-
 namespace node {
 namespace crypto {
 
@@ -61,10 +59,9 @@ class ECDH final : public BaseObject {
 };
 
 struct EcKeyPairParams final : public MemoryRetainer {
-  const ncrypto::KeyAlgorithm* algorithm = nullptr;
-  std::string curve_name;
+  int curve_nid;
   int param_encoding;
-  void MemoryInfo(MemoryTracker* tracker) const override;
+  SET_NO_MEMORY_INFO()
   SET_MEMORY_INFO_NAME(EcKeyPairParams)
   SET_SELF_SIZE(EcKeyPairParams)
 };
@@ -89,6 +86,12 @@ using ECKeyPairGenJob = KeyGenJob<KeyPairGenTraits<EcKeyGenTraits>>;
 bool ExportJWKEcKey(Environment* env,
                     const KeyObjectData& key,
                     v8::Local<v8::Object> target);
+
+bool ExportJWKEdKey(Environment* env,
+                    const KeyObjectData& key,
+                    v8::Local<v8::Object> target);
+
+KeyObjectData ImportJWKEdKey(Environment* env, v8::Local<v8::Object> jwk);
 
 KeyObjectData ImportJWKEcKey(Environment* env, v8::Local<v8::Object> jwk);
 

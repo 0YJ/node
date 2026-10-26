@@ -2,9 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef V8_UNITTESTS_COMPILER_TURBOSHAFT_REDUCER_TEST_H_
-#define V8_UNITTESTS_COMPILER_TURBOSHAFT_REDUCER_TEST_H_
-
 #include <map>
 #include <memory>
 
@@ -167,7 +164,7 @@ class TestInstance {
                                             OutputFrameStateCombine::Ignore(),
                                             function_info);
 
-    return Asm().template FrameState<AnyFrameState>(
+    return Asm().FrameState(
         builder.Inputs(), builder.inlined(),
         builder.AllocateFrameStateData(*frame_state_info, zone_));
   }
@@ -267,16 +264,7 @@ class ReducerTest : public TestWithNativeContextAndZone {
 
   template <typename Builder>
   TestInstance CreateFromGraph(int parameter_count, const Builder& builder) {
-    Initialize(false);
-    Handle<Context> context = indirect_handle(native_context());
-    return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_count,
-                                         builder, isolate(), zone(), context);
-  }
-
-  template <typename Builder>
-  TestInstance CreateFromGraph(int parameter_count, const Builder& builder,
-                               bool is_wasm) {
-    Initialize(is_wasm);
+    Initialize();
     Handle<Context> context = indirect_handle(native_context());
     return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_count,
                                          builder, isolate(), zone(), context);
@@ -286,66 +274,26 @@ class ReducerTest : public TestWithNativeContextAndZone {
   TestInstance CreateFromGraph(
       base::Vector<const RegisterRepresentation> parameter_reps,
       const Builder& builder) {
-    Initialize(false);
+    Initialize();
     Handle<Context> context = indirect_handle(native_context());
     return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_reps,
                                          builder, isolate(), zone(), context);
   }
-
-  template <typename Builder>
-  TestInstance CreateFromGraph(
-      base::Vector<const RegisterRepresentation> parameter_reps,
-      const Builder& builder, bool is_wasm) {
-    Initialize(is_wasm);
-    Handle<Context> context = indirect_handle(native_context());
-    return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_reps,
-                                         builder, isolate(), zone(), context);
-  }
-
-#if V8_ENABLE_WEBASSEMBLY
-  template <typename Builder>
-  TestInstance CreateFromGraph(
-      base::Vector<const RegisterRepresentation> parameter_reps,
-      const Builder& builder, const wasm::WasmModule* module,
-      const wasm::FunctionSig* sig) {
-    Initialize(true);
-    pipeline_data_->SetIsWasmFunction(module, sig);
-    Handle<Context> context = indirect_handle(native_context());
-    return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_reps,
-                                         builder, isolate(), zone(), context);
-  }
-
-  template <typename Builder>
-  TestInstance CreateFromGraph(int parameter_count, const Builder& builder,
-                               const wasm::WasmModule* module,
-                               const wasm::FunctionSig* sig) {
-    Initialize(true);
-    pipeline_data_->SetIsWasmFunction(module, sig);
-    Handle<Context> context = indirect_handle(native_context());
-    return TestInstance::CreateFromGraph(pipeline_data_.get(), parameter_count,
-                                         builder, isolate(), zone(), context);
-  }
-#endif  // V8_ENABLE_WEBASSEMBLY
 
  private:
-  void Initialize(bool is_wasm) {
+  void Initialize() {
     const testing::TestInfo* test_info =
         testing::UnitTest::GetInstance()->current_test_info();
     std::stringstream file_name;
     const char* debug_name = test_info->name();
     size_t debug_name_len = std::strlen(debug_name);
 
-    CodeKind code_kind =
-        is_wasm ? CodeKind::WASM_FUNCTION : CodeKind::FOR_TESTING_JS;
-    TurboshaftPipelineKind pipeline_kind =
-        is_wasm ? TurboshaftPipelineKind::kWasm : TurboshaftPipelineKind::kJS;
     info_.reset(new OptimizedCompilationInfo(
         base::Vector<const char>(debug_name, debug_name_len), this->zone(),
-        code_kind));
-    AssemblerOptions options = AssemblerOptions::Default(this->isolate());
-    options.is_wasm = is_wasm;
+        CodeKind::FOR_TESTING_JS));
     pipeline_data_.reset(new turboshaft::PipelineData(
-        &zone_stats_, pipeline_kind, this->isolate(), info_.get(), options));
+        &zone_stats_, TurboshaftPipelineKind::kJS, this->isolate(), info_.get(),
+        AssemblerOptions::Default(this->isolate())));
     pipeline_data_->InitializeGraphComponent(nullptr,
                                              Graph::Origin::kPureTurboshaft);
   }
@@ -361,5 +309,3 @@ class ReducerTest : public TestWithNativeContextAndZone {
 };
 
 }  // namespace v8::internal::compiler::turboshaft
-
-#endif  // V8_UNITTESTS_COMPILER_TURBOSHAFT_REDUCER_TEST_H_

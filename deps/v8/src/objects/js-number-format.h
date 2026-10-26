@@ -37,23 +37,26 @@ class UnlocalizedNumberFormatter;
 namespace v8 {
 namespace internal {
 
-V8_OBJECT class JSNumberFormat : public JSObject {
+#include "torque-generated/src/objects/js-number-format-tq.inc"
+
+class JSNumberFormat
+    : public TorqueGeneratedJSNumberFormat<JSNumberFormat, JSObject> {
  public:
-  // https://tc39.es/ecma402/#sec-initializenumberformat
+  // ecma402/#sec-initializenumberformat
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSNumberFormat> New(
       Isolate* isolate, DirectHandle<Map> map, DirectHandle<Object> locales,
       DirectHandle<Object> options, const char* service);
 
-  // https://tc39.es/ecma402/#sec-unwrapnumberformat
+  // ecma402/#sec-unwrapnumberformat
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSNumberFormat>
   UnwrapNumberFormat(Isolate* isolate, DirectHandle<JSReceiver> format_holder);
 
-  // https://tc39.es/ecma262/#sec-number-format-functions
+  // #sec-number-format-functions
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<String> NumberFormatFunction(
       Isolate* isolate, DirectHandle<JSNumberFormat> number_format,
       Handle<Object> numeric_obj);
 
-  // https://tc39.es/ecma402/#sec-intl.numberformat.prototype.resolvedoptions
+  // ecma402/#sec-intl.numberformat.prototype.resolvedoptions
   static DirectHandle<JSObject> ResolvedOptions(
       Isolate* isolate, DirectHandle<JSNumberFormat> number_format);
 
@@ -61,19 +64,20 @@ V8_OBJECT class JSNumberFormat : public JSObject {
       Isolate* isolate, DirectHandle<JSNumberFormat> number_format,
       Handle<Object> numeric_obj);
 
-  // https://tc39.es/ecma402/#sec-formatnumericrange
+  // ecma402/#sec-formatnumericrange
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<String> FormatNumericRange(
       Isolate* isolate, DirectHandle<JSNumberFormat> number_format,
       Handle<Object> x, Handle<Object> y);
 
-  // https://tc39.es/ecma402/#sec-formatnumericrangetoparts
+  // ecma402/#sec-formatnumericrangetoparts
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<JSArray>
   FormatNumericRangeToParts(Isolate* isolate,
                             DirectHandle<JSNumberFormat> number_format,
                             Handle<Object> x, Handle<Object> y);
 
   V8_WARN_UNUSED_RESULT static MaybeDirectHandle<String> FormatNumeric(
-      Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+      Isolate* isolate,
+      std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
       Handle<Object> numeric_obj);
 
   V8_EXPORT_PRIVATE static const std::set<std::string>& GetAvailableLocales();
@@ -110,31 +114,12 @@ V8_OBJECT class JSNumberFormat : public JSObject {
       const icu::number::LocalizedNumberFormatter& number_formatter);
 
   DECL_PRINTER(JSNumberFormat)
-  DECL_VERIFIER(JSNumberFormat)
 
-  inline Tagged<String> locale() const;
-  inline void set_locale(Tagged<String> value,
-                         WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  DECL_ACCESSORS(icu_number_formatter,
+                 Tagged<Managed<icu::number::LocalizedNumberFormatter>>)
 
-  inline Tagged<Managed<icu::number::LocalizedNumberFormatter>>
-  icu_number_formatter() const;
-  inline void set_icu_number_formatter(
-      Tagged<Managed<icu::number::LocalizedNumberFormatter>> value,
-      WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  inline Tagged<UnionOf<JSFunction, Undefined>> bound_format() const;
-  inline void set_bound_format(Tagged<UnionOf<JSFunction, Undefined>> value,
-                               WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
-
-  static const int kHeaderSize;
-
- public:
-  TaggedMember<String> locale_;
-  TaggedMember<Foreign> icu_number_formatter_;
-  TaggedMember<UnionOf<JSFunction, Undefined>> bound_format_;
-} V8_OBJECT_END;
-
-inline constexpr int JSNumberFormat::kHeaderSize = sizeof(JSNumberFormat);
+  TQ_OBJECT_CONSTRUCTORS(JSNumberFormat)
+};
 
 // IntlMathematicalValue is designed only to be used as part of
 // JSNumberFormat and can only be allocate on the stack. We place this class in
@@ -149,7 +134,8 @@ class V8_NODISCARD IntlMathematicalValue {
       Isolate* isolate, Handle<Object> value);
 
   static Maybe<icu::number::FormattedNumber> FormatNumeric(
-      Isolate* isolate, const icu::number::LocalizedNumberFormatter* lfmt,
+      Isolate* isolate,
+      std::shared_ptr<icu::number::LocalizedNumberFormatter> lfmt,
       const IntlMathematicalValue& x);
 
   static Maybe<icu::number::FormattedNumberRange> FormatRange(

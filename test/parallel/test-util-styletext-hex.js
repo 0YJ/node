@@ -213,10 +213,8 @@ describe('util.styleText hex color support', () => {
       for (const testCase of testCases) {
         it(`should respect ${testCase.description}`, () => {
           writeStream.isTTY = testCase.isTTY;
-          // Do not inherit color-related variables (TERM, CI, NO_COLOR, ...)
-          // from the environment the test happens to run in.
           process.env = {
-            TERM: 'xterm-256color',
+            ...originalEnv,
             ...testCase.env,
           };
           const output = util.styleText('#ffcc00', 'test', { stream: writeStream });

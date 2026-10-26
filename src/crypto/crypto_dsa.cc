@@ -16,7 +16,6 @@ namespace node {
 
 using ncrypto::Dsa;
 using ncrypto::EVPKeyCtxPointer;
-using ncrypto::KeyAlgorithm;
 using v8::FunctionCallbackInfo;
 using v8::Int32;
 using v8::JustVoid;
@@ -29,7 +28,7 @@ using v8::Value;
 
 namespace crypto {
 EVPKeyCtxPointer DsaKeyGenTraits::Setup(DsaKeyPairGenConfig* params) {
-  auto param_ctx = EVPKeyCtxPointer::NewFromAlgorithm(KeyAlgorithm::DSA);
+  auto param_ctx = EVPKeyCtxPointer::NewFromID(EVP_PKEY_DSA);
 
   if (!param_ctx || !param_ctx.initForParamgen() ||
       !param_ctx.setDsaParameters(

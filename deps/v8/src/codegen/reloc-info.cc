@@ -387,8 +387,6 @@ const char* RelocInfo::RelocModeName(RelocInfo::Mode rmode) {
       return "wasm canonical signature id";
     case WASM_CODE_POINTER_TABLE_ENTRY:
       return "wasm code pointer table entry";
-    case WASM_CODE_POINTER:
-      return "wasm code pointer";
     case NUMBER_OF_MODES:
     case PC_JUMP:
       UNREACHABLE();
@@ -409,10 +407,10 @@ void RelocInfo::Print(Isolate* isolate, std::ostream& os) {
          << ")";
       break;
     case FULL_EMBEDDED_OBJECT:
-      os << "  (" << Brief(target_object()) << ")";
+      os << "  (" << Brief(target_object(isolate)) << ")";
       break;
     case COMPRESSED_EMBEDDED_OBJECT:
-      os << "  (" << Brief(target_object()) << " compressed)";
+      os << "  (" << Brief(target_object(isolate)) << " compressed)";
       break;
     case EXTERNAL_REFERENCE:
       if (isolate) {
@@ -471,10 +469,10 @@ void RelocInfo::Print(Isolate* isolate, std::ostream& os) {
 void RelocInfo::Verify(Isolate* isolate) {
   switch (rmode_) {
     case COMPRESSED_EMBEDDED_OBJECT:
-      Object::VerifyPointer(isolate, target_object());
+      Object::VerifyPointer(isolate, target_object(isolate));
       break;
     case FULL_EMBEDDED_OBJECT:
-      Object::VerifyAnyTagged(isolate, target_object());
+      Object::VerifyAnyTagged(isolate, target_object(isolate));
       break;
     case CODE_TARGET:
     case RELATIVE_CODE_TARGET: {
@@ -534,7 +532,6 @@ void RelocInfo::Verify(Isolate* isolate) {
     case NO_INFO:
     case WASM_CANONICAL_SIG_ID:
     case WASM_CODE_POINTER_TABLE_ENTRY:
-    case WASM_CODE_POINTER:
       break;
     case NUMBER_OF_MODES:
     case PC_JUMP:

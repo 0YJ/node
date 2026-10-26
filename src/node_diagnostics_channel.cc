@@ -44,21 +44,6 @@ BindingData::BindingData(Realm* realm,
   subscribers_.MakeWeak();
 }
 
-void BindingData::DetachChannels() {
-  // A native holder may keep a strong reference to a Channel that outlives this
-  // binding's ownership of it, and the binding is destroyed during environment
-  // cleanup while BaseObject destructors still run after it. Drop the
-  // back-pointer so that the null check in HasSubscribers() stops those holders
-  // from reading the subscribers_ array of a binding that no longer owns them.
-  for (auto& channel : channels_) {
-    if (channel) channel->binding_data_ = nullptr;
-  }
-}
-
-BindingData::~BindingData() {
-  DetachChannels();
-}
-
 void BindingData::MemoryInfo(MemoryTracker* tracker) const {
   tracker->TrackField("subscribers", subscribers_);
 }
@@ -119,7 +104,6 @@ bool BindingData::PrepareForSerialization(Local<Context> context,
   internal_field_info_->subscribers_capacity = subscribers_.Length();
   link_callback_.Reset();
   channel_wrap_template_.Reset();
-  DetachChannels();
   channels_.clear();
   return true;
 }
@@ -296,6 +280,8 @@ void Channel::CachePublishFn(Isolate* isolate, Local<Object> js_channel) {
 
 void Channel::Publish(Environment* env, Local<Value> message) {
   if (!HasSubscribers()) return;
+
+  if (binding_data_ == nullptr) return;
 
   if (js_channel_.IsEmpty()) return;
 

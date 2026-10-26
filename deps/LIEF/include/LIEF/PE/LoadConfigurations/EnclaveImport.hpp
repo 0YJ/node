@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,7 @@ class LIEF_API EnclaveImport {
     /// of all zeros, the imported image must be part of the Windows installation.
     AUTHOR_ID = 0x00000002,
 
-    /// The value of the enclave family identifier of the image must match the
+ 	  /// The value of the enclave family identifier of the image must match the
     /// value in the import record. Otherwise, loading of the image fails.
     FAMILY_ID = 0x00000003,
 
@@ -82,17 +82,17 @@ class LIEF_API EnclaveImport {
   /// The unique identifier of the primary module for the enclave, if the type()
   /// is TYPE::UNIQUE_ID. Otherwise, the author identifier of the primary module
   /// for the enclave.
-  const long_id_t& id() const LIEF_LIFETIMEBOUND {
+  const long_id_t& id() const {
     return id_;
   }
 
   /// The family identifier of the primary module for the enclave.
-  const short_id_t& family_id() const LIEF_LIFETIMEBOUND {
+  const short_id_t& family_id() const {
     return family_id_;
   }
 
   /// The image identifier of the primary module for the enclave.
-  const short_id_t& image_id() const LIEF_LIFETIMEBOUND {
+  const short_id_t& image_id() const {
     return image_id_;
   }
 
@@ -103,7 +103,7 @@ class LIEF_API EnclaveImport {
   }
 
   /// Resolved import name
-  const std::string& import_name() const LIEF_LIFETIMEBOUND {
+  const std::string& import_name() const {
     return import_name_;
   }
 
@@ -112,61 +112,63 @@ class LIEF_API EnclaveImport {
     return reserved_;
   }
 
-  EnclaveImport& type(TYPE ty) LIEF_LIFETIMEBOUND {
+  EnclaveImport& type(TYPE ty) {
     type_ = ty;
     return *this;
   }
 
-  EnclaveImport& min_security_version(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& min_security_version(uint32_t value) {
     min_security_version_ = value;
     return *this;
   }
 
-  EnclaveImport& id(const long_id_t& value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& id(const long_id_t& value) {
     id_ = value;
     return *this;
   }
 
-  EnclaveImport& family_id(const short_id_t& value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& family_id(const short_id_t& value) {
     family_id_ = value;
     return *this;
   }
 
-  EnclaveImport& image_id(const short_id_t& value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& image_id(const short_id_t& value) {
     image_id_ = value;
     return *this;
   }
 
-  EnclaveImport& import_name_rva(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& import_name_rva(uint32_t value) {
     import_name_rva_ = value;
     return *this;
   }
 
-  EnclaveImport& reserved(uint32_t value) LIEF_LIFETIMEBOUND {
+  EnclaveImport& reserved(uint32_t value) {
     reserved_ = value;
     return *this;
   }
 
-  EnclaveImport& import_name(std::string name) LIEF_LIFETIMEBOUND {
+  EnclaveImport& import_name(std::string name) {
     import_name_ = std::move(name);
     return *this;
   }
 
   std::string to_string() const;
 
-  LIEF_API friend std::ostream& operator<<(std::ostream& os,
-                                           const EnclaveImport& meta) {
+  LIEF_API friend
+    std::ostream& operator<<(std::ostream& os, const EnclaveImport& meta)
+  {
     os << meta.to_string();
     return os;
   }
 
-  /// @private
-  LIEF_LOCAL static result<EnclaveImport> parse(Parser& ctx, BinaryStream& stream);
+  /// \private
+  LIEF_LOCAL static result<EnclaveImport>
+    parse(Parser& ctx, BinaryStream& stream);
 
   private:
   TYPE type_ = TYPE::NONE;
   uint32_t min_security_version_ = 0;
-  long_id_t id_ = {0};
+  long_id_t id_;
   short_id_t family_id_ = {0};
   short_id_t image_id_ = {0};
   uint32_t import_name_rva_ = 0;

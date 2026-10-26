@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2005-2026 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2005-2024 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -8,10 +8,10 @@
 
 #
 # ====================================================================
-# Written by Andy Polyakov, @dot-asm, initially for use in the OpenSSL
+# Written by Andy Polyakov <appro@openssl.org> for the OpenSSL
 # project. The module is, however, dual licensed under OpenSSL and
 # CRYPTOGAMS licenses depending on where you obtain it. For further
-# details see https://github.com/dot-asm/cryptogams/.
+# details see http://www.openssl.org/~appro/cryptogams/.
 # ====================================================================
 #
 # Version 2.1.
@@ -1337,7 +1337,8 @@ $code.=<<___;
 ___
 }
 
-# int AES_set_encrypt_key(const unsigned char *userKey, int bits, AES_KEY *key)
+# int AES_set_encrypt_key(const unsigned char *userKey, const int bits,
+#                        AES_KEY *key)
 $code.=<<___;
 .globl	AES_set_encrypt_key
 .type	AES_set_encrypt_key,\@function,3
@@ -1617,7 +1618,8 @@ $code.=<<___;
 ___
 }
 
-# int AES_set_decrypt_key(const unsigned char *userKey, int bits, AES_KEY *key)
+# int AES_set_decrypt_key(const unsigned char *userKey, const int bits,
+#                        AES_KEY *key)
 $code.=<<___;
 .globl	AES_set_decrypt_key
 .type	AES_set_decrypt_key,\@function,3
@@ -1713,7 +1715,7 @@ ___
 
 # void AES_cbc_encrypt (const void char *inp, unsigned char *out,
 #			size_t length, const AES_KEY *key,
-#			unsigned char *ivp, int enc);
+#			unsigned char *ivp,const int enc);
 {
 # stack frame layout
 # -8(%rsp)		return address
@@ -2640,7 +2642,7 @@ ___
 $code.=<<___;
 	.long	0x80808080, 0x80808080, 0xfefefefe, 0xfefefefe
 	.long	0x1b1b1b1b, 0x1b1b1b1b, 0, 0
-.asciz  "AES for x86_64, CRYPTOGAMS by <https://github.com/dot-asm>"
+.asciz  "AES for x86_64, CRYPTOGAMS by <appro\@openssl.org>"
 .align	64
 .previous
 ___

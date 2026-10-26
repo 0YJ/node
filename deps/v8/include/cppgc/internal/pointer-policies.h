@@ -42,9 +42,8 @@ struct DijkstraWriteBarrierPolicy {
     V8_INLINE static void AssigningBarrier(const void* slot,
                                            const void* value) {
 #ifdef CPPGC_SLIM_WRITE_BARRIER
-      if (V8_UNLIKELY(WriteBarrier::IsEnabled())) {
-        WriteBarrier::CombinedWriteBarrierSlow<SlotType>(slot);
-      }
+    if (V8_UNLIKELY(WriteBarrier::IsEnabled()))
+      WriteBarrier::CombinedWriteBarrierSlow<SlotType>(slot);
 #else   // !CPPGC_SLIM_WRITE_BARRIER
     WriteBarrier::Params params;
     const WriteBarrier::Type type =
@@ -59,9 +58,8 @@ struct DijkstraWriteBarrierPolicy {
         SlotType == WriteBarrierSlotType::kUncompressed,
         "Assigning storages of Member and UncompressedMember is not supported");
 #ifdef CPPGC_SLIM_WRITE_BARRIER
-    if (V8_UNLIKELY(WriteBarrier::IsEnabled())) {
+    if (V8_UNLIKELY(WriteBarrier::IsEnabled()))
       WriteBarrier::CombinedWriteBarrierSlow<SlotType>(slot);
-    }
 #else   // !CPPGC_SLIM_WRITE_BARRIER
     WriteBarrier::Params params;
     const WriteBarrier::Type type =
@@ -78,9 +76,8 @@ struct DijkstraWriteBarrierPolicy {
         SlotType == WriteBarrierSlotType::kCompressed,
         "Assigning storages of Member and UncompressedMember is not supported");
 #ifdef CPPGC_SLIM_WRITE_BARRIER
-    if (WriteBarrier::IsEnabled()) [[unlikely]] {
+    if (V8_UNLIKELY(WriteBarrier::IsEnabled()))
       WriteBarrier::CombinedWriteBarrierSlow<SlotType>(slot);
-    }
 #else   // !CPPGC_SLIM_WRITE_BARRIER
     WriteBarrier::Params params;
     const WriteBarrier::Type type =
@@ -213,13 +210,6 @@ class KeepLocationPolicy {
   constexpr explicit KeepLocationPolicy(SourceLocation location)
       : location_(location) {}
 
-  // When used in a CrossThreadPersistent the object could already be poisoned
-  // (e.g. when stored on a remote heap). In that case we would get an ASAN
-  // error when the local heap invokes this method before the remote heap runs
-  // the destructor.
-  V8_CLANG_NO_SANITIZE("address")
-  constexpr SourceLocation LocationFromGC() const { return location_; }
-
   // KeepLocationPolicy must not copy underlying source locations.
   KeepLocationPolicy(const KeepLocationPolicy&) = delete;
   KeepLocationPolicy& operator=(const KeepLocationPolicy&) = delete;
@@ -239,7 +229,6 @@ class IgnoreLocationPolicy {
  protected:
   constexpr IgnoreLocationPolicy() = default;
   constexpr explicit IgnoreLocationPolicy(SourceLocation) {}
-  constexpr SourceLocation LocationFromGC() const { return {}; }
 };
 
 #if CPPGC_SUPPORTS_OBJECT_NAMES

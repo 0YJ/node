@@ -29,10 +29,9 @@ class RegisterFrameArray {
     static_assert(interpreter::Register(0).index() == 0);
     constexpr int frame_size_between_params_and_locals = -first_param.index();
 
-    int size = info.parameter_count() + frame_size_between_params_and_locals +
-               info.register_count();
-    T* frame = info.zone()->AllocateArray<T>(size);
-    std::uninitialized_fill_n(frame, size, T{});
+    T* frame = info.zone()->AllocateArray<T>(
+        info.parameter_count() + frame_size_between_params_and_locals +
+        info.register_count());
 
     // Set frame_start_ to a "butterfly" pointer into the middle of the above
     // Zone-allocated array, so that locals start at zero.

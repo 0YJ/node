@@ -123,6 +123,7 @@ mod request;
 pub use request::{DataLocale, DataMarkerAttributes, DataRequest, DataRequestMetadata, *};
 
 mod response;
+#[doc(hidden)] // TODO(#4467): establish this as an internal API
 pub use response::DataPayloadOr;
 pub use response::{Cart, DataPayload, DataResponse, DataResponseMetadata};
 
@@ -161,16 +162,16 @@ pub mod prelude {
     pub use crate::buf::{BufferMarker, BufferProvider};
     #[doc(no_inline)]
     pub use crate::{
-        BoundDataProvider, DataError, DataErrorKind, DataLocale, DataMarker, DataMarkerAttributes,
-        DataMarkerInfo, DataPayload, DataProvider, DataRequest, DataRequestMetadata, DataResponse,
-        DataResponseMetadata, DryDataProvider, DynamicDataMarker, DynamicDataProvider,
-        DynamicDryDataProvider, ResultDataError, data_marker, data_struct, marker::DataMarkerExt,
-        request::AttributeParseError, request::DataIdentifierBorrowed,
+        data_marker, data_struct, marker::DataMarkerExt, request::AttributeParseError,
+        request::DataIdentifierBorrowed, BoundDataProvider, DataError, DataErrorKind, DataLocale,
+        DataMarker, DataMarkerAttributes, DataMarkerInfo, DataPayload, DataProvider, DataRequest,
+        DataRequestMetadata, DataResponse, DataResponseMetadata, DryDataProvider,
+        DynamicDataMarker, DynamicDataProvider, DynamicDryDataProvider, ResultDataError,
     };
     #[cfg(feature = "alloc")]
     #[doc(no_inline)]
     pub use crate::{
-        IterableDataProvider, IterableDynamicDataProvider, request::DataIdentifierCow,
+        request::DataIdentifierCow, IterableDataProvider, IterableDynamicDataProvider,
     };
 
     #[doc(no_inline)]

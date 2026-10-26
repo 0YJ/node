@@ -1,5 +1,5 @@
 /*
- * Copyright 2001-2026 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2001-2024 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2002, Oracle and/or its affiliates. All rights reserved
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -7,9 +7,6 @@
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-#if !defined(OSSL_LIBCRYPTO_EC_EC_LOCAL_H)
-#define OSSL_LIBCRYPTO_EC_EC_LOCAL_H
 
 #include <stdlib.h>
 
@@ -296,11 +293,13 @@ struct ec_group_st {
 
 struct ec_key_st {
     const EC_KEY_METHOD *meth;
+    ENGINE *engine;
     int version;
     EC_GROUP *group;
     EC_POINT *pub_key;
     BIGNUM *priv_key;
     unsigned int enc_flag;
+    point_conversion_form_t conv_form;
     CRYPTO_REF_COUNT references;
     int flags;
 #ifndef FIPS_MODULE
@@ -690,7 +689,8 @@ struct ec_key_method_st {
 
 #define EC_KEY_METHOD_DYNAMIC 1
 
-EC_KEY *ossl_ec_key_new_method_int(OSSL_LIB_CTX *libctx, const char *propq);
+EC_KEY *ossl_ec_key_new_method_int(OSSL_LIB_CTX *libctx, const char *propq,
+    ENGINE *engine);
 
 int ossl_ec_key_gen(EC_KEY *eckey);
 int ossl_ecdh_compute_key(unsigned char **pout, size_t *poutlen,
@@ -796,5 +796,3 @@ static ossl_inline int ec_point_ladder_post(const EC_GROUP *group,
 
     return 1;
 }
-
-#endif /* !defined(OSSL_LIBCRYPTO_EC_EC_LOCAL_H) */

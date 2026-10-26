@@ -2,6 +2,7 @@
 
 const util = require('../../core/util')
 const {
+  ReadableStreamFrom,
   readableStreamClose,
   fullyReadBody,
   extractMimeType
@@ -39,6 +40,7 @@ const streamRegistry = new FinalizationRegistry((weakRef) => {
 function extractBody (object, keepalive = false) {
   // 1. Let stream be null.
   let stream = null
+  let controller = null
 
   // 2. If object is a ReadableStream object, then set stream to object.
   if (webidl.is.ReadableStream(object)) {
@@ -51,44 +53,11 @@ function extractBody (object, keepalive = false) {
     // 4. Otherwise, set stream to a new ReadableStream object, and set
     //    up stream with byte reading support.
     stream = new ReadableStream({
-      start () {},
-      async pull (controller) {
-        // 19.1. Run action.
-        const result = action()
-
-        const iterator = result?.[Symbol.asyncIterator]?.()
-        if (iterator == null) {
-          // 19.2. Whenever one or more bytes are available and stream is not errored,
-          // enqueue the result of creating a Uint8Array from the available bytes into stream.
-          if (result?.length && !isErrored(stream)) {
-            controller.enqueue(typeof result === 'string' ? textEncoder.encode(result) : new Uint8Array(result))
-          }
-
-          // 19.3. When running action is done, close stream.
-          queueMicrotask(() => readableStreamClose(controller))
-          return
-        }
-
-        while (true) {
-          const { value, done } = await iterator.next()
-
-          // 19.3. When running action is done, close stream.
-          if (done) {
-            queueMicrotask(() => readableStreamClose(controller))
-            return
-          }
-
-          // 19.2. Whenever one or more bytes are available and stream is not errored,
-          // enqueue the result of creating a Uint8Array from the available bytes into stream.
-          if (value.length && !isErrored(stream)) {
-            controller.enqueue(new Uint8Array(value))
-            return
-          }
-        }
+      pull () {},
+      start (c) {
+        controller = c
       },
-      cancel (reason) {
-        return action()[Symbol.asyncIterator]?.().return(reason)
-      },
+      cancel () {},
       type: 'bytes'
     })
   }
@@ -187,7 +156,7 @@ function extractBody (object, keepalive = false) {
     // Set source to object.
     source = object
 
-    const parts = (async function * () {
+    action = async function * () {
       for (const part of blobParts) {
         if (part.stream) {
           yield * part.stream()
@@ -195,8 +164,7 @@ function extractBody (object, keepalive = false) {
           yield part
         }
       }
-    })()
-    action = () => parts
+    }
 
     // Set type to `multipart/form-data; boundary=`,
     // followed by the multipart/form-data boundary string generated
@@ -229,33 +197,49 @@ function extractBody (object, keepalive = false) {
       )
     }
 
-    stream = webidl.is.ReadableStream(object)
-      ? object
-      : ReadableStream.from(object).pipeThrough(new TransformStream({
-        transform (chunk, controller) {
-          const bytes = isUint8Array(chunk) ? chunk : Buffer.from(chunk)
-          if (bytes.byteLength) {
-            controller.enqueue(bytes)
-          }
-        }
-      }))
+    stream =
+      webidl.is.ReadableStream(object) ? object : ReadableStreamFrom(object)
   }
 
-  // 18. If source is a byte sequence, then set action to a
+  // 11. If source is a byte sequence, then set action to a
   // step that returns source and length to source’s length.
   if (typeof source === 'string' || isUint8Array(source)) {
-    action = () => source
-    length = typeof source === 'string' ? Buffer.byteLength(source) : source.length
+    action = () => {
+      length = typeof source === 'string' ? Buffer.byteLength(source) : source.length
+      return source
+    }
   }
 
-  // 19. If action is non-null, then run these steps in parallel:
-  // Note: this is done in the pull method of the stream created above
+  // 12. If action is non-null, then run these steps in parallel:
+  if (action != null) {
+    ;(async () => {
+      // 1. Run action.
+      const result = action()
 
-  // 20. Let body be a body whose stream is stream, source is source,
+      // 2. Whenever one or more bytes are available and stream is not errored,
+      //    enqueue the result of creating a Uint8Array from the available bytes into stream.
+      const iterator = result?.[Symbol.asyncIterator]?.()
+      if (iterator) {
+        for await (const bytes of iterator) {
+          if (isErrored(stream)) break
+          if (bytes.length) {
+            controller.enqueue(new Uint8Array(bytes))
+          }
+        }
+      } else if (result?.length && !isErrored(stream)) {
+        controller.enqueue(typeof result === 'string' ? textEncoder.encode(result) : new Uint8Array(result))
+      }
+
+      // 3. When running action is done, close stream.
+      queueMicrotask(() => readableStreamClose(controller))
+    })()
+  }
+
+  // 13. Let body be a body whose stream is stream, source is source,
   // and length is length.
   const body = { stream, source, length }
 
-  // 21. Return (body, type).
+  // 14. Return (body, type).
   return [body, type]
 }
 
@@ -309,7 +293,7 @@ function cloneBody (body) {
   }
 }
 
-function bodyMixinMethods (brandCheck, getInternalState) {
+function bodyMixinMethods (instance, getInternalState) {
   const methods = {
     blob () {
       // The blob() method steps are to return the result of
@@ -329,7 +313,7 @@ function bodyMixinMethods (brandCheck, getInternalState) {
         // Return a Blob whose contents are bytes and type attribute
         // is mimeType.
         return new Blob([bytes], { type: mimeType })
-      }, brandCheck, getInternalState)
+      }, instance, getInternalState)
     },
 
     arrayBuffer () {
@@ -339,19 +323,19 @@ function bodyMixinMethods (brandCheck, getInternalState) {
       // whose contents are bytes.
       return consumeBody(this, (bytes) => {
         return new Uint8Array(bytes).buffer
-      }, brandCheck, getInternalState)
+      }, instance, getInternalState)
     },
 
     text () {
       // The text() method steps are to return the result of running
       // consume body with this and UTF-8 decode.
-      return consumeBody(this, utf8DecodeBytes, brandCheck, getInternalState)
+      return consumeBody(this, utf8DecodeBytes, instance, getInternalState)
     },
 
     json () {
       // The json() method steps are to return the result of running
       // consume body with this and parse JSON from bytes.
-      return consumeBody(this, parseJSONFromBytes, brandCheck, getInternalState)
+      return consumeBody(this, parseJSONFromBytes, instance, getInternalState)
     },
 
     formData () {
@@ -399,7 +383,7 @@ function bodyMixinMethods (brandCheck, getInternalState) {
         throw new TypeError(
           'Content-Type was not one of "multipart/form-data" or "application/x-www-form-urlencoded".'
         )
-      }, brandCheck, getInternalState)
+      }, instance, getInternalState)
     },
 
     bytes () {
@@ -408,7 +392,7 @@ function bodyMixinMethods (brandCheck, getInternalState) {
       // result of creating a Uint8Array from bytes in this’s relevant realm.
       return consumeBody(this, (bytes) => {
         return new Uint8Array(bytes)
-      }, brandCheck, getInternalState)
+      }, instance, getInternalState)
     },
 
     textStream () {
@@ -458,20 +442,20 @@ function bodyMixinMethods (brandCheck, getInternalState) {
   return methods
 }
 
-function mixinBody (prototype, getInternalState, brandCheck) {
-  Object.assign(prototype.prototype, bodyMixinMethods(brandCheck, getInternalState))
+function mixinBody (prototype, getInternalState) {
+  Object.assign(prototype.prototype, bodyMixinMethods(prototype, getInternalState))
 }
 
 /**
  * @see https://fetch.spec.whatwg.org/#concept-body-consume-body
  * @param {any} object internal state
  * @param {(value: unknown) => unknown} convertBytesToJSValue
- * @param {import('../../../types/webidl').WebidlIsFunction} brandCheck
+ * @param {any} instance
  * @param {(target: any) => any} getInternalState
  */
-function consumeBody (object, convertBytesToJSValue, brandCheck, getInternalState) {
+function consumeBody (object, convertBytesToJSValue, instance, getInternalState) {
   try {
-    webidl.brandCheck(object, brandCheck)
+    webidl.brandCheck(object, instance)
   } catch (e) {
     return Promise.reject(e)
   }

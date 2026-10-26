@@ -40,30 +40,12 @@ class NodeOriginTable::Decorator final : public GraphDecorator {
   NodeOriginTable* origins_;
 };
 
-NodeOriginTable::PhaseScope::PhaseScope(NodeOriginTable* origins,
-                                        const char* phase_name)
-    : origins_(origins) {
-  if (origins != nullptr) {
-    prev_phase_name_ = origins->current_phase_name_;
-    origins->current_phase_name_ =
-        phase_name == nullptr ? "unnamed" : phase_name;
-  }
-}
-
-NodeOriginTable::PhaseScope::~PhaseScope() {
-  if (origins_) {
-    origins_->previous_phase_name_ = origins_->current_phase_name_;
-    origins_->current_phase_name_ = prev_phase_name_;
-  }
-}
-
 NodeOriginTable::NodeOriginTable(TFGraph* graph)
     : graph_(graph),
       decorator_(nullptr),
       current_origin_(NodeOrigin::Unknown()),
       current_bytecode_position_(0),
       current_phase_name_("unknown"),
-      previous_phase_name_("unknown"),
       table_(graph->zone()) {}
 
 NodeOriginTable::NodeOriginTable(Zone* zone)
@@ -72,7 +54,6 @@ NodeOriginTable::NodeOriginTable(Zone* zone)
       current_origin_(NodeOrigin::Unknown()),
       current_bytecode_position_(0),
       current_phase_name_("unknown"),
-      previous_phase_name_("unknown"),
       table_(zone) {}
 
 void NodeOriginTable::AddDecorator() {
@@ -101,10 +82,6 @@ void NodeOriginTable::SetNodeOrigin(Node* node, const NodeOrigin& no) {
 }
 void NodeOriginTable::SetNodeOrigin(NodeId id, NodeId origin) {
   table_.Set(id, NodeOrigin(current_phase_name_, "", origin));
-}
-void NodeOriginTable::SetNodeOrigin(NodeId id, NodeId origin,
-                                    const char* phase_name) {
-  table_.Set(id, NodeOrigin(phase_name, "", origin));
 }
 void NodeOriginTable::SetNodeOrigin(NodeId id, NodeOrigin::OriginKind kind,
                                     NodeId origin) {

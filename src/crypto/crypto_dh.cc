@@ -21,8 +21,9 @@ using ncrypto::DataPointer;
 using ncrypto::DHPointer;
 using ncrypto::EVPKeyCtxPointer;
 using ncrypto::EVPKeyPointer;
-using ncrypto::KeyAlgorithm;
 using v8::ArrayBuffer;
+using v8::BackingStoreInitializationMode;
+using v8::BackingStoreOnFailureMode;
 using v8::ConstructorBehavior;
 using v8::Context;
 using v8::DontDelete;
@@ -59,8 +60,21 @@ MaybeLocal<Value> DataPointerToBuffer(Environment* env, DataPointer&& data) {
   struct Flag {
     bool secure;
   };
-  auto backing = AdoptIntoBackingStore(
+#ifdef V8_ENABLE_SANDBOX
+  auto backing = ArrayBuffer::NewBackingStore(
       env->isolate(),
+      data.size(),
+      BackingStoreInitializationMode::kUninitialized,
+      BackingStoreOnFailureMode::kReturnNull);
+  if (!backing) {
+    THROW_ERR_MEMORY_ALLOCATION_FAILED(env);
+    return MaybeLocal<Value>();
+  }
+  if (data.size() > 0) {
+    memcpy(backing->Data(), data.get(), data.size());
+  }
+#else
+  auto backing = ArrayBuffer::NewBackingStore(
       data.get(),
       data.size(),
       [](void* data, size_t len, void* ptr) {
@@ -69,10 +83,7 @@ MaybeLocal<Value> DataPointerToBuffer(Environment* env, DataPointer&& data) {
       },
       new Flag{data.isSecure()});
   data.release();
-  if (!backing) {
-    THROW_ERR_MEMORY_ALLOCATION_FAILED(env);
-    return MaybeLocal<Value>();
-  }
+#endif  // V8_ENABLE_SANDBOX
 
   auto ab = ArrayBuffer::New(env->isolate(), std::move(backing));
   return Buffer::New(env, ab, 0, ab->ByteLength()).FromMaybe(Local<Value>());
@@ -81,14 +92,20 @@ MaybeLocal<Value> DataPointerToBuffer(Environment* env, DataPointer&& data) {
 void PutDhError(int reason) {
 #ifdef OPENSSL_IS_BORINGSSL
   OPENSSL_PUT_ERROR(DH, reason);
-#else
+#elif NCRYPTO_USE_OPENSSL3_PROVIDER
   ERR_raise(ERR_LIB_DH, reason);
+#else
+  ERR_put_error(ERR_LIB_DH, 0, reason, __FILE__, __LINE__);
 #endif
 }
 
-#ifdef OPENSSL_IS_BORINGSSL
+#if defined(OPENSSL_IS_BORINGSSL) || !NCRYPTO_USE_OPENSSL3_PROVIDER
 void PutBnError(int reason) {
+#ifdef OPENSSL_IS_BORINGSSL
   OPENSSL_PUT_ERROR(BN, reason);
+#else
+  ERR_put_error(ERR_LIB_BN, 0, reason, __FILE__, __LINE__);
+#endif
 }
 #endif
 
@@ -117,8 +134,12 @@ void New(const FunctionCallbackInfo<Value>& args) {
     int32_t bits = args[0].As<Int32>()->Value();
     if (bits < 2) {
 #ifndef OPENSSL_IS_BORINGSSL
+#if OPENSSL_VERSION_MAJOR >= 3
       PutDhError(DH_R_MODULUS_TOO_SMALL);
-#elif defined(OPENSSL_IS_BORINGSSL)
+#else
+      PutBnError(BN_R_BITS_TOO_SMALL);
+#endif  // OPENSSL_VERSION_MAJOR >= 3
+#else   // OPENSSL_IS_BORINGSSL
       PutBnError(BN_R_BITS_TOO_SMALL);
 #endif  // OPENSSL_IS_BORINGSSL
       return ThrowCryptoError(env, ERR_get_error(), "Invalid prime length");
@@ -185,7 +206,7 @@ void New(const FunctionCallbackInfo<Value>& args) {
     }
   }
 
-#if NCRYPTO_USE_OPENSSL_PROVIDER
+#if NCRYPTO_USE_OPENSSL3_PROVIDER
   if (BN_num_bits(bn_p.get()) >= 512 && BN_cmp(bn_g.get(), bn_p.get()) >= 0) {
     PutDhError(DH_R_BAD_GENERATOR);
     return ThrowCryptoError(env, ERR_get_error(), "Invalid generator");
@@ -443,13 +464,17 @@ EVPKeyCtxPointer DhKeyGenTraits::Setup(DhKeyPairGenConfig* params) {
 
     key_params = EVPKeyPointer::NewDH(std::move(dh));
   } else if (int* prime_size = std::get_if<int>(&params->params.prime)) {
-    auto param_ctx = EVPKeyCtxPointer::NewFromAlgorithm(KeyAlgorithm::DH);
+    auto param_ctx = EVPKeyCtxPointer::NewFromID(EVP_PKEY_DH);
+#ifndef OPENSSL_IS_BORINGSSL
     if (!param_ctx.initForParamgen() ||
         !param_ctx.setDhParameters(*prime_size, params->params.generator)) {
       return {};
     }
 
     key_params = param_ctx.paramgen();
+#else
+    return {};
+#endif
   } else {
     UNREACHABLE();
   }
@@ -506,7 +531,7 @@ bool DHBitsTraits::DeriveBits(Environment* env,
 bool GetDhKeyDetail(Environment* env,
                     const KeyObjectData& key,
                     Local<Object> target) {
-  DCHECK(key.GetAsymmetricKey().isA(KeyAlgorithm::DH));
+  CHECK_EQ(key.GetAsymmetricKey().id(), EVP_PKEY_DH);
   return true;
 }
 

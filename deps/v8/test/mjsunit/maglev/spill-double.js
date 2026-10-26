@@ -31,8 +31,8 @@ assertEquals(4.2, f(false, value));
 
 %OptimizeMaglevOnNextCall(f);
 assertEquals(4.2, f(false, value));
-assertMaglevved(f);
+assertTrue(isMaglevved(f));
 
 // We should deopt here.
 assertEquals(4.2, f(true, value));
-assertNotMaglevved(f);
+assertFalse(isMaglevved(f));

@@ -9,7 +9,6 @@ const diagnosticChannel = channel(channelName);
 bench('diagnostic relay', {
   diagnosticChannels: [channelName],
   samples: 1,
-  warmup: 0,
 }, (b) => {
   const message = { value: 42n };
   diagnosticChannel.publish(message);

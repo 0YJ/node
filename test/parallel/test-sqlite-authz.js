@@ -4,12 +4,12 @@ const common = require('../common');
 common.skipIfSQLiteMissing();
 
 const assert = require('node:assert');
-const { Database, constants } = require('node:sqlite');
+const { DatabaseSync, constants } = require('node:sqlite');
 const { suite, it } = require('node:test');
 
-suite('Database.prototype.setAuthorizer()', () => {
+suite('DatabaseSync.prototype.setAuthorizer()', () => {
   const createTestDatabase = () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE users (id INTEGER, name TEXT)');
     return db;
   };
@@ -50,7 +50,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('allows operations when authorizer returns SQLITE_OK', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => constants.SQLITE_OK);
 
     db.exec('CREATE TABLE users (id INTEGER, name TEXT)');
@@ -60,7 +60,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('blocks operations when authorizer returns SQLITE_DENY', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => constants.SQLITE_DENY);
 
     assert.throws(() => {
@@ -155,7 +155,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('rethrows error when authorizer throws error', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => {
       throw new Error('Unknown error');
     });
@@ -168,7 +168,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws error when authorizer returns nothing', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => {
     });
 
@@ -180,7 +180,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws error when authorizer returns NaN', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => {
       return '1';
     });
@@ -193,7 +193,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws error when authorizer returns a invalid code', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.setAuthorizer(() => {
       return 3;
     });
@@ -207,7 +207,7 @@ suite('Database.prototype.setAuthorizer()', () => {
 
   it('clears authorizer when set to null', (t) => {
     const authorizer = t.mock.fn(() => constants.SQLITE_OK);
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     const statement = db.prepare('SELECT 1');
 
     // Set authorizer and verify it's called
@@ -222,7 +222,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws when callback is a string', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
 
     assert.throws(() => {
       db.setAuthorizer('not a function');
@@ -233,7 +233,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws when callback is a number', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
 
     assert.throws(() => {
       db.setAuthorizer(1);
@@ -244,7 +244,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws when callback is an object', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
 
     assert.throws(() => {
       db.setAuthorizer({});
@@ -255,7 +255,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws when callback is an array', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
 
     assert.throws(() => {
       db.setAuthorizer([]);
@@ -266,7 +266,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws when callback is undefined', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
 
     assert.throws(() => {
       db.setAuthorizer();
@@ -277,7 +277,7 @@ suite('Database.prototype.setAuthorizer()', () => {
   });
 
   it('throws if database is not open', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.close();
 
     assert.throws(() => {
@@ -286,37 +286,6 @@ suite('Database.prototype.setAuthorizer()', () => {
       code: 'ERR_INVALID_STATE',
       message: 'database is not open',
     });
-  });
-
-  it('remains installed after close() and open()', (t) => {
-    const db = new Database(':memory:');
-    const authorizer = t.mock.fn(() => constants.SQLITE_DENY);
-    db.setAuthorizer(authorizer);
-
-    assert.throws(() => {
-      db.exec('CREATE TABLE x (a)');
-    }, { code: 'ERR_SQLITE_ERROR' });
-    const callsBefore = authorizer.mock.callCount();
-    assert.ok(callsBefore > 0);
-
-    db.close();
-    db.open();
-
-    assert.throws(() => {
-      db.exec('CREATE TABLE x (a)');
-    }, { code: 'ERR_SQLITE_ERROR' });
-    assert.ok(authorizer.mock.callCount() > callsBefore);
-  });
-
-  it('stays cleared after close() and open()', () => {
-    const db = new Database(':memory:');
-    db.setAuthorizer(() => constants.SQLITE_DENY);
-    db.setAuthorizer(null);
-
-    db.close();
-    db.open();
-
-    db.exec('CREATE TABLE x (a)');
   });
 });
 
@@ -362,7 +331,7 @@ suite('authorizer callback reentrancy', () => {
   );
 
   it('rejects database methods', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     const cases = {
       prepare: () => db.prepare('SELECT 1'),
@@ -385,7 +354,7 @@ suite('authorizer callback reentrancy', () => {
   // loadExtension() checks that extension loading is enabled before reaching
   // the authorizer guard, so it needs a database opened with allowExtension.
   it('rejects loadExtension', () => {
-    const db = new Database(':memory:', { allowExtension: true });
+    const db = new DatabaseSync(':memory:', { allowExtension: true });
     db.enableLoadExtension(true);
     db.exec('CREATE TABLE t (x INTEGER)');
     const cases = {
@@ -398,7 +367,7 @@ suite('authorizer callback reentrancy', () => {
   // close() and deserialize() tear down the connection, so the pre-existing
   // callback depth guard already rejects them with its own message.
   it('rejects methods the callback depth guard already covers', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     const snapshot = db.serialize();
     const cases = {
@@ -414,7 +383,7 @@ suite('authorizer callback reentrancy', () => {
   });
 
   it('rejects statement methods', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const stmt = db.prepare('SELECT x FROM t');
@@ -430,7 +399,7 @@ suite('authorizer callback reentrancy', () => {
 
   // An idle statement has no virtual-machine state or locks to release.
   it('allows finalizing an idle statement', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const closeStmt = db.prepare('SELECT x FROM t');
@@ -449,7 +418,7 @@ suite('authorizer callback reentrancy', () => {
   // A paused iterator is busy and may hold locks between sqlite3_step() calls.
   it('rejects finalizing another active statement', () => {
     for (const method of ['close', 'dispose']) {
-      const db = new Database(':memory:');
+      const db = new DatabaseSync(':memory:');
       db.exec('CREATE TABLE t (x INTEGER)');
       db.exec('INSERT INTO t VALUES (1), (2), (3)');
       const stmt = db.prepare('SELECT x FROM t');
@@ -487,7 +456,7 @@ suite('authorizer callback reentrancy', () => {
   // a no-op even inside a callback. Throwing here would turn a `using` scope's
   // real exception into a SuppressedError.
   it('allows disposing an already-finalized statement', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     const stmt = db.prepare('SELECT x FROM t');
     stmt.close();
@@ -499,7 +468,7 @@ suite('authorizer callback reentrancy', () => {
   });
 
   it('rejects session changeset methods', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER PRIMARY KEY, y TEXT)');
     const session = db.createSession({ table: 't' });
     db.exec("INSERT INTO t VALUES (1, 'a')");
@@ -514,7 +483,7 @@ suite('authorizer callback reentrancy', () => {
   // A statement being re-prepared inside sqlite3_step() is the case that
   // actually crashes, because that statement's VM is mid-execution.
   it('rejects finalizing the statement being stepped', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const stmt = db.prepare('SELECT x FROM t');
@@ -544,7 +513,7 @@ suite('authorizer callback reentrancy', () => {
   // Unlike an already-finalized statement, disposing the one being stepped
   // would free the running virtual machine, so it throws.
   it('rejects disposing the statement being stepped', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const stmt = db.prepare('SELECT x FROM t');
@@ -572,7 +541,7 @@ suite('authorizer callback reentrancy', () => {
   });
 
   it('rejects iterator methods', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1), (2)');
     const iter = db.prepare('SELECT x FROM t').iterate();
@@ -588,7 +557,7 @@ suite('authorizer callback reentrancy', () => {
   // A drained iterator holds no SQLite state, so next() and return() stay
   // available and remain idempotent inside a callback.
   it('allows iterator methods on a drained iterator', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const iter = db.prepare('SELECT x FROM t').iterate();
@@ -609,7 +578,7 @@ suite('authorizer callback reentrancy', () => {
   });
 
   it('rejects tag store methods', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     const sql = db.createTagStore(10);
     const cases = {
@@ -625,7 +594,7 @@ suite('authorizer callback reentrancy', () => {
   // clear() only drops cached statements, so invalidating the cache after a
   // schema change is allowed from the callback.
   it('allows clearing a tag store', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const sql = db.createTagStore(10);
@@ -642,7 +611,7 @@ suite('authorizer callback reentrancy', () => {
   // A statement may be re-prepared during sqlite3_step() after a schema
   // change, which invokes the authorizer without an explicit prepare() call.
   it('rejects reentry when the authorizer runs during a re-prepare', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     db.exec('INSERT INTO t VALUES (1)');
     const stmt = db.prepare('SELECT x FROM t');
@@ -670,7 +639,7 @@ suite('authorizer callback reentrancy', () => {
   });
 
   it('allows access again after the authorizer returns', () => {
-    const db = new Database(':memory:');
+    const db = new DatabaseSync(':memory:');
     db.exec('CREATE TABLE t (x INTEGER)');
     const cases = { prepare: () => db.prepare('SELECT 1') };
 

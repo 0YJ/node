@@ -4,14 +4,3 @@ Running test: ObjectGetter
 {
     getterCalled : false
 }
-
-Running test: ObjectGetterBoundBuiltin
-{
-    callBindCalled : false
-    reflectApplyCalled : false
-}
-
-Running test: ObjectGetterCallableProxy
-{
-    proxyCalled : false
-}

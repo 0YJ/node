@@ -47,9 +47,9 @@ class CppgcWrapperListNode;
  * cleanup relies on a living Node.js `Realm`, it should implement a
  * pattern like this:
  *
- *   ~MyWrap() { this->Finalize(); }
+ *   ~MyWrap() { this->Destroy(); }
  *   void Clean(Realm* env) override {
- *     // Do cleanup that relies on a living Realm.
+ *     // Do cleanup that relies on a living Environemnt.
  *   }
  */
 class CppgcMixin : public cppgc::GarbageCollectedMixin, public MemoryRetainer {
@@ -68,7 +68,7 @@ class CppgcMixin : public cppgc::GarbageCollectedMixin, public MemoryRetainer {
 
   inline v8::Local<v8::Object> object() const;
   inline Environment* env() const;
-  inline Realm* realm() const;
+  inline Realm* realm() const { return realm_; }
   inline v8::Local<v8::Object> object(v8::Isolate* isolate) const {
     return traced_reference_.Get(isolate);
   }
@@ -90,12 +90,16 @@ class CppgcMixin : public cppgc::GarbageCollectedMixin, public MemoryRetainer {
   // during Realm shutdown. The destruction of the wrappers would happen later,
   // when the final garbage collection is triggered when CppHeap is torn down as
   // part of the Isolate teardown. If subclasses of CppgcMixin wish to perform
-  // cleanups that depend on the Realm during destruction, they should implement
+  // cleanups that depend on the Realm during destruction, they should implment
   // it in a Clean() override, and then call this->Finalize() from their
   // destructor. Outside of Finalize(), subclasses should avoid calling
   // into JavaScript or perform any operation that can trigger garbage
   // collection during the destruction.
-  inline void Finalize();
+  void Finalize() {
+    if (realm_ == nullptr) return;
+    this->Clean(realm_);
+    realm_ = nullptr;
+  }
 
   // The default implementation of Clean() is a no-op. If subclasses wish
   // to perform cleanup that require a living Realm, they should
@@ -106,8 +110,10 @@ class CppgcMixin : public cppgc::GarbageCollectedMixin, public MemoryRetainer {
 
   inline ~CppgcMixin();
 
+  friend class CppgcWrapperListNode;
+
  private:
-  CppgcWrapperListNode* list_node_ = nullptr;
+  Realm* realm_ = nullptr;
   v8::TracedReference<v8::Object> traced_reference_;
 };
 

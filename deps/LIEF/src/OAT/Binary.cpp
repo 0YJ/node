@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,11 +27,12 @@
 
 
 #if defined(LIEF_JSON_SUPPORT)
-  #include "visitors/json.hpp"
+#include "visitors/json.hpp"
 #endif
 
 
-namespace LIEF::OAT {
+namespace LIEF {
+namespace OAT {
 
 Binary::Binary() {
   format_ = LIEF::Binary::FORMATS::OAT;
@@ -79,22 +80,19 @@ Binary::it_classes Binary::classes() {
 }
 
 bool Binary::has_class(const std::string& class_name) const {
-  return classes_.find(DEX::Class::fullname_normalized(class_name)) !=
-         classes_.end();
+  return classes_.find(DEX::Class::fullname_normalized(class_name)) != std::end(classes_);
 }
 
 const Class* Binary::get_class(const std::string& class_name) const {
   auto it = classes_.find(DEX::Class::fullname_normalized(class_name));
-  if (it == classes_.end()) {
+  if (it == std::end(classes_)) {
     return nullptr;
   }
   return it->second;
 }
 
 Class* Binary::get_class(const std::string& class_name) {
-  return const_cast<Class*>(
-      static_cast<const Binary*>(this)->get_class(class_name)
-  );
+  return const_cast<Class*>(static_cast<const Binary*>(this)->get_class(class_name));
 }
 
 
@@ -103,12 +101,12 @@ const Class* Binary::get_class(size_t index) const {
     return nullptr;
   }
 
-  const auto it = std::find_if(classes_.begin(), classes_.end(),
-                               [index](const std::pair<std::string, Class*>& p) {
-                                 return p.second->index() == index;
-                               });
+  const auto it = std::find_if(std::begin(classes_), std::end(classes_),
+      [index] (const std::pair<std::string, Class*>& p) {
+        return p.second->index() == index;
+      });
 
-  if (it == classes_.end()) {
+  if (it == std::end(classes_)) {
     return nullptr;
   }
   return it->second;
@@ -149,6 +147,7 @@ std::string Binary::dex2dex_json_info() {
 #else
   return "";
 #endif
+
 }
 
 void Binary::add_class(std::unique_ptr<Class> cls) {
@@ -159,6 +158,7 @@ void Binary::add_class(std::unique_ptr<Class> cls) {
 void Binary::accept(Visitor& visitor) const {
   visitor.visit(*this);
 }
+
 
 
 std::ostream& operator<<(std::ostream& os, const Binary& binary) {
@@ -184,4 +184,5 @@ std::ostream& operator<<(std::ostream& os, const Binary& binary) {
 }
 
 
+}
 }

@@ -110,7 +110,7 @@ let kStringToLowerCaseImported;
 function MakeBuilder() {
   let builder = new WasmModuleBuilder();
   builder.startRecGroup();
-  kArrayI16 = builder.addArray(kWasmI16, {final: true});
+  kArrayI16 = builder.addArray(kWasmI16, true, kNoSuperType, true);
   builder.endRecGroup();
   let arrayref = wasmRefNullType(kArrayI16);
 

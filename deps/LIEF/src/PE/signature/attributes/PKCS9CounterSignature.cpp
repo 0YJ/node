@@ -1,5 +1,5 @@
-/* Copyright 2021 - 2026 R. Thomas
- * Copyright 2021 - 2026 Quarkslab
+/* Copyright 2021 - 2025 R. Thomas
+ * Copyright 2021 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,8 +17,8 @@
 #include "LIEF/Visitor.hpp"
 
 #include <sstream>
-
-namespace LIEF::PE {
+namespace LIEF {
+namespace PE {
 
 void PKCS9CounterSignature::accept(Visitor& visitor) const {
   visitor.visit(*this);
@@ -31,4 +31,5 @@ std::string PKCS9CounterSignature::print() const {
 }
 
 
+}
 }

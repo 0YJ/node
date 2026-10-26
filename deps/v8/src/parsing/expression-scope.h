@@ -7,7 +7,6 @@
 
 #include <utility>
 
-#include "src/ast/ast-function-literal-id-reindexer.h"
 #include "src/ast/scopes.h"
 #include "src/common/message-template.h"
 #include "src/objects/function-kind.h"
@@ -335,7 +334,6 @@ class ExpressionScope {
     return base::IsInRange(type_, kMaybeArrowParameterDeclaration,
                            kMaybeAsyncArrowParameterDeclaration);
   }
-
   bool IsCertainlyPattern() const { return IsCertainlyDeclaration(); }
   bool CanBeParameterDeclaration() const {
     return base::IsInRange(type_, kMaybeArrowParameterDeclaration,
@@ -370,8 +368,7 @@ class VariableDeclarationParsingScope : public ExpressionScope<Types> {
                                      ? ExpressionScopeT::kLexicalDeclaration
                                      : ExpressionScopeT::kVarDeclaration),
         mode_(mode),
-        names_(names),
-        scope_(parser->scope()) {}
+        names_(names) {}
 
   VariableDeclarationParsingScope(const VariableDeclarationParsingScope&) =
       delete;
@@ -382,9 +379,10 @@ class VariableDeclarationParsingScope : public ExpressionScope<Types> {
     VariableKind kind = NORMAL_VARIABLE;
     bool was_added;
     Variable* var = this->parser()->DeclareVariable(
-        name, kind, mode_, Variable::DefaultInitializationFlag(mode_), scope_,
-        &was_added, pos);
-    if (was_added && scope_->num_var() > kMaxNumFunctionLocals) {
+        name, kind, mode_, Variable::DefaultInitializationFlag(mode_),
+        this->parser()->scope(), &was_added, pos);
+    if (was_added &&
+        this->parser()->scope()->num_var() > kMaxNumFunctionLocals) {
       this->parser()->ReportMessage(MessageTemplate::kTooManyVariables);
     }
     if (names_) names_->Add(name, this->parser()->zone());
@@ -428,7 +426,6 @@ class VariableDeclarationParsingScope : public ExpressionScope<Types> {
 
   VariableMode mode_;
   ZonePtrList<const AstRawString>* names_;
-  Scope* scope_;
 };
 
 template <typename Types>
@@ -764,8 +761,7 @@ class ArrowHeadParsingScope : public ExpressionParsingScope<Types> {
             kind == FunctionKind::kArrowFunction
                 ? ExpressionScope<Types>::kMaybeArrowParameterDeclaration
                 : ExpressionScope<Types>::kMaybeAsyncArrowParameterDeclaration),
-        function_literal_id_(function_literal_id),
-        allow_reindex_scope_(&parser->max_drift_) {
+        function_literal_id_(function_literal_id) {
     DCHECK(kind == FunctionKind::kAsyncArrowFunction ||
            kind == FunctionKind::kArrowFunction);
     DCHECK(this->CanBeDeclaration());
@@ -856,7 +852,6 @@ class ArrowHeadParsingScope : public ExpressionParsingScope<Types> {
   int function_literal_id_;
   bool has_simple_parameter_list_ = true;
   bool uses_this_ = false;
-  AllowReindexScope allow_reindex_scope_;
 };
 
 }  // namespace internal

@@ -32,9 +32,8 @@ class Recorder : public std::enable_shared_from_this<Recorder> {
   template <class T>
   void AddMainThreadEvent(const T& event,
                           v8::metrics::Recorder::ContextId id) {
-    if (embedder_recorder_) {
+    if (embedder_recorder_)
       embedder_recorder_->AddMainThreadEvent(event, id);
-    }
   }
 
   template <class T>

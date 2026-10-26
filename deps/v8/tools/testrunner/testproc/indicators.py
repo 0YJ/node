@@ -125,7 +125,7 @@ class StreamProgressIndicator(ProgressIndicator):
         self.print("FAIL", test)
 
   def print(self, prefix, test):
-    print('%s: %s' % (prefix, test))
+    print('%s: %ss' % (prefix, test))
     sys.stdout.flush()
 
 
@@ -473,5 +473,4 @@ PROGRESS_INDICATORS = {
     'color': ColorProgressIndicator,
     'mono': MonochromeProgressIndicator,
     'stream': StreamProgressIndicator,
-    'none': SimpleProgressIndicator,
 }

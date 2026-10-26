@@ -69,7 +69,7 @@ std::string Stats::ToString(int exclude) const {
   if (Count() == 0) return std::string("(none)");
 
   char buf[300];
-  size_t pos = 0;
+  int pos = 0;
   int ret;  // snprintf - bytes written or negative for error.
 
   if ((exclude & kNoCount) == 0) {
@@ -81,15 +81,20 @@ std::string Stats::ToString(int exclude) const {
 
   if ((exclude & kNoMeanSD) == 0) {
     const float sd = StandardDeviation();
-    ret = snprintf(buf + pos, sizeof(buf) - pos, "Mean=%10.3e SD=%8.2e ",
-                   Mean(), sd);
+    if (sd > 100) {
+      ret = snprintf(buf + pos, sizeof(buf) - pos, "Mean=%8.2e SD=%7.1e ",
+                     Mean(), sd);
+    } else {
+      ret = snprintf(buf + pos, sizeof(buf) - pos, "Mean=%8.6e SD=%7.5e ",
+                     Mean(), sd);
+    }
     HWY_ASSERT(ret > 0);
     pos += ret;
   }
 
   if ((exclude & kNoMinMax) == 0) {
-    ret = snprintf(buf + pos, sizeof(buf) - pos, "Min=%10.3e Max=%10.3e ",
-                   static_cast<double>(Min()), static_cast<double>(Max()));
+    ret = snprintf(buf + pos, sizeof(buf) - pos, "Min=%8.5e Max=%8.5e ", Min(),
+                   Max());
     HWY_ASSERT(ret > 0);
     pos += ret;
   }
@@ -108,7 +113,7 @@ std::string Stats::ToString(int exclude) const {
     pos += ret;
   }
 
-  HWY_ASSERT(pos < sizeof(buf));
+  HWY_ASSERT(pos < static_cast<int>(sizeof(buf)));
   return buf;
 }
 

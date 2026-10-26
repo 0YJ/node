@@ -51,8 +51,8 @@ void GeneratorBuiltinsAssembler::InnerResume(
     TNode<Object> value, TNode<Context> context,
     JSGeneratorObject::ResumeMode resume_mode, char const* const method_name) {
   // Check if the {receiver} is running or already closed.
-  TNode<Smi> receiver_continuation = LoadObjectField<Smi>(
-      receiver, offsetof(JSGeneratorObject, continuation_));
+  TNode<Smi> receiver_continuation =
+      LoadObjectField<Smi>(receiver, JSGeneratorObject::kContinuationOffset);
   Label if_receiverisclosed(this, Label::kDeferred),
       if_receiverisrunning(this, Label::kDeferred);
   TNode<Smi> closed = SmiConstant(JSGeneratorObject::kGeneratorClosed);
@@ -62,8 +62,7 @@ void GeneratorBuiltinsAssembler::InnerResume(
   GotoIf(SmiLessThan(receiver_continuation, closed), &if_receiverisrunning);
 
   // Remember the {resume_mode} for the {receiver}.
-  StoreObjectFieldNoWriteBarrier(receiver,
-                                 offsetof(JSGeneratorObject, resume_mode_),
+  StoreObjectFieldNoWriteBarrier(receiver, JSGeneratorObject::kResumeModeOffset,
                                  SmiConstant(resume_mode));
 
   // Resume the {receiver} using our trampoline.
@@ -80,8 +79,8 @@ void GeneratorBuiltinsAssembler::InnerResume(
 
   // If the generator is not suspended (i.e., its state is 'executing'),
   // close it and wrap the return value in IteratorResult.
-  TNode<Smi> result_continuation = LoadObjectField<Smi>(
-      receiver, offsetof(JSGeneratorObject, continuation_));
+  TNode<Smi> result_continuation =
+      LoadObjectField<Smi>(receiver, JSGeneratorObject::kContinuationOffset);
 
   // The generator function should not close the generator by itself, let's
   // check it is indeed not closed yet.
@@ -96,7 +95,7 @@ void GeneratorBuiltinsAssembler::InnerResume(
   {
     // Close the generator.
     StoreObjectFieldNoWriteBarrier(
-        receiver, offsetof(JSGeneratorObject, continuation_), closed);
+        receiver, JSGeneratorObject::kContinuationOffset, closed);
     // Return the wrapped result.
     args->PopAndReturn(CallBuiltin<JSAny>(Builtin::kCreateIterResultObject,
                                           context, result, TrueConstant()));
@@ -132,7 +131,7 @@ void GeneratorBuiltinsAssembler::InnerResume(
   BIND(&if_exception);
   {
     StoreObjectFieldNoWriteBarrier(
-        receiver, offsetof(JSGeneratorObject, continuation_), closed);
+        receiver, JSGeneratorObject::kContinuationOffset, closed);
     CallRuntime(Runtime::kReThrow, context, var_exception.value());
     Unreachable();
   }
@@ -169,7 +168,7 @@ TF_BUILTIN(AsyncModuleEvaluate, GeneratorBuiltinsAssembler) {
               method_name);
 }
 
-// https://tc39.es/ecma262/#sec-generator.prototype.next
+// ES6 #sec-generator.prototype.next
 TF_BUILTIN(GeneratorPrototypeNext, GeneratorBuiltinsAssembler) {
   const int kValueArg = 0;
 
@@ -185,7 +184,7 @@ TF_BUILTIN(GeneratorPrototypeNext, GeneratorBuiltinsAssembler) {
                            "[Generator].prototype.next");
 }
 
-// https://tc39.es/ecma262/#sec-generator.prototype.return
+// ES6 #sec-generator.prototype.return
 TF_BUILTIN(GeneratorPrototypeReturn, GeneratorBuiltinsAssembler) {
   const int kValueArg = 0;
 
@@ -201,7 +200,7 @@ TF_BUILTIN(GeneratorPrototypeReturn, GeneratorBuiltinsAssembler) {
                            "[Generator].prototype.return");
 }
 
-// https://tc39.es/ecma262/#sec-generator.prototype.throw
+// ES6 #sec-generator.prototype.throw
 TF_BUILTIN(GeneratorPrototypeThrow, GeneratorBuiltinsAssembler) {
   const int kExceptionArg = 0;
 
@@ -231,13 +230,12 @@ TF_BUILTIN(SuspendGeneratorBaseline, GeneratorBuiltinsAssembler) {
       SmiTag(UncheckedParameter<IntPtrT>(Descriptor::kBytecodeOffset));
   // Avoid the write barrier by using the generic helper.
   StoreObjectFieldNoWriteBarrier(
-      generator, offsetof(JSGeneratorObject, input_or_debug_pos_),
-      bytecode_offset);
+      generator, JSGeneratorObject::kInputOrDebugPosOffset, bytecode_offset);
 
   TNode<FixedArray> parameters_and_registers =
       LoadJSGeneratorObjectParametersAndRegisters(generator);
   auto parameters_and_registers_length =
-      LoadFixedArrayBaseLength(parameters_and_registers);
+      LoadAndUntagFixedArrayBaseLength(parameters_and_registers);
 
   // Copy over the function parameters
   auto parameter_base_index = IntPtrConstant(
@@ -253,7 +251,7 @@ TF_BUILTIN(SuspendGeneratorBaseline, GeneratorBuiltinsAssembler) {
                                              TimesSystemPointerSize(reg_index));
         UnsafeStoreFixedArrayElement(parameters_and_registers, index, value);
       },
-      1, kNoLoopUnrolling, IndexAdvanceMode::kPost);
+      1, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
 
   // Iterate over register file and write values into array.
   // The mapping of register to array index must match that used in
@@ -271,7 +269,7 @@ TF_BUILTIN(SuspendGeneratorBaseline, GeneratorBuiltinsAssembler) {
                                              TimesSystemPointerSize(reg_index));
         UnsafeStoreFixedArrayElement(parameters_and_registers, index, value);
       },
-      1, kNoLoopUnrolling, IndexAdvanceMode::kPost);
+      1, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
 
   // The return value is unused, defaulting to undefined.
   Return(UndefinedConstant());
@@ -292,7 +290,7 @@ TF_BUILTIN(ResumeGeneratorBaseline, GeneratorBuiltinsAssembler) {
   auto register_count = UncheckedParameter<IntPtrT>(Descriptor::kRegisterCount);
   auto end_index = IntPtrAdd(parameter_count, register_count);
   auto parameters_and_registers_length =
-      LoadFixedArrayBaseLength(parameters_and_registers);
+      LoadAndUntagFixedArrayBaseLength(parameters_and_registers);
   CSA_CHECK(this, UintPtrLessThan(end_index, parameters_and_registers_length));
   auto parent_frame_pointer = LoadParentFramePointer();
   BuildFastLoop<IntPtrT>(
@@ -307,38 +305,9 @@ TF_BUILTIN(ResumeGeneratorBaseline, GeneratorBuiltinsAssembler) {
                                      StaleRegisterConstant(),
                                      SKIP_WRITE_BARRIER);
       },
-      1, kNoLoopUnrolling, IndexAdvanceMode::kPost);
+      1, LoopUnrollingMode::kNo, IndexAdvanceMode::kPost);
 
   Return(LoadJSGeneratorObjectInputOrDebugPos(generator));
-}
-
-TF_BUILTIN(ResumeGeneratorTrampoline_WithCatch, GeneratorBuiltinsAssembler) {
-  auto value = Parameter<Object>(Descriptor::kValue);
-  auto receiver = Parameter<JSGeneratorObject>(Descriptor::kGenerator);
-  auto context = Parameter<Context>(Descriptor::kContext);
-
-  TVARIABLE(Object, var_exception);
-  Label if_exception(this, Label::kDeferred);
-  TNode<JSAny> result;
-  {
-    compiler::ScopedExceptionHandler handler(this, &if_exception,
-                                             &var_exception);
-    result = CallBuiltin<JSAny>(Builtin::kResumeGeneratorTrampoline, context,
-                                value, receiver);
-  }
-  Return(result);
-
-  BIND(&if_exception);
-  StoreObjectFieldNoWriteBarrier(
-      receiver, offsetof(JSGeneratorObject, continuation_),
-      SmiConstant(JSGeneratorObject::kGeneratorClosed));
-  // Note: While a closed generator doesn't strictly leak yielded_value_ to JS,
-  // we clear it here as defense-in-depth to avoid leaving TheHole in the
-  // object.
-  StoreObjectFieldRoot(receiver, offsetof(JSGeneratorObject, yielded_value_),
-                       RootIndex::kUndefinedValue);
-  CallRuntime(Runtime::kReThrow, context, var_exception.value());
-  Unreachable();
 }
 
 #include "src/codegen/undef-code-stub-assembler-macros.inc"

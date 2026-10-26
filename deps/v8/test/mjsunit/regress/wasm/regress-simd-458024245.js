@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-revectorize
+// Flags: --experimental-wasm-revectorize
 
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 const builder = new WasmModuleBuilder();
-let $array1 = builder.addArray(kWasmI16, {final: true});
+let $array1 = builder.addArray(kWasmI16, true, kNoSuperType, true);
 let sigMain = builder.addType(kSig_i_iii);
 let sigCast =
   builder.addType(makeSig([kWasmExternRef], [wasmRefType(kWasmExternRef)]));

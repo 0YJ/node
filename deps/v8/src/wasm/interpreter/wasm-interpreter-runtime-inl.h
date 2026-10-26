@@ -15,47 +15,40 @@
 #include "src/execution/arguments-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/wasm/interpreter/wasm-interpreter-inl.h"
-#include "src/wasm/wasm-objects-inl.h"
+#include "src/wasm/wasm-objects.h"
 
 namespace v8 {
 namespace internal {
 namespace wasm {
 
-inline Address WasmInterpreterRuntime::EffectiveAddress(uint32_t memory_index,
-                                                        uint64_t index) const {
+inline Address WasmInterpreterRuntime::EffectiveAddress(uint64_t index) const {
   DirectHandle<WasmTrustedInstanceData> trusted_data =
       wasm_trusted_instance_data();
-  SBXCHECK_LT(memory_index, module_->memories.size());
   DCHECK_GE(std::numeric_limits<uintptr_t>::max(),
-            trusted_data->memory_size(memory_index));
-  DCHECK_GE(trusted_data->memory_size(memory_index), index);
+            trusted_data->memory0_size());
+  DCHECK_GE(trusted_data->memory0_size(), index);
   // Compute the effective address of the access, making sure to condition
   // the index even in the in-bounds case.
-  return reinterpret_cast<Address>(trusted_data->memory_base(memory_index)) +
-         index;
+  return reinterpret_cast<Address>(trusted_data->memory0_start()) + index;
 }
 
 inline bool WasmInterpreterRuntime::BoundsCheckMemRange(
-    uint32_t memory_index, uint64_t index, uint64_t* size,
-    Address* out_address) const {
+    uint64_t index, uint64_t* size, Address* out_address) const {
   DirectHandle<WasmTrustedInstanceData> trusted_data =
       wasm_trusted_instance_data();
-  SBXCHECK_LT(memory_index, module_->memories.size());
   DCHECK_GE(std::numeric_limits<uintptr_t>::max(),
-            trusted_data->memory_size(memory_index));
+            trusted_data->memory0_size());
   if (!base::ClampToBounds<uint64_t>(index, size,
-                                     trusted_data->memory_size(memory_index))) {
+                                     trusted_data->memory0_size())) {
     return false;
   }
-  *out_address = EffectiveAddress(memory_index, index);
+  *out_address = EffectiveAddress(index);
   return true;
 }
 
-inline Address WasmInterpreterRuntime::GetGlobalAddress(uint32_t index) {
+inline uint8_t* WasmInterpreterRuntime::GetGlobalAddress(uint32_t index) {
   DCHECK_LT(index, module_->globals.size());
-  DisallowGarbageCollection no_gc;
-  const WasmGlobal& global = module_->globals[index];
-  return wasm_trusted_instance_data()->GetGlobalStorage(global, no_gc);
+  return global_addresses_[index];
 }
 
 inline DirectHandle<Object> WasmInterpreterRuntime::GetGlobalRef(
@@ -63,83 +56,35 @@ inline DirectHandle<Object> WasmInterpreterRuntime::GetGlobalRef(
   // This function assumes that it is executed in a HandleScope.
   const wasm::WasmGlobal& global = module_->globals[index];
   DCHECK(global.type.is_ref());
-  return wasm_trusted_instance_data()
-      ->GetGlobalValue(isolate_, global)
-      .to_ref();
+  Tagged<FixedArray> global_buffer;  // The buffer of the global.
+  uint32_t global_index = 0;         // The index into the buffer.
+  std::tie(global_buffer, global_index) =
+      wasm_trusted_instance_data()->GetGlobalBufferAndIndex(global);
+  return DirectHandle<Object>(global_buffer->get(global_index), isolate_);
 }
 
 inline void WasmInterpreterRuntime::SetGlobalRef(
     uint32_t index, DirectHandle<Object> ref) const {
   // This function assumes that it is executed in a HandleScope.
-  DisallowGarbageCollection no_gc;
   const wasm::WasmGlobal& global = module_->globals[index];
   DCHECK(global.type.is_ref());
-  Address storage;
-  Tagged<HeapObject> buffer;
-  if (global.mutability && global.imported) {
-    buffer = Cast<HeapObject>(
-        wasm_trusted_instance_data()->imported_mutable_globals_buffers()->get(
-            global.mutable_imported_global_index));
-    uint32_t offset =
-        wasm_trusted_instance_data()->imported_mutable_globals_offsets()->get(
-            global.mutable_imported_global_index);
-    storage = buffer.ptr() + offset;
-  } else {
-    buffer = wasm_trusted_instance_data()->tagged_globals_buffer();
-    int offset = FixedArray::OffsetOfElementAt(global.index_in_buffer);
-    storage = buffer.address() + offset;
-  }
-  MaybeObjectSlot slot{storage};
-  // Relaxed store to avoid races with concurrent marking.
-  slot.Relaxed_Store(*ref);
-  WriteBarrier::ForValue(buffer, slot, *ref, UPDATE_WRITE_BARRIER);
+  Tagged<FixedArray> global_buffer;  // The buffer of the global.
+  uint32_t global_index = 0;         // The index into the buffer.
+  std::tie(global_buffer, global_index) =
+      wasm_trusted_instance_data()->GetGlobalBufferAndIndex(global);
+  global_buffer->set(global_index, *ref);
 }
 
 inline void WasmInterpreterRuntime::InitMemoryAddresses() {
-  DirectHandle<WasmTrustedInstanceData> trusted_data =
-      wasm_trusted_instance_data();
-  DCHECK_LE(module_->memories.size(), kV8MaxWasmMemories);
-  const uint32_t bases_and_sizes_length =
-      trusted_data->memory_bases_and_sizes()->length().value();
-  SBXCHECK_EQ(bases_and_sizes_length % 2u, 0u);
-  const size_t trusted_memory_count =
-      static_cast<size_t>(bases_and_sizes_length / 2u);
-  SBXCHECK_EQ(trusted_memory_count, module_->memories.size());
-  memory_start_ = trusted_data->memory0_start();
-  memory_starts_.resize(trusted_memory_count);
-  is_memory64_.resize(trusted_memory_count);
-  for (size_t i = 0; i < trusted_memory_count; ++i) {
-    memory_starts_[i] = trusted_data->memory_base(static_cast<uint32_t>(i));
-    is_memory64_[i] = module_->memories[i].is_memory64();
-  }
+  memory_start_ = wasm_trusted_instance_data()->memory0_start();
 }
 
-inline uint8_t* WasmInterpreterRuntime::GetMemoryStart(
-    uint32_t memory_index) const {
-  SBXCHECK_LT(memory_index, memory_starts_.size());
-  return memory_starts_[memory_index];
+inline uint64_t WasmInterpreterRuntime::MemorySize() const {
+  return wasm_trusted_instance_data()->memory0_size() / kWasmPageSize;
 }
 
-inline uint8_t* WasmInterpreterRuntime::GetMemoryStart() const {
-  return memory_start_;
-}
-
-inline uint64_t WasmInterpreterRuntime::MemorySize(
-    uint32_t memory_index) const {
-  SBXCHECK_LT(memory_index, module_->memories.size());
-  return wasm_trusted_instance_data()->memory_size(memory_index) /
-         kWasmPageSize;
-}
-
-inline bool WasmInterpreterRuntime::IsMemory64(uint32_t memory_index) const {
-  SBXCHECK_LT(memory_index, is_memory64_.size());
-  return is_memory64_[memory_index];
-}
-
-inline size_t WasmInterpreterRuntime::GetMemorySize(
-    uint32_t memory_index) const {
-  SBXCHECK_LT(memory_index, module_->memories.size());
-  return wasm_trusted_instance_data()->memory_size(memory_index);
+inline bool WasmInterpreterRuntime::IsMemory64() const {
+  return !module_->memories.empty() && module_->memories[0].is_memory64();
 }
 
 inline size_t WasmInterpreterRuntime::GetMemorySize() const {
@@ -147,7 +92,7 @@ inline size_t WasmInterpreterRuntime::GetMemorySize() const {
 }
 
 inline void WasmInterpreterRuntime::DataDrop(uint32_t index) {
-  wasm_trusted_instance_data()->data_segments()->set(index, WireBytesRef{});
+  wasm_trusted_instance_data()->data_segment_sizes()->set(index, 0);
 }
 
 inline void WasmInterpreterRuntime::ElemDrop(uint32_t index) {
@@ -179,16 +124,16 @@ inline Tagged<Object> WasmInterpreterRuntime::GetNullValue(
 inline bool WasmInterpreterRuntime::IsNull(Isolate* isolate, const WasmRef obj,
                                            const ValueType obj_type) {
   if (obj_type == kWasmExternRef || obj_type == kWasmNullExternRef) {
-    return i::IsNull(*obj);
+    return i::IsNull(*obj, isolate);
   } else {
-    return i::IsWasmNull(*obj);
+    return i::IsWasmNull(*obj, isolate);
   }
 }
 
 inline bool WasmInterpreterRuntime::IsRefNull(
     DirectHandle<Object> object) const {
   // This function assumes that it is executed in a HandleScope.
-  return i::IsNull(*object) || IsWasmNull(*object);
+  return i::IsNull(*object, isolate_) || IsWasmNull(*object, isolate_);
 }
 
 inline DirectHandle<Object> WasmInterpreterRuntime::GetFunctionRef(
@@ -248,14 +193,7 @@ inline bool WasmInterpreterRuntime::WasmStackCheck(
 
 inline DirectHandle<WasmTrustedInstanceData>
 WasmInterpreterRuntime::wasm_trusted_instance_data() const {
-  // Must be called from within a WasmInterpreterRuntime::InstanceScope, which
-  // publishes the (already trusted) {current_trusted_data_} at scope entry. We
-  // deliberately return that stored, off-cage value rather than re-loading an
-  // in-cage WasmInstanceObject::trusted_data_ handle on every call: re-reading
-  // that handle is a sandbox hole (a Wasm-to-JS callback can same-tag swap it
-  // mid-execution).
-  DCHECK(!current_trusted_data_.is_null());
-  return current_trusted_data_;
+  return direct_handle(instance_object_->trusted_data(isolate_), isolate_);
 }
 
 inline WasmInterpreterThread::State InterpreterHandle::ContinueExecution(

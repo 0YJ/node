@@ -16,7 +16,6 @@
 
 #include <cstdlib>
 
-#include "absl/base/config.h"
 #include "absl/strings/ascii.h"
 
 namespace absl {

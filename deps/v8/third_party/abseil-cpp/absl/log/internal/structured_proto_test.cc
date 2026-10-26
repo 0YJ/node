@@ -25,6 +25,7 @@
 #include "absl/base/config.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "absl/utility/utility.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -70,29 +71,18 @@ INSTANTIATE_TEST_SUITE_P(
             {
                 42,
                 StructuredProtoField::Value{
-                    std::in_place_type<StructuredProtoField::Varint>,
+                    absl::in_place_type<StructuredProtoField::Varint>,
                     int32_t{23},
                 },
             },
             {'\xD0', '\x02', '\x17'},
         },
         {
-            "VarintBool",
-            {
-                42,
-                StructuredProtoField::Value{
-                    std::in_place_type<StructuredProtoField::Varint>,
-                    true,
-                },
-            },
-            {'\xD0', '\x02', '\x01'},
-        },
-        {
             "I64",
             {
                 42,
                 StructuredProtoField::Value{
-                    std::in_place_type<StructuredProtoField::I64>,
+                    absl::in_place_type<StructuredProtoField::I64>,
                     int64_t{23},
                 },
             },
@@ -113,7 +103,7 @@ INSTANTIATE_TEST_SUITE_P(
             {
                 42,
                 StructuredProtoField::Value{
-                    std::in_place_type<StructuredProtoField::I32>,
+                    absl::in_place_type<StructuredProtoField::I32>,
                     int32_t{23},
                 },
             },

@@ -32,7 +32,6 @@ const options = {
         'https://example.com/testpath',
 
         {
-          agent: false,
           hostname: 'localhost',
           port: server.address().port,
           rejectUnauthorized: false

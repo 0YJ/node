@@ -101,7 +101,7 @@
                   '|bazel/',
     },
     'cppgc': {
-      'filepath': 'src/heap/cppgc-internal/' \
+      'filepath': 'src/heap/cppgc/' \
                   '|src/heap/cppgc-js/' \
                   '|include/cppgc/' \
                   '|test/unittests/heap/cppgc/' \
@@ -109,9 +109,6 @@
     },
     'trap-handler': {
       'filepath': 'src/trap-handler/',
-    },
-    'agents': {
-      'filepath': 'agents/',
     },
   },
 
@@ -191,9 +188,6 @@
       'clemensb@chromium.org',
       'mark@chromium.org',
       'mseaborn@chromium.org',
-    ],
-    'agents': [
-      'mrcvtl@chromium.org',
     ],
   },
 }

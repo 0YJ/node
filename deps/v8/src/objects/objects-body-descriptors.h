@@ -58,22 +58,10 @@ class BodyDescriptorBase {
                                            ObjectVisitor* visitor,
                                            IndirectPointerMode mode,
                                            IndirectPointerTagRange tag_range);
-  template <typename ObjectVisitor, typename T,
-            IndirectPointerTagRange kTagRange>
-  static inline void IterateTrustedPointer(
-      Tagged<HeapObject> obj, TrustedPointerMember<T, kTagRange>* member,
-      ObjectVisitor* v, IndirectPointerMode mode);
-
   template <typename ObjectVisitor>
   static inline void IterateCodePointer(Tagged<HeapObject> obj, int offset,
                                         ObjectVisitor* visitor,
                                         IndirectPointerMode mode);
-  template <typename ObjectVisitor>
-  static inline void IterateCodePointer(
-      Tagged<HeapObject> obj,
-      TrustedPointerMember<Code, kCodeIndirectPointerTag>* member,
-      ObjectVisitor* v, IndirectPointerMode mode);
-
   template <typename ObjectVisitor>
   static inline void IterateSelfIndirectPointer(
       Tagged<HeapObject> obj, IndirectPointerTagRange tag_range,
@@ -197,7 +185,8 @@ class FlexibleBodyDescriptor : public SuffixRangeBodyDescriptor<start_offset> {
 };
 
 // A forward-declarable descriptor body alias for most of the Struct successors.
-class StructBodyDescriptor : public FlexibleBodyDescriptor<sizeof(Struct)> {};
+class StructBodyDescriptor
+    : public FlexibleBodyDescriptor<HeapObject::kHeaderSize> {};
 
 // This class describes a body of an object in which all pointer fields are
 // located in the [start_offset, object_size) interval.

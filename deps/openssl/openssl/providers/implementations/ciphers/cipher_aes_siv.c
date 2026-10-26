@@ -21,7 +21,6 @@
 #include "prov/providercommon.h"
 #include "prov/ciphercommon_aead.h"
 #include "prov/provider_ctx.h"
-#include "providers/implementations/ciphers/cipher_aes_siv.inc"
 
 #define siv_stream_update siv_cipher
 #define SIV_FLAGS AEAD_FLAGS
@@ -151,75 +150,76 @@ static int siv_stream_final(void *vctx, unsigned char *out, size_t *outl,
 static int aes_siv_get_ctx_params(void *vctx, OSSL_PARAM params[])
 {
     PROV_AES_SIV_CTX *ctx = (PROV_AES_SIV_CTX *)vctx;
-    SIV128_CONTEXT *sctx;
-    struct aes_siv_get_ctx_params_st p;
+    SIV128_CONTEXT *sctx = &ctx->siv;
+    OSSL_PARAM *p;
 
-    if (ctx == NULL || !aes_siv_get_ctx_params_decoder(params, &p))
-        return 0;
-
-    sctx = &ctx->siv;
-
-    if (p.tag != NULL) {
+    p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_AEAD_TAG);
+    if (p != NULL && p->data_type == OSSL_PARAM_OCTET_STRING) {
         if (!ctx->enc
-            || p.tag->data_type != OSSL_PARAM_OCTET_STRING
-            || p.tag->data_size != ctx->taglen
-            || !OSSL_PARAM_set_octet_string(p.tag, &sctx->tag.byte,
-                ctx->taglen)) {
+            || p->data_size != ctx->taglen
+            || !OSSL_PARAM_set_octet_string(p, &sctx->tag.byte, ctx->taglen)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
             return 0;
         }
     }
-
-    if (p.taglen != NULL && !OSSL_PARAM_set_size_t(p.taglen, ctx->taglen)) {
+    p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_AEAD_TAGLEN);
+    if (p != NULL && !OSSL_PARAM_set_size_t(p, ctx->taglen)) {
         ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
         return 0;
     }
-
-    if (p.keylen != NULL && !OSSL_PARAM_set_size_t(p.keylen, ctx->keylen)) {
+    p = OSSL_PARAM_locate(params, OSSL_CIPHER_PARAM_KEYLEN);
+    if (p != NULL && !OSSL_PARAM_set_size_t(p, ctx->keylen)) {
         ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_SET_PARAMETER);
         return 0;
     }
     return 1;
 }
 
+static const OSSL_PARAM aes_siv_known_gettable_ctx_params[] = {
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_KEYLEN, NULL),
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_AEAD_TAGLEN, NULL),
+    OSSL_PARAM_octet_string(OSSL_CIPHER_PARAM_AEAD_TAG, NULL, 0),
+    OSSL_PARAM_END
+};
 static const OSSL_PARAM *aes_siv_gettable_ctx_params(ossl_unused void *cctx,
     ossl_unused void *provctx)
 {
-    return aes_siv_get_ctx_params_list;
+    return aes_siv_known_gettable_ctx_params;
 }
 
 static int aes_siv_set_ctx_params(void *vctx, const OSSL_PARAM params[])
 {
     PROV_AES_SIV_CTX *ctx = (PROV_AES_SIV_CTX *)vctx;
-    struct aes_siv_set_ctx_params_st p;
+    const OSSL_PARAM *p;
     unsigned int speed = 0;
     SIV128_CONTEXT *sctx = &ctx->siv;
 
-    if (ctx == NULL || !aes_siv_set_ctx_params_decoder(params, &p))
-        return 0;
+    if (ossl_param_is_empty(params))
+        return 1;
 
-    if (p.tag != NULL) {
+    p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_AEAD_TAG);
+    if (p != NULL) {
         if (ctx->enc)
             return 1;
-        if (p.tag->data_type != OSSL_PARAM_OCTET_STRING
-            || !ctx->hw->settag(ctx, p.tag->data, p.tag->data_size)) {
+        if (p->data_type != OSSL_PARAM_OCTET_STRING
+            || !ctx->hw->settag(ctx, p->data, p->data_size)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
     }
-
-    if (p.speed != NULL) {
-        if (!OSSL_PARAM_get_uint(p.speed, &speed)) {
+    p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_SPEED);
+    if (p != NULL) {
+        if (!OSSL_PARAM_get_uint(p, &speed)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
         ctx->hw->setspeed(ctx, (int)speed);
     }
-
-    if (p.keylen != NULL) {
+    p = OSSL_PARAM_locate_const(params, OSSL_CIPHER_PARAM_KEYLEN);
+    if (p != NULL) {
         size_t keylen;
 
-        if (!OSSL_PARAM_get_size_t(p.keylen, &keylen)) {
+        if (!OSSL_PARAM_get_size_t(p, &keylen)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GET_PARAMETER);
             return 0;
         }
@@ -232,10 +232,16 @@ static int aes_siv_set_ctx_params(void *vctx, const OSSL_PARAM params[])
     return 1;
 }
 
+static const OSSL_PARAM aes_siv_known_settable_ctx_params[] = {
+    OSSL_PARAM_size_t(OSSL_CIPHER_PARAM_KEYLEN, NULL),
+    OSSL_PARAM_uint(OSSL_CIPHER_PARAM_SPEED, NULL),
+    OSSL_PARAM_octet_string(OSSL_CIPHER_PARAM_AEAD_TAG, NULL, 0),
+    OSSL_PARAM_END
+};
 static const OSSL_PARAM *aes_siv_settable_ctx_params(ossl_unused void *cctx,
     ossl_unused void *provctx)
 {
-    return aes_siv_set_ctx_params_list;
+    return aes_siv_known_settable_ctx_params;
 }
 
 #define IMPLEMENT_cipher(alg, lc, UCMODE, flags, kbits, blkbits, ivbits)         \

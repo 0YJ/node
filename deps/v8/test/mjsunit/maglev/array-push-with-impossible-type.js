@@ -20,7 +20,7 @@ const a2 = [1.2];
 f(a2);
 
 // Immediate deopt.
-assertNotMaglevved(f);
+assertFalse(isMaglevved(f));
 
 assertEquals(3, a2.length);
 assertTrue(%HasPackedElements(a2));

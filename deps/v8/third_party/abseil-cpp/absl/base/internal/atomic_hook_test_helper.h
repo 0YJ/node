@@ -15,7 +15,6 @@
 #ifndef ABSL_BASE_INTERNAL_ATOMIC_HOOK_TEST_HELPER_H_
 #define ABSL_BASE_INTERNAL_ATOMIC_HOOK_TEST_HELPER_H_
 
-#include "absl/base/config.h"
 #include "absl/base/internal/atomic_hook.h"
 
 namespace absl {

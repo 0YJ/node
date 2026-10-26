@@ -55,7 +55,7 @@ assert.ok(peerCert);
 assert.ok(peerCert.includes('BEGIN CERTIFICATE'));
 
 // State should reflect open connection.
-assert.strictEqual(session.destroyed, false);
+assert.ok(session.state);
 
 await session.close();
 await endpoint.close();

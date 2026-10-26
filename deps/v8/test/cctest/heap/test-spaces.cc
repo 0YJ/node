@@ -34,7 +34,6 @@
 #include "src/base/bounded-page-allocator.h"
 #include "src/base/macros.h"
 #include "src/base/platform/platform.h"
-#include "src/base/strong-alias.h"
 #include "src/common/globals.h"
 #include "src/heap/allocation-result.h"
 #include "src/heap/factory.h"
@@ -317,14 +316,15 @@ TEST(SemiSpaceNewSpace) {
       heap, heap->InitialSemiSpaceSize(), heap->InitialSemiSpaceSize(),
       heap->InitialSemiSpaceSize());
   MainAllocator allocator(heap->main_thread_local_heap(), new_space.get(),
-                          MainAllocator::kNewGeneration, &allocation_info);
+                          MainAllocator::IsNewGeneration::kYes,
+                          &allocation_info);
   CHECK(new_space->MaximumCapacity());
 
   size_t successful_allocations = 0;
   while (new_space->Available() >= kMaxRegularHeapObjectSize) {
-    AllocationResult allocation = allocator.AllocateRaw(
-        SafeHeapObjectSize(kMaxRegularHeapObjectSize), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+    AllocationResult allocation =
+        allocator.AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
+                              AllocationOrigin::kRuntime, AllocationHint());
     if (allocation.IsFailure()) break;
     successful_allocations++;
     Tagged<Object> obj = allocation.ToObjectChecked();
@@ -350,14 +350,15 @@ TEST(PagedNewSpace) {
       heap, heap->InitialSemiSpaceSize(), heap->InitialSemiSpaceSize(),
       heap->InitialSemiSpaceSize());
   MainAllocator allocator(heap->main_thread_local_heap(), new_space.get(),
-                          MainAllocator::kNewGeneration, &allocation_info);
+                          MainAllocator::IsNewGeneration::kYes,
+                          &allocation_info);
   GrowNewSpaceToMaximumCapacity(heap);
 
   size_t successful_allocations = 0;
   while (true) {
-    AllocationResult allocation = allocator.AllocateRaw(
-        SafeHeapObjectSize(kMaxRegularHeapObjectSize), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+    AllocationResult allocation =
+        allocator.AllocateRaw(kMaxRegularHeapObjectSize, kTaggedAligned,
+                              AllocationOrigin::kRuntime, AllocationHint());
     if (allocation.IsFailure()) break;
     successful_allocations++;
     Tagged<Object> obj = allocation.ToObjectChecked();
@@ -385,15 +386,15 @@ TEST(OldSpace) {
 
   auto old_space = std::make_unique<OldSpace>(heap);
   MainAllocator allocator(heap->main_thread_local_heap(), old_space.get(),
-                          MainAllocator::kOldGeneration, &allocation_info);
+                          MainAllocator::IsNewGeneration::kNo,
+                          &allocation_info);
   const int obj_size = kMaxRegularHeapObjectSize;
 
   size_t successful_allocations = 0;
 
   while (true) {
-    AllocationResult allocation =
-        allocator.AllocateRaw(SafeHeapObjectSize(obj_size), kTaggedAligned,
-                              AllocationOrigin::kRuntime, AllocationHint());
+    AllocationResult allocation = allocator.AllocateRaw(
+        obj_size, kTaggedAligned, AllocationOrigin::kRuntime, AllocationHint());
     if (allocation.IsFailure()) break;
     successful_allocations++;
     Tagged<Object> obj = allocation.ToObjectChecked();
@@ -431,13 +432,13 @@ TEST(OldLargeObjectSpace) {
     CHECK(IsHeapObject(obj));
     Tagged<HeapObject> ho = Cast<HeapObject>(obj);
     CHECK(lo->Contains(ho));
-    CHECK_EQ(0, MainAllocator::GetFillToAlign(ho.address(), kTaggedAligned));
+    CHECK_EQ(0, Heap::GetFillToAlign(ho.address(), kTaggedAligned));
     // All large objects have the same alignment because they start at the
     // same offset within a page. Fixed double arrays have the most strict
     // alignment requirements.
-    CHECK_EQ(0, MainAllocator::GetFillToAlign(
-                    ho.address(),
-                    HeapObject::RequiredAlignment(lo->identity(), map)));
+    CHECK_EQ(0,
+             Heap::GetFillToAlign(ho.address(), HeapObject::RequiredAlignment(
+                                                    lo->identity(), map)));
     DirectHandle<HeapObject> keep_alive(ho, isolate);
   }
   CHECK_LT(0, successful_allocations);
@@ -538,8 +539,8 @@ HEAP_TEST(Regress777177) {
     AlwaysAllocateScopeForTesting always_allocate(heap);
     heap::SimulateFullSpace(old_space);
     AllocationResult result = old_space_allocator->AllocateRaw(
-        SafeHeapObjectSize(filler_size), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+        filler_size, kTaggedAligned, AllocationOrigin::kRuntime,
+        AllocationHint());
     Tagged<HeapObject> obj = result.ToObjectChecked();
     heap->CreateFillerObjectAt(obj.address(), filler_size);
   }
@@ -548,8 +549,8 @@ HEAP_TEST(Regress777177) {
     // Allocate all bytes of the linear allocation area. This moves top_ and
     // top_on_previous_step_ to the next page.
     AllocationResult result = old_space_allocator->AllocateRaw(
-        SafeHeapObjectSize(max_object_size), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+        max_object_size, kTaggedAligned, AllocationOrigin::kRuntime,
+        AllocationHint());
     Tagged<HeapObject> obj = result.ToObjectChecked();
     // Simulate allocation folding moving the top pointer back.
     old_space_allocator->ResetLab(
@@ -560,8 +561,8 @@ HEAP_TEST(Regress777177) {
   {
     // This triggers assert in crbug.com/777177.
     AllocationResult result = old_space_allocator->AllocateRaw(
-        SafeHeapObjectSize(filler_size), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+        filler_size, kTaggedAligned, AllocationOrigin::kRuntime,
+        AllocationHint());
     Tagged<HeapObject> obj = result.ToObjectChecked();
     heap->CreateFillerObjectAt(obj.address(), filler_size);
   }
@@ -593,8 +594,8 @@ HEAP_TEST(Regress791582) {
 
   {
     AllocationResult result = new_space_allocator->AllocateRaw(
-        SafeHeapObjectSize(until_page_end), kTaggedAligned,
-        AllocationOrigin::kRuntime, AllocationHint());
+        until_page_end, kTaggedAligned, AllocationOrigin::kRuntime,
+        AllocationHint());
     Tagged<HeapObject> obj = result.ToObjectChecked();
     heap->CreateFillerObjectAt(obj.address(), until_page_end);
     // Simulate allocation folding moving the top pointer back.
@@ -606,8 +607,7 @@ HEAP_TEST(Regress791582) {
   {
     // This triggers assert in crbug.com/791582
     AllocationResult result = new_space_allocator->AllocateRaw(
-        SafeHeapObjectSize(256), kTaggedAligned, AllocationOrigin::kRuntime,
-        AllocationHint());
+        256, kTaggedAligned, AllocationOrigin::kRuntime, AllocationHint());
     Tagged<HeapObject> obj = result.ToObjectChecked();
     heap->CreateFillerObjectAt(obj.address(), 256);
   }

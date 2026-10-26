@@ -125,9 +125,7 @@ function runSignatureTests(options) {
       const key = await publicKey(vector);
       const signature = copyBuffer(vector.signature);
       const duringCallAlgorithm = algorithmWithNameGetter(vector, function () {
-        if (!signature.buffer.detached) {
-          signature.buffer.transfer();
-        }
+        signature.buffer.transfer();
         return algorithmName(vector);
       });
       const isVerified = await subtle.verify(
@@ -176,9 +174,7 @@ function runSignatureTests(options) {
       const key = await publicKey(vector);
       const data = copyBuffer(vector.data);
       const duringCallAlgorithm = algorithmWithNameGetter(vector, function () {
-        if (!data.buffer.detached) {
-          data.buffer.transfer();
-        }
+        data.buffer.transfer();
         return algorithmName(vector);
       });
       const isVerified = await subtle.verify(

@@ -1,5 +1,5 @@
-/* Copyright 2017 - 2026 R. Thomas
- * Copyright 2017 - 2026 Quarkslab
+/* Copyright 2017 - 2025 R. Thomas
+ * Copyright 2017 - 2025 Quarkslab
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ class FunctionOverrideInfo;
 /// This class represents `IMAGE_DYNAMIC_RELOCATION_FUNCTION_OVERRIDE`
 class LIEF_API FunctionOverride : public DynamicFixup {
   public:
+
   /// Mirror `IMAGE_BDD_DYNAMIC_RELOCATION`
   struct image_bdd_dynamic_relocation_t {
     uint16_t left = 0;
@@ -54,13 +55,9 @@ class LIEF_API FunctionOverride : public DynamicFixup {
     std::vector<uint8_t> payload;
   };
 
-  using func_overriding_info_t =
-      std::vector<std::unique_ptr<FunctionOverrideInfo>>;
-  using it_func_overriding_info =
-      ref_iterator<func_overriding_info_t&, FunctionOverrideInfo*>;
-  using it_const_func_overriding_info =
-      const_ref_iterator<const func_overriding_info_t&,
-                         const FunctionOverrideInfo*>;
+  using func_overriding_info_t = std::vector<std::unique_ptr<FunctionOverrideInfo>>;
+  using it_func_overriding_info = ref_iterator<func_overriding_info_t&, FunctionOverrideInfo*>;
+  using it_const_func_overriding_info = const_ref_iterator<const func_overriding_info_t&, const FunctionOverrideInfo*>;
 
   using bdd_info_list_t = std::vector<image_bdd_info_t>;
   using it_bdd_info = ref_iterator<bdd_info_list_t&>;
@@ -79,36 +76,34 @@ class LIEF_API FunctionOverride : public DynamicFixup {
   }
 
   /// Iterator over the overriding info
-  it_func_overriding_info func_overriding_info() LIEF_LIFETIMEBOUND {
+  it_func_overriding_info func_overriding_info() {
     return overriding_info_;
   }
 
-  it_const_func_overriding_info func_overriding_info() const LIEF_LIFETIMEBOUND {
+  it_const_func_overriding_info func_overriding_info() const {
     return overriding_info_;
   }
 
   /// Iterator over the BDD info
-  it_bdd_info bdd_info() LIEF_LIFETIMEBOUND {
+  it_bdd_info bdd_info() {
     return bdd_info_;
   }
 
-  it_const_bdd_info bdd_info() const LIEF_LIFETIMEBOUND {
+  it_const_bdd_info bdd_info() const {
     return bdd_info_;
   }
 
   /// Find the `IMAGE_BDD_INFO` at the given offset
-  image_bdd_info_t* find_bdd_info(uint32_t offset) LIEF_LIFETIMEBOUND;
+  image_bdd_info_t* find_bdd_info(uint32_t offset);
 
   /// Find the `IMAGE_BDD_INFO` associated with the given info
-  image_bdd_info_t*
-      find_bdd_info(const FunctionOverrideInfo& info) LIEF_LIFETIMEBOUND;
+  image_bdd_info_t* find_bdd_info(const FunctionOverrideInfo& info);
 
-  const image_bdd_info_t* find_bdd_info(uint32_t offset) const LIEF_LIFETIMEBOUND {
+  const image_bdd_info_t* find_bdd_info(uint32_t offset) const {
     return const_cast<FunctionOverride*>(this)->find_bdd_info(offset);
   }
 
-  const image_bdd_info_t*
-      find_bdd_info(const FunctionOverrideInfo& info) const LIEF_LIFETIMEBOUND {
+  const image_bdd_info_t* find_bdd_info(const FunctionOverrideInfo& info) const {
     return const_cast<FunctionOverride*>(this)->find_bdd_info(info);
   }
 
@@ -120,17 +115,17 @@ class LIEF_API FunctionOverride : public DynamicFixup {
 
   ~FunctionOverride() override;
 
-  /// @private
-  LIEF_LOCAL static std::unique_ptr<FunctionOverride> parse(Parser& ctx,
-                                                            SpanStream& strm);
+  /// \private
+  LIEF_LOCAL static
+    std::unique_ptr<FunctionOverride> parse(Parser& ctx, SpanStream& strm);
 
-  /// @private
-  LIEF_LOCAL static ok_error_t parse_override_info(Parser& ctx, SpanStream& strm,
-                                                   FunctionOverride& func);
+  /// \private
+  LIEF_LOCAL static ok_error_t
+    parse_override_info(Parser& ctx, SpanStream& strm, FunctionOverride& func);
 
-  /// @private
-  LIEF_LOCAL static ok_error_t parse_bdd_info(Parser& ctx, SpanStream& strm,
-                                              FunctionOverride& func);
+  /// \private
+  LIEF_LOCAL static ok_error_t
+    parse_bdd_info(Parser& ctx, SpanStream& strm, FunctionOverride& func);
 
   private:
   func_overriding_info_t overriding_info_;

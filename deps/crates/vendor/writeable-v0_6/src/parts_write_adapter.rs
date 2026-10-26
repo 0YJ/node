@@ -81,9 +81,7 @@ impl<W: fmt::Write + ?Sized> PartsWrite for CoreWriteAsPartsWrite<W> {
 #[derive(Debug)]
 #[allow(clippy::exhaustive_structs)] // public adapter
 pub struct WithPart<T: ?Sized> {
-    /// The [`Part`]
     pub part: Part,
-    /// The value
     pub writeable: T,
 }
 
@@ -114,4 +112,9 @@ impl<T: Writeable + ?Sized> Writeable for WithPart<T> {
     }
 }
 
-crate::impl_display_with_writeable!(@display, WithPart<T>, where T: Writeable + ?Sized);
+impl<T: Writeable + ?Sized> fmt::Display for WithPart<T> {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Writeable::write_to(&self, f)
+    }
+}

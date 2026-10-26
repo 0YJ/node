@@ -35,7 +35,7 @@ UseMap::UseMap(const Graph& graph, Zone* zone, FunctionType filter)
         saturated_uses_.back().reserve(std::numeric_limits<uint8_t>::max());
       } else {
         table_[op_index].offset = offset;
-        offset += op.saturated_use_count.GetUnsaturated();
+        offset += op.saturated_use_count.Get();
         uses_.resize(offset);
       }
 
@@ -82,8 +82,7 @@ void UseMap::AddUse(const Graph* graph, OpIndex node, OpIndex use) {
   uint32_t& input_count = table_[node].count;
   DCHECK_NE(input_offset, 0);
   if (V8_LIKELY(input_offset > 0)) {
-    DCHECK_LT(input_count,
-              graph->Get(node).saturated_use_count.GetMaybeSaturated());
+    DCHECK_LT(input_count, graph->Get(node).saturated_use_count.Get());
     DCHECK(!uses_[input_offset + input_count].valid());
     uses_[input_offset + input_count] = use;
   } else {

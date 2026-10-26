@@ -284,8 +284,7 @@ class StandardTestRunner(base_runner.BaseTestRunner):
   def _do_execute(self, tests, args, ctx):
     jobs = self.options.j
 
-    if not self.options.quiet:
-      print('>>> Running with test processors')
+    print('>>> Running with test processors')
     loader = LoadProc(tests, initial_batch_size=self.options.j * 2)
     results = ResultsTracker.create(self.options)
     outproc_factory = None

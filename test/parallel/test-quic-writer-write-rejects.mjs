@@ -1,10 +1,11 @@
 // Flags: --experimental-quic --experimental-stream-iter --no-warnings
 
-// Test: strict backpressure allows one pending write and rejects the next.
+// Test: write() rejects when flow-controlled.
+// The async write() method rejects with ERR_INVALID_STATE when the
+// chunk exceeds capacity (canWrite is false).
 
 import { hasQuic, skip, mustCall } from '../common/index.mjs';
 import assert from 'node:assert';
-import { dump } from 'node:stream/iter';
 
 if (!hasQuic) {
   skip('QUIC is not enabled');
@@ -40,26 +41,23 @@ assert.strictEqual(w.writeSync(new Uint8Array(1024)), true);
 // canWrite should now be false.
 assert.strictEqual(w.canWrite, false);
 
-// The first async write waits for capacity.
-const pendingWrite = w.write(new Uint8Array(512));
-
-// A second pending write violates strict backpressure.
+// Async write() should reject when buffer is full.
 await assert.rejects(
-  w.writev([new Uint8Array(512)]),
-  { code: 'ERR_INVALID_STATE', name: 'RangeError' },
+  w.write(new Uint8Array(512)),
+  { code: 'ERR_INVALID_STATE' },
 );
 
-// The drain event admits the pending write.
+// Wait for drain, then write should succeed.
 const drain = w[dp]();
 assert.ok(drain instanceof Promise);
-await Promise.all([drain, pendingWrite]);
+await drain;
 assert.ok(w.canWrite === true);
 
 // Now write succeeds.
 await w.write(new Uint8Array(100));
 
 w.endSync();
-await dump(stream);
+for await (const _ of stream) { /* drain */ } // eslint-disable-line no-unused-vars
 await Promise.all([stream.closed, serverDone.promise]);
 await clientSession.close();
 await serverEndpoint.close();

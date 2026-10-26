@@ -31,9 +31,7 @@ namespace internal {
 //    31 bits),
 // b) it's independent of the pointer compression base and pointer compression
 //    scheme.
-V8_OBJECT class FreeSpace : public HeapObject {
-  V8_IT_NO_AUTO_DISPATCH;
-
+class FreeSpace : public HeapObjectLayout {
  public:
   static constexpr uint32_t kMaxSizeInBytes =
       uint32_t{Smi::kMaxValue} * kTaggedSize;
@@ -68,12 +66,7 @@ V8_OBJECT class FreeSpace : public HeapObject {
 #else
   TaggedMember<FreeSpace> next_;
 #endif  // V8_EXTERNAL_CODE_SPACE
-} V8_OBJECT_END;
-
-// Filler objects (one- and two-pointer fillers) used to pad heap gaps so that
-// the heap remains iterable.
-V8_OBJECT class Filler : public HeapObject {
-} V8_OBJECT_END;
+};
 
 }  // namespace internal
 }  // namespace v8
