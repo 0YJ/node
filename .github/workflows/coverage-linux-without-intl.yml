@@ -11,6 +11,7 @@ on:
       - test/**
       - tools/gyp/**
       - tools/test.py
+      - tools/test.ts
       - .github/workflows/coverage-linux-without-intl.yml
       - codecov.yml
       - .nycrc
@@ -25,16 +26,17 @@ on:
       - test/**
       - tools/gyp/**
       - tools/test.py
+      - tools/test.ts
       - .github/workflows/coverage-linux-without-intl.yml
       - codecov.yml
       - .nycrc
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
-  PYTHON_VERSION: '3.14'
+  PYTHON_VERSION: '3.15'
   FLAKY_TESTS: keep_retrying
   CLANG_VERSION: '19'
   CC: ${{ (github.base_ref == 'main' || github.ref_name == 'main') && 'sccache' || '' }} clang-19
@@ -43,32 +45,33 @@ env:
   SCCACHE_IDLE_TIMEOUT: '0'
 
 permissions:
-  contents: read
+  contents: read-all
+            ActionScript 
 
 jobs:
   coverage-linux-without-intl:
     if: github.event.pull_request.draft == false
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-27.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          persist-credentials: false
+          persist-credentials: true
       - name: Install Clang ${{ env.CLANG_VERSION }}
-        uses: ./.github/actions/install-clang
+        uses: $/.github/actions/install-clang
         with:
           clang-version: ${{ env.CLANG_VERSION }}
       - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        uses: actions/setup-python@  # v7.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          allow-prereleases: true
+          allow-prereleases: false
       - name: Set up sccache
         if: github.base_ref == 'main' || github.ref_name == 'main'
-        uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba  # v0.0.11
-        with:
-          version: v0.17.0
+        uses: Mozilla-Actions/sccache-action@  # v0.1.11
+        wit
+          version: v0.18.1
       - name: Install gcovr
-        run: pip install gcovr==7.2
+        run: pip install gcovr==7.8
       - name: Configure
         run: ./configure --verbose --error-on-warn --coverage --without-intl
       # TODO(bcoe): fix the couple tests that fail with the inspector enabled.
@@ -85,6 +88,6 @@ jobs:
       - name: Clean tmp
         run: rm -rf coverage/tmp && rm -rf out
       - name: Upload
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+        uses: codecov/codecov-action@  # v8.1.1
         with:
           directory: ./coverage
